@@ -1,34 +1,81 @@
-# Claude Code Configuration
+# agentic-coding-config
 
-Centralized configuration for Claude Code across all repositories — hooks, slash commands, and language-specific setup templates.
+Claude Code configuration: slash commands, hooks, settings, MCP. Mounted at
+`~/.claude/` on every machine via [chezmoi externals][chezmoi-externals]
+from my [dotfiles][dotfiles] repo.
 
-## Design Principle
+[chezmoi-externals]: https://www.chezmoi.io/reference/special-files-and-directories/chezmoiexternal-format/
+[dotfiles]: https://github.com/pmgledhill102/dotfiles
 
-When linting, formatting, and security tools are configured, they become the enforcement mechanism. Claude Code doesn't need to *know* your standards — it just sees failures and fixes them.
+## How this gets onto your machine
 
-This configuration separates **one-time setup** from **ongoing enforcement**, keeping context costs low:
+This repo's content sits at `~/.claude/` on every machine. The wiring lives
+in `dotfiles`:
+
+```toml
+# dotfiles' home/.chezmoiexternal.toml.tmpl
+[".claude"]
+type = "git-repo"
+url = "https://github.com/pmgledhill102/agentic-coding-config.git"
+refreshPeriod = "168h"
+```
+
+`chezmoi apply` (or `dotup`) clones this repo into chezmoi's source state
+under `.claude/`, then applies it to `~/.claude/`. `refreshPeriod` controls
+how often the external is re-fetched.
+
+**One-line mental model:** files at the **root** of this repo map directly
+to `~/.claude/`. So `commands/foo.md` → `~/.claude/commands/foo.md`,
+`settings.json` → `~/.claude/settings.json`, etc. No chezmoi naming
+conventions inside the repo (no `dot_` prefix, no `.tmpl` suffix on
+most files) — chezmoi mounts the tree as-is.
+
+History before 2026-05-03 is preserved here from the original `dotfiles`
+location at `home/dot_claude/` via `git filter-repo`. Older commit
+messages still reference that path; that's expected.
+
+## Design principle
+
+When linting, formatting, and security tools are configured, they become
+the enforcement mechanism. Claude Code doesn't need to *know* your
+standards — it just sees failures and fixes them.
+
+This configuration separates **one-time setup** from **ongoing
+enforcement**, keeping context costs low:
 
 | Concern | Solution | Context Cost |
-| ------- | -------- | ------------ |
+| --- | --- | --- |
 | Setting up a new project | Slash commands (`/setup-python`) | Loaded only when invoked |
 | Enforcing standards during coding | Hooks that run tools automatically | Zero — tool output is the context |
 | High-level policy | Lean CLAUDE.md | ~20-30 lines |
 
-## Enforcement Layers
+## Enforcement layers
 
-Checks are enforced at three layers, from most authoritative to most immediate. Higher layers are always-on and catch everything; lower layers are optional optimizations that provide faster feedback.
+Checks are enforced at three layers, from most authoritative to most
+immediate. Higher layers are always-on and catch everything; lower layers
+are optional optimisations that provide faster feedback.
 
-### Layer 1: CI (Always Enforced)
+### Layer 1: CI (always enforced)
 
-CI runs on every push/PR. This is the **source of truth** — nothing merges without passing. Each `/setup-*` slash command includes a CI workflow snippet for the relevant language. The `/setup-common` command also installs a Dependabot auto-merge workflow that approves and squash-merges Dependabot PRs once CI passes.
+CI runs on every push/PR. This is the **source of truth** — nothing merges
+without passing. Each `/setup-*` slash command includes a CI workflow
+snippet for the relevant language. The `/setup-common` command also
+installs a Dependabot auto-merge workflow that approves and squash-merges
+Dependabot PRs once CI passes.
 
-### Layer 2: Git Pre-commit Hooks
+### Layer 2: Git pre-commit hooks
 
-Pre-commit hooks run the same checks locally before code leaves the developer's machine. They catch issues earlier than CI and reduce round-trips. The `/setup-common` command installs the [pre-commit](https://pre-commit.com/) framework, and each language command registers its tools into it.
+Pre-commit hooks run the same checks locally before code leaves the
+developer's machine. They catch issues earlier than CI and reduce
+round-trips. The `/setup-common` command installs the
+[pre-commit](https://pre-commit.com/) framework, and each language command
+registers its tools into it.
 
-### Layer 3: Claude Code Hooks (Optional Optimization)
+### Layer 3: Claude Code hooks (optional optimisation)
 
-Claude Code hooks provide **immediate feedback during editing**. Only use these for tools that are fast, deterministic, and auto-fix — so Claude doesn't waste turns on formatting.
+Claude Code hooks provide **immediate feedback during editing**. Only use
+these for tools that are fast, deterministic, and auto-fix — so Claude
+doesn't waste turns on formatting.
 
 **Good candidates for file-level hooks (PostToolUse):**
 
@@ -41,12 +88,14 @@ Claude Code hooks provide **immediate feedback during editing**. Only use these 
 - Security scanners (bandit, trivy) — slow, project-wide
 - Complex linters (golangci-lint with many checks) — too slow per-file
 
-## Tooling Matrix
+## Tooling matrix
 
-Each `/setup-*` slash command configures the tools listed below. All commands are **additive and composable** — run `/setup-common` first for the foundation, then stack any combination.
+Each `/setup-*` slash command configures the tools listed below. All
+commands are **additive and composable** — run `/setup-common` first for
+the foundation, then stack any combination.
 
 | Language | Formatting | Linting | Type Checking | Security | Deps Audit | Dependabot |
-| -------- | ---------- | ------- | ------------- | -------- | ---------- | ---------- |
+| --- | --- | --- | --- | --- | --- | --- |
 | **Common** | — | — | — | gitleaks | — | github-actions |
 | **Markdown** | prettier | markdownlint-cli2 | — | — | — | — |
 | **Shell** | shfmt | shellcheck | — | — | — | — |
@@ -62,42 +111,35 @@ Each `/setup-*` slash command configures the tools listed below. All commands ar
 | **Node.js** | prettier | eslint | — | — | npm audit | npm |
 | **TypeScript** | prettier | eslint + typescript-eslint | tsc --noEmit | — | npm audit | npm |
 
-### Which Layer Runs What
+### Which layer runs what
 
-| Tool Category | CI | Pre-commit | Claude Hook |
-| ------------- | :-: | :--------: | :---------: |
+| Tool category | CI | Pre-commit | Claude hook |
+| --- | :-: | :-: | :-: |
 | Formatters | yes | yes | yes (auto-fix on write) |
 | Fast linters | yes | yes | optional (auto-fix on write) |
 | Type checkers | yes | yes | no |
 | Security scanners | yes | yes | no |
 | Dependency audits | yes | no | no |
 
-## Directory Structure
+## Layout (mapped to `~/.claude/`)
 
 ```text
-~/.claude/
-├── settings.json              # Universal hooks (runs on every repo)
-├── CLAUDE.md                  # Universal policy (loaded on every repo)
-└── commands/
-    ├── setup-repo.md          # GitHub repo settings + branch protection
-    ├── setup-common.md        # Shared tooling (pre-commit, gitleaks)
-    ├── setup-shell.md
-    ├── setup-markdown.md
-    ├── setup-docker.md
-    ├── setup-terraform.md
-    ├── setup-go.md
-    ├── setup-python.md
-    ├── setup-dotnet.md
-    ├── setup-rust.md
-    ├── setup-java.md
-    ├── setup-ruby.md
-    ├── setup-php.md
-    ├── setup-node.md
-    ├── setup-typescript.md
-    └── repo-review.md         # Currency / cleanup audit (any repo)
+.                          → ~/.claude/
+├── settings.json          → ~/.claude/settings.json     # Universal hooks (every repo)
+├── settings.json.md                                     # Annotated companion (must stay in sync)
+├── CLAUDE.md.tmpl         → ~/.claude/CLAUDE.md         # Universal policy
+├── commands/              → ~/.claude/commands/         # Slash command library
+├── bin/                   → ~/.claude/bin/              # Helper executables (start/end-session-gather-state)
+└── adrs/                                                # Architecture decision records (this repo only — not deployed)
 ```
 
-## Slash Commands
+`adrs/`, `.github/`, `.beads/`, `.markdownlint.yaml`, `.pre-commit-config.yaml`,
+this `README.md` — these are repo-meta files, **not** deployed into
+`~/.claude/`. They're filtered out by chezmoi's apply step (some implicitly
+because they're at root and not deployable, the README explicitly via
+dotfiles' `.chezmoiignore`).
+
+## Slash commands
 
 Each `/setup-*` command contains:
 
@@ -123,14 +165,15 @@ Each `/setup-*` command contains:
 
 `/repo-review` is portable — runs on any repo. Per-language scanners are
 required only when their manifest is detected (e.g. `pip-audit` only if
-`pyproject.toml` exists). Action items are emitted as Beads tasks when
-the project uses Beads, otherwise as a markdown report at
+`pyproject.toml` exists). Action items are emitted as Beads tasks when the
+project uses Beads, otherwise as a markdown report at
 `docs/reviews/repo-review-YYYY-MM-DD.md`.
 
 **Day-to-day coding:**
-Claude Code edits files -> hooks auto-run -> Claude sees failures -> fixes them. No context spent on rules — tooling output *is* the context.
+Claude Code edits files → hooks auto-run → Claude sees failures → fixes
+them. No context spent on rules — tooling output *is* the context.
 
-## Hook Configuration Examples
+## Hook configuration examples
 
 **Pre-commit hook (Layer 2):**
 
@@ -138,9 +181,7 @@ Claude Code edits files -> hooks auto-run -> Claude sees failures -> fixes them.
 {
   "hooks": {
     "PreCommit": [
-      {
-        "command": "pre-commit run --all-files 2>&1 | tail -40"
-      }
+      { "command": "pre-commit run --all-files 2>&1 | tail -40" }
     ]
   }
 }
@@ -161,89 +202,44 @@ Claude Code edits files -> hooks auto-run -> Claude sees failures -> fixes them.
 }
 ```
 
-## MCP Servers
+## MCP servers
 
-[Model Context Protocol](https://modelcontextprotocol.io/) servers extend Claude Code with external data sources and tools. These are configured per-user via `claude mcp add` and stored in `~/.claude.json`.
+[Model Context Protocol](https://modelcontextprotocol.io/) servers extend
+Claude Code with external data sources and tools. They're configured
+per-user via `claude mcp add` and stored in `~/.claude.json`.
 
-MCP servers are set up automatically by `run_onchange_setup-claude.sh` during `chezmoi apply`. Servers that require API keys read them from `~/.secrets` (see [Secrets Management](#secrets-management) below).
+The setup script that wires them up — `run_onchange_setup-claude.sh` —
+lives in [dotfiles][dotfiles], not in this repo. It runs as part of
+`chezmoi apply` and reads API keys from `~/.secrets` (also managed by
+dotfiles, via chezmoi age encryption). On machines without the API keys
+or without the `claude` CLI, the setup script degrades gracefully.
 
-### Configured Servers
-
-| Server | Transport | API Key Required | Purpose |
-| ------ | --------- | :-: | ------- |
-| **google-dev-knowledge** | HTTP | Yes | Google developer documentation (Android, Chrome, Cloud, Firebase, Flutter, etc.) via the [Google Developer Knowledge MCP](https://developerknowledge.googleapis.com/mcp) |
-
-### Graceful Degradation
-
-The setup script skips automatically when:
-
-- The `claude` CLI is not installed
-- A required API key is not present in `~/.secrets`
-
-This means `chezmoi apply` works on any machine — MCP servers are only configured where both the CLI and credentials are available.
-
-## Secrets Management
-
-Secrets (API keys, tokens) are stored in `~/.secrets` as shell-sourceable `KEY="value"` pairs. This file is **not committed to the repo** — it is either placed manually or managed via chezmoi age encryption.
-
-### Setting Up age Encryption
-
-age encryption lets `~/.secrets` travel with the repo (encrypted) so that `chezmoi apply` on a new machine provisions secrets automatically — provided the age private key is available.
-
-**1. Generate an age key pair (one-time):**
-
-```sh
-age-keygen -o ~/.config/chezmoi/key.txt
-```
-
-Note the public key (`age1...`) printed to stdout.
-
-**2. Add age config to `.chezmoi.toml`:**
-
-```toml
-[age]
-    identity = "~/.config/chezmoi/key.txt"
-    recipient = "age1your-public-key-here"
-```
-
-**3. Create `~/.secrets` with real values:**
-
-```sh
-# Get the API key from Terraform
-API_KEY=$(terraform -chdir=layers/3-projects/services output -raw developer_knowledge_api_key)
-
-cat > ~/.secrets << EOF
-# ~/.secrets — sourced by chezmoi run scripts
-GOOGLE_DEV_KNOWLEDGE_API_KEY="${API_KEY}"
-EOF
-```
-
-**4. Encrypt and add to chezmoi:**
-
-```sh
-chezmoi add --encrypt ~/.secrets
-```
-
-This creates an encrypted source file (replacing `dot_secrets.tmpl`). Commit it to the repo.
-
-**5. Update `.chezmoiignore`:**
-
-Change the unconditional `.secrets` ignore to be conditional so that machines with the age key receive the decrypted file:
-
-```text
-{{ if not (stat (joinPath .chezmoi.homeDir ".config/chezmoi/key.txt")) }}
-.secrets
-{{ end }}
-```
-
-**6. Provisioning a new machine:**
-
-Before running `chezmoi init --apply`, copy the age private key from Bitwarden (or another secure store) to `~/.config/chezmoi/key.txt`. chezmoi will then decrypt `~/.secrets` and the setup script will configure MCP servers automatically.
-
-On machines without the age key, `~/.secrets` is skipped and the setup script degrades gracefully.
+This boundary exists because MCP setup is a machine-bootstrap concern (it
+calls `claude mcp add`, modifies `~/.claude.json`), not a content concern
+— so it stays with the rest of the bootstrap machinery in dotfiles. This
+repo holds the *content* that flows into `~/.claude/`.
 
 ## Customisation
 
-- **Project overrides**: Add `.claude/settings.json` in any repo to extend/override user-level hooks
-- **Subdirectory context**: Add `CLAUDE.md` files in subdirectories for monorepo language-specific context
-- **New languages**: Copy an existing setup command and adapt the tool list
+- **Project overrides**: add `.claude/settings.json` in any repo to extend / override user-level hooks.
+- **Subdirectory context**: add `CLAUDE.md` files in subdirectories for monorepo language-specific context.
+- **New languages**: copy an existing setup command and adapt the tool list.
+
+## Files that must stay in sync
+
+`settings.json` (machine-readable) and `settings.json.md` (annotated
+companion documenting the *why* for each rule) **must change together**.
+JSON doesn't allow comments, so the `.md` file is how the rationale travels
+with the rules. CI fails the PR if one changes without the other.
+
+## Editing flow
+
+1. Edit content in this repo.
+2. PR, watch CI, merge.
+3. On any machine: `dotup` (which is `chezmoi update -v`) — pulls dotfiles, refreshes the external, applies. `~/.claude/` reflects the new content.
+4. Restart Claude Code on that machine to pick up settings/hooks changes.
+
+## Related
+
+- [dotfiles](https://github.com/pmgledhill102/dotfiles) — the wiring repo (chezmoi externals declaration, MCP setup script, age-encrypted secrets).
+- [Claude Code documentation](https://docs.claude.com/en/docs/claude-code/overview).
