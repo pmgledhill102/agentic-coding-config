@@ -1,0 +1,8 @@
+# bd-init-generated files at repo root — bd regenerates these and we don't
+# author them, so lint violations they introduce aren't ours to fix. Newer
+# bd versions (post-Dolt switch) emit content that fails MD031/MD032/MD036.
+/AGENTS.md
+/CLAUDE.md
+
+# bd workspace — entirely tool-managed, including its own README.
+.beads/
