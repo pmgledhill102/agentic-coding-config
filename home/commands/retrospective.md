@@ -64,12 +64,21 @@ For each finding, decide what kind of artifact it should produce:
 | Kind | When to use | How to produce |
 | --- | --- | --- |
 | **Journal entry** | Always (unless the session was uneventful — then skip and stop). Captures the narrative thread, Continue items, and Observations that don't fit into actionable artifacts | `Write` to `~/dev/paul-context/journal/<YYYY-MM-DD>-<short-slug>.md`. Then `git -C ~/dev/paul-context add + commit + push origin main`. Tight format: H1 title, project/duration metadata, Continue / Stop / Created / Observations sections, ~30-50 lines |
-| **Same-repo bead** | Action whose subject is the current repo | `bd create --title=... --type=<task/bug/feature> --priority=N` (priority 0-4; P2 is "do this soon", P3 is "next time we touch this", P4 is "backlog"). **Body MUST include**: "From retro: paul-context/journal/<file>.md" |
-| **Cross-repo Issue** | Action whose subject is a *different* personal repo (the finding mentions e.g. dotfiles when retro is in agentic-coding-config) | `gh issue create --repo pmgledhill102/<target> --title=... --body=...` — picked up by `/start-session` there via `/bd-import-github-issues`. **Body MUST include** the journal cross-reference |
+| **Same-repo bead** | Action whose subject is the **current cwd's repo** | `bd create --title=... --type=<task/bug/feature> --priority=N` (priority 0-4; P2 is "do this soon", P3 is "next time we touch this", P4 is "backlog"). **Body MUST include**: "From retro: paul-context/journal/<file>.md" |
+| **Cross-repo Issue** | Action whose subject is a *different* personal repo from cwd | `gh issue create --repo pmgledhill102/<target> --title=... --body=...` — picked up by `/start-session` there via `/bd-import-github-issues`. **Body MUST include** the journal cross-reference. **DO NOT** `cd` to the target repo and run `bd create` there, even if you have it cloned locally — see "No cd-shortcut" below |
 | **paul-context Issue** | Cross-cutting or no-clear-home findings | `gh issue create --repo pmgledhill102/paul-context --title=... --body=...`. **Body MUST include** the journal cross-reference |
 | **Memory write** | Durable lesson that should auto-load on future sessions | `Write` to `~/.claude/projects/<project>/memory/<slug>.md` with frontmatter, then `Edit` `MEMORY.md` index |
 | **Settings change** | Permission to add/move, hook to register, env var to set | Recommend invoking `/update-config` (the harness skill); or, if simple, propose the exact edit |
 | **Observation only** | Something noted but not actionable ("everything went smoothly") | No artifact; mention in the journal's Observations section |
+
+### 3a. No cd-shortcut
+
+**The cross-repo path is `gh issue create`. Always.** Even when the target repo is checked out at a known path locally, do NOT cd into it and run `bd create` directly. Two reasons:
+
+- **Sandbox-agent compatibility.** Retros run from a remote Claude sandbox don't have target repos cloned. The slash command must be portable; the cd shortcut isn't.
+- **Consistent audit trail.** When every cross-repo finding flows through Issues → `/bd-import-github-issues`, the source-of-work is visible on GitHub (web, mobile) and the bead's import history records its provenance. Direct `bd create` from a different cwd loses that.
+
+The convenience cost (one `/start-session` cycle to sweep the Issue into a bead) is minor. The consistency gain — and the architectural property that this slash command works identically from a sandbox or a local laptop — is worth it.
 
 ### 4. Routing heuristics for "which repo?"
 
@@ -113,8 +122,8 @@ Wait for explicit confirmation. Don't proceed on ambiguous input.
    - `git -C ~/dev/paul-context push origin main`
    - Capture the relative path `paul-context/journal/<file>.md` for cross-references.
 2. **memory**: Write the memory file with proper frontmatter (`name`, `description`, `type` of `user|feedback|project|reference`), then Edit `MEMORY.md` to add a one-line index entry. Follow the conventions in the parent CLAUDE.md auto-memory section.
-3. **bead** (same-repo): `bd create --title="..." --description="..." --type=... --priority=...`. Description **MUST** include `From retro: paul-context/journal/<file>.md` near the top. Capture the new ID for the summary.
-4. **issue** (cross-repo): `gh issue create --repo pmgledhill102/<repo> --title="..." --body="..."`. Body **MUST** include `From retro: paul-context/journal/<file>.md`. Capture the URL.
+3. **bead** (same-repo): `bd create --title="..." --description="..." --type=... --priority=...` — run from the **current cwd**. Description **MUST** include `From retro: paul-context/journal/<file>.md` near the top. Capture the new ID for the summary.
+4. **issue** (cross-repo): `gh issue create --repo pmgledhill102/<repo> --title="..." --body="..."` — DO NOT `cd` into the target repo for `bd create` (see step 3a). Body **MUST** include `From retro: paul-context/journal/<file>.md`. Capture the URL.
 5. **settings**: invoke `/update-config` for non-trivial changes; for a single `allowedTools` addition, propose the exact diff and apply if confirmed.
 
 If any single create fails, surface the error and continue with the rest. Don't roll back successful artifacts on partial failure.
