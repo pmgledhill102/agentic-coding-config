@@ -27,7 +27,7 @@ jobs:
           globs: '**/*.md'
 
   shellcheck:
-    name: ShellCheck (bin/)
+    name: ShellCheck (home/bin/)
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     steps:
@@ -35,7 +35,7 @@ jobs:
       - name: Run ShellCheck
         uses: ludeeus/action-shellcheck@00b27aa7cb85167568cb48a3838b75f4265f2bca # master
         with:
-          scandir: './bin'
+          scandir: './home/bin'
 
   actionlint:
     name: Action Lint
@@ -61,12 +61,12 @@ jobs:
           set -eu
           base="${{ github.event.pull_request.base.sha }}"
           changed=$(git diff --name-only "$base"..HEAD || true)
-          json_changed=$(printf '%s\n' "$changed" | grep -c '^settings\.json$' || true)
-          md_changed=$(printf '%s\n' "$changed" | grep -c '^settings\.json\.md$' || true)
+          json_changed=$(printf '%s\n' "$changed" | grep -c '^home/settings\.json$' || true)
+          md_changed=$(printf '%s\n' "$changed" | grep -c '^home/settings\.json\.md$' || true)
           if [ "$json_changed" -ne "$md_changed" ]; then
-            echo "::error::settings.json and settings.json.md must change together."
-            echo "  settings.json changed:    $json_changed"
-            echo "  settings.json.md changed: $md_changed"
+            echo "::error::home/settings.json and home/settings.json.md must change together."
+            echo "  home/settings.json changed:    $json_changed"
+            echo "  home/settings.json.md changed: $md_changed"
             echo ""
             echo "JSON does not allow comments, so settings.json.md is the annotated companion."
             echo "Any rule added/removed/edited in one must be reflected in the other."

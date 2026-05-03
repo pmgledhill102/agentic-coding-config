@@ -9,30 +9,58 @@ from my [dotfiles][dotfiles] repo.
 
 ## How this gets onto your machine
 
-This repo's content sits at `~/.claude/` on every machine. The wiring lives
-in `dotfiles`:
+This repo's `home/` subdirectory is mounted at `~/.claude/` on every
+machine. The wiring lives in `dotfiles`:
 
 ```toml
 # dotfiles' home/.chezmoiexternal.toml.tmpl
 [".claude"]
-type = "git-repo"
-url = "https://github.com/pmgledhill102/agentic-coding-config.git"
+type = "archive"
+url = "https://github.com/pmgledhill102/agentic-coding-config/archive/refs/heads/main.tar.gz"
+stripComponents = 2
+include = ["agentic-coding-config-main/home/**"]
 refreshPeriod = "168h"
 ```
 
-`chezmoi apply` (or `dotup`) clones this repo into chezmoi's source state
-under `.claude/`, then applies it to `~/.claude/`. `refreshPeriod` controls
-how often the external is re-fetched.
+`chezmoi apply` (or `dotup`) downloads the archive, strips the
+`agentic-coding-config-main/home/` prefix, and includes only files under
+that path. The result: contents of `home/` end up at `~/.claude/`,
+nothing else.
 
-**One-line mental model:** files at the **root** of this repo map directly
-to `~/.claude/`. So `commands/foo.md` → `~/.claude/commands/foo.md`,
-`settings.json` → `~/.claude/settings.json`, etc. No chezmoi naming
-conventions inside the repo (no `dot_` prefix, no `.tmpl` suffix on
-most files) — chezmoi mounts the tree as-is.
+**Why an `archive` external instead of `git-repo`:** `git-repo` externals
+mount the entire repo tree at the target with no filtering — `.git/`,
+`.beads/`, README, ADRs, all of it. `archive` externals support `include`
+glob patterns and `stripComponents`, which lets us deploy only the files
+that should live in `~/.claude/`. The trade-off is that `archive`
+re-downloads on each refresh (vs `git-repo`'s incremental fetch); for a
+repo this small that's fine.
+
+**One-line mental model:** files under **`home/`** in this repo map
+directly to `~/.claude/`. So `home/commands/foo.md` →
+`~/.claude/commands/foo.md`, `home/settings.json` → `~/.claude/settings.json`.
+Files at the repo root (`README.md`, `adrs/`, etc.) are repo-meta and
+don't deploy.
 
 History before 2026-05-03 is preserved here from the original `dotfiles`
 location at `home/dot_claude/` via `git filter-repo`. Older commit
-messages still reference that path; that's expected.
+messages still reference that path; that's expected. The 2026-05-03
+restructure that introduced `home/` is on top of that history.
+
+## Layout
+
+```text
+.
+├── README.md                  # repo-meta: this file
+├── CLAUDE.md, AGENTS.md       # repo-meta: project instructions for working ON this repo
+├── adrs/                      # repo-meta: architecture decisions
+├── .github/, .pre-commit-config.yaml, .markdownlint.yaml, .beads/, .gitignore
+└── home/                      # ← THIS subdirectory mounts at ~/.claude/
+    ├── CLAUDE.md              → ~/.claude/CLAUDE.md  (universal policy)
+    ├── settings.json          → ~/.claude/settings.json
+    ├── settings.json.md       → ~/.claude/settings.json.md  (annotated companion, kept alongside)
+    ├── commands/              → ~/.claude/commands/
+    └── bin/                   → ~/.claude/bin/  (helper executables)
+```
 
 ## Design principle
 
@@ -121,23 +149,14 @@ the foundation, then stack any combination.
 | Security scanners | yes | yes | no |
 | Dependency audits | yes | no | no |
 
-## Layout (mapped to `~/.claude/`)
+## What deploys vs what doesn't
 
-```text
-.                          → ~/.claude/
-├── settings.json          → ~/.claude/settings.json     # Universal hooks (every repo)
-├── settings.json.md                                     # Annotated companion (must stay in sync)
-├── CLAUDE.md.tmpl         → ~/.claude/CLAUDE.md         # Universal policy
-├── commands/              → ~/.claude/commands/         # Slash command library
-├── bin/                   → ~/.claude/bin/              # Helper executables (start/end-session-gather-state)
-└── adrs/                                                # Architecture decision records (this repo only — not deployed)
-```
-
-`adrs/`, `.github/`, `.beads/`, `.markdownlint.yaml`, `.pre-commit-config.yaml`,
-this `README.md` — these are repo-meta files, **not** deployed into
-`~/.claude/`. They're filtered out by chezmoi's apply step (some implicitly
-because they're at root and not deployable, the README explicitly via
-dotfiles' `.chezmoiignore`).
+The archive external's `include` pattern means **only `home/**` deploys**.
+Everything at the repo root (this `README.md`, `adrs/`, `.github/`,
+`.pre-commit-config.yaml`, `.markdownlint.yaml`, `.beads/`, `.gitignore`,
+the project-level `CLAUDE.md` and `AGENTS.md` from `bd init`) stays in the
+repo and never lands at `~/.claude/`. No `.chezmoiignore` needed for these
+— the archive filter handles it cleanly.
 
 ## Slash commands
 
@@ -227,10 +246,11 @@ repo holds the *content* that flows into `~/.claude/`.
 
 ## Files that must stay in sync
 
-`settings.json` (machine-readable) and `settings.json.md` (annotated
-companion documenting the *why* for each rule) **must change together**.
-JSON doesn't allow comments, so the `.md` file is how the rationale travels
-with the rules. CI fails the PR if one changes without the other.
+`home/settings.json` (machine-readable) and `home/settings.json.md`
+(annotated companion documenting the *why* for each rule) **must change
+together**. JSON doesn't allow comments, so the `.md` file is how the
+rationale travels with the rules. CI fails the PR if one changes without
+the other.
 
 ## Editing flow
 
