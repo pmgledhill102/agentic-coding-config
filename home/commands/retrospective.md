@@ -1,4 +1,4 @@
-Run a retrospective on this session and route findings into the right places: beads in the current repo, GitHub Issues for cross-repo work, and memory writes for durable lessons. Do **not** append to `~/.claude/retros.md` — that file is retired (see `paul-context/decisions/2026-05-03-beads-per-repo-issues-as-inbox.md`).
+Run a retrospective on this session: write a per-session journal entry to `paul-context/journal/`, route actionable findings into beads (current repo) or GitHub Issues (cross-repo), and capture durable lessons as memories. Do **not** append to `~/.claude/retros.md` — that file is retired (see `paul-context/decisions/2026-05-03-beads-per-repo-issues-as-inbox.md`).
 
 ## Steps
 
@@ -63,12 +63,13 @@ For each finding, decide what kind of artifact it should produce:
 
 | Kind | When to use | How to produce |
 | --- | --- | --- |
-| **Same-repo bead** | Action whose subject is the current repo | `bd create --title=... --type=<task/bug/feature> --priority=N` (priority 0-4; P2 is "do this soon", P3 is "next time we touch this", P4 is "backlog") |
-| **Cross-repo Issue** | Action whose subject is a *different* personal repo (the finding mentions e.g. dotfiles when retro is in agentic-coding-config) | `gh issue create --repo pmgledhill102/<target> --title=... --body=...` — picked up by `/start-session` there via `/bd-import-github-issues` |
-| **paul-context Issue** | Cross-cutting or no-clear-home findings | `gh issue create --repo pmgledhill102/paul-context --title=... --body=...` |
+| **Journal entry** | Always (unless the session was uneventful — then skip and stop). Captures the narrative thread, Continue items, and Observations that don't fit into actionable artifacts | `Write` to `~/dev/paul-context/journal/<YYYY-MM-DD>-<short-slug>.md`. Then `git -C ~/dev/paul-context add + commit + push origin main`. Tight format: H1 title, project/duration metadata, Continue / Stop / Created / Observations sections, ~30-50 lines |
+| **Same-repo bead** | Action whose subject is the current repo | `bd create --title=... --type=<task/bug/feature> --priority=N` (priority 0-4; P2 is "do this soon", P3 is "next time we touch this", P4 is "backlog"). **Body MUST include**: "From retro: paul-context/journal/<file>.md" |
+| **Cross-repo Issue** | Action whose subject is a *different* personal repo (the finding mentions e.g. dotfiles when retro is in agentic-coding-config) | `gh issue create --repo pmgledhill102/<target> --title=... --body=...` — picked up by `/start-session` there via `/bd-import-github-issues`. **Body MUST include** the journal cross-reference |
+| **paul-context Issue** | Cross-cutting or no-clear-home findings | `gh issue create --repo pmgledhill102/paul-context --title=... --body=...`. **Body MUST include** the journal cross-reference |
 | **Memory write** | Durable lesson that should auto-load on future sessions | `Write` to `~/.claude/projects/<project>/memory/<slug>.md` with frontmatter, then `Edit` `MEMORY.md` index |
 | **Settings change** | Permission to add/move, hook to register, env var to set | Recommend invoking `/update-config` (the harness skill); or, if simple, propose the exact edit |
-| **Observation only** | Something noted but not actionable ("everything went smoothly") | No artifact; mention in the summary, that's enough |
+| **Observation only** | Something noted but not actionable ("everything went smoothly") | No artifact; mention in the journal's Observations section |
 
 ### 4. Routing heuristics for "which repo?"
 
@@ -81,20 +82,21 @@ When a finding clearly mentions a target, route there. Otherwise apply this defa
 
 ### 5. Propose
 
-Show the user a single table of proposed artifacts. **Do not create anything yet.** Format:
+Show the user a single table of proposed artifacts. **Do not create anything yet.** The journal entry is **always row 1** unless the session was uneventful (in which case the table has just one observation row and the flow stops). Format:
 
 ```text
 Proposed retrospective output:
 
-#  Kind        Where                       Title / Memory key                                Priority
-1  bead        <current repo>              Add git-filter-repo to Brewfile                  P4 task
-2  issue       pmgledhill102/dotfiles      Document the bd-dolt-push pre-commit conflict    —
-3  memory      feedback                    bd-dolt-push hook bypass workaround              —
-4  settings    /update-config              Allow `Bash(rg --json *)` (read-only)            —
-5  observation —                           Session was clean overall, no friction worth     —
-                                           encoding
+#  Kind        Where                                Title / Memory key / Slug                 Priority
+1  journal     paul-context/journal/                2026-05-03-personal-infra-split.md         —
+2  memory      feedback                             chezmoi-externals-git-repo-vs-archive      —
+3  bead        <current repo>                       File upstream bd issue: pre-commit + dolt  P3 task
+                                                    push conflict
+4  issue       pmgledhill102/dotfiles               Document chezmoi-update lag for externals  —
+5  settings    /update-config                       Allow `Bash(rg --json *)` (read-only)      —
+6  observation —                                    Session was clean overall                  —
 
-Reply 'yes' to create all, override per-item ('1: priority=2, type=bug'),
+Reply 'yes' to create all, override per-item ('3: priority=2, type=bug'),
 'skip <n>' to drop, or 'cancel' to abort.
 ```
 
@@ -102,14 +104,48 @@ Wait for explicit confirmation. Don't proceed on ambiguous input.
 
 ### 6. Execute
 
-For each confirmed artifact:
+**Order matters**: write the journal **first** so subsequent beads/issues can reference its path. Then create everything else.
 
-- **bead** (same-repo): `bd create --title="..." --description="..." --type=... --priority=...` — capture the new ID for the summary.
-- **issue** (cross-repo): `gh issue create --repo pmgledhill102/<repo> --title="..." --body="..."` — capture the URL.
-- **memory**: Write the memory file with proper frontmatter (`name`, `description`, `type` of `user|feedback|project|reference`), then Edit `MEMORY.md` to add a one-line index entry. Follow the conventions in the parent CLAUDE.md auto-memory section.
-- **settings**: invoke `/update-config` for non-trivial changes; for a single `allowedTools` addition, propose the exact diff and apply if confirmed.
+1. **journal** (always first):
+   - `Write` `~/dev/paul-context/journal/<YYYY-MM-DD>-<slug>.md` with the format under "Journal entry format" below.
+   - `git -C ~/dev/paul-context add journal/<file>.md`
+   - `git -C ~/dev/paul-context commit -m "journal: <YYYY-MM-DD> <slug>"` (paul-context has no branch protection — direct commit to main is the convention)
+   - `git -C ~/dev/paul-context push origin main`
+   - Capture the relative path `paul-context/journal/<file>.md` for cross-references.
+2. **memory**: Write the memory file with proper frontmatter (`name`, `description`, `type` of `user|feedback|project|reference`), then Edit `MEMORY.md` to add a one-line index entry. Follow the conventions in the parent CLAUDE.md auto-memory section.
+3. **bead** (same-repo): `bd create --title="..." --description="..." --type=... --priority=...`. Description **MUST** include `From retro: paul-context/journal/<file>.md` near the top. Capture the new ID for the summary.
+4. **issue** (cross-repo): `gh issue create --repo pmgledhill102/<repo> --title="..." --body="..."`. Body **MUST** include `From retro: paul-context/journal/<file>.md`. Capture the URL.
+5. **settings**: invoke `/update-config` for non-trivial changes; for a single `allowedTools` addition, propose the exact diff and apply if confirmed.
 
 If any single create fails, surface the error and continue with the rest. Don't roll back successful artifacts on partial failure.
+
+### 6a. Journal entry format
+
+```markdown
+# YYYY-MM-DD — <session summary>
+
+**Project**: <repo or context>
+**Duration**: <approximate>
+**Beads created/closed this session**: <list, or "none">
+
+## Continue
+- <validated patterns — what worked, worth repeating>
+
+## Stop
+- <anti-patterns observed — what to avoid next time>
+- (cite existing memory if already captured: `feedback_xxx.md`)
+
+## Created from this retro
+- Memory: `<slug>.md` — <one-line summary>
+- Bead: <repo> — <bead title> (<priority>)
+- Issue: <repo> — <issue title> (<URL>)
+
+## Observations
+- <session-level notes that don't fit the above — design decisions made,
+  pivots that landed well, things that surprised>
+```
+
+Tight is good — aim for 30-50 lines. Skip sections that are empty (don't write `## Continue\n(none)`, just omit).
 
 ### 7. Do NOT write to retros.md
 
@@ -122,6 +158,7 @@ Print a compact wrap-up:
 ```text
 Retrospective complete.
 
+  Journal:                    paul-context/journal/2026-05-03-foo.md (pushed)
   Beads created (here):       3 — paul-context-abc, paul-context-def, paul-context-ghi
   Issues raised cross-repo:   2 — github.com/.../issues/14, github.com/.../issues/15
   Memories saved:             1 — feedback_xyz.md
@@ -144,12 +181,15 @@ Next /start-session in the cross-repo'd repos will sweep the new Issues into bea
 - If the session was uneventful with no notable friction, say so briefly in step 5's table as a single observation row, and stop. Don't manufacture artifacts.
 - Reference specific errors, file paths, and bead IDs in artifact descriptions where relevant.
 
-## What changed from the previous version
+## What changed from the previous versions
 
-This command used to append a markdown entry to `~/.claude/retros.md`. That flow is retired because:
+This command used to append a markdown entry to `~/.claude/retros.md` (the original flow), then was rewritten to output beads/Issues only without any journal (rev 1 of the new flow), then revised to include a per-session journal in `paul-context` (current). The final shape:
 
-- **Sandbox-agent reachability**: remote Claude Code sandboxes can't see local files like `~/.claude/retros.md`. Beads + GitHub Issues are network-reachable.
-- **Single-master-file decay**: a chronological journal that nothing else reads becomes a write-only log. Beads/Issues integrate with the rest of the work-tracking flow.
-- **Cross-repo work needs the right home**: an action surfaced during a `dotfiles` retro that affects `agentic-coding-config` should land in *that* repo's tracker, not in a single shared file.
+- **Sandbox-agent reachable**: beads + GitHub Issues are network-reachable, and `paul-context/journal/` is a private git repo accessible via `gh` from anywhere.
+- **Per-entry, not single-master**: each retro produces a dated, slugged file in `paul-context/journal/`. The original `retros.md` decayed because it was one file containing everything. Per-entry files survive long-term scrolling.
+- **Privacy gives candour**: `paul-context` is private, so retros can be honest ("got stuck", "almost shipped a broken design") without self-censorship that public agentic-coding-config would force.
+- **Different layers**: agentic-coding-config is *what I configure*; the journal is *how I reflected on using it*. Reflections live with personal context, not tool config.
+- **Cross-repo actions land in the right tracker**: an action surfaced during a `dotfiles` retro that affects `agentic-coding-config` becomes an Issue/bead *there*, with a backlink to the journal entry in `paul-context`.
+- **paul-context has no branch protection**: direct commit + push to `main`. No PR overhead per retro.
 
-See `paul-context/decisions/2026-05-03-beads-per-repo-issues-as-inbox.md` for the design rationale, and `paul-context/decisions/2026-05-03-personal-infra-public-private-split.md` for the wider three-repo architecture this fits into.
+See `paul-context/decisions/2026-05-03-beads-per-repo-issues-as-inbox.md` for the work-tracking architecture, and `paul-context/decisions/2026-05-03-personal-infra-public-private-split.md` for the wider three-repo layout this fits into.
