@@ -6,7 +6,7 @@ This command runs in a single phase. It mirrors `/end-session`'s shape — paral
 
 Every step falls into one of three tiers — keep this in mind when adding or editing steps:
 
-- **Tier 1 — auto-act, no prompt**: safe, reversible, expected. Examples: `git fetch --prune`, `git pull --rebase` on the default branch, `bd dolt pull`, `bd preflight`, read-only surface listings.
+- **Tier 1 — auto-act, no prompt**: safe, reversible, expected. Examples: `git fetch --prune`, `git pull --rebase` on the default branch, `bd dolt pull`, read-only surface listings.
 - **Tier 2 — auto-act behind one batched confirmation**: predictable but should be a conscious choice. Example: chaining into `/bd-import-github-issues` when unmigrated GitHub issues exist.
 - **Tier 3 — surface only, user drives**: needs per-item judgment. Examples: a feature branch trailing `main`, in-progress beads left mid-flight from the last session, red `main` CI.
 
@@ -26,7 +26,7 @@ If the exit code is non-zero (or stdout is not `true`), print a single-line warn
 
 ### 1. Gather state (Tier 1 — one tool call)
 
-Run the parallel gather script. It does `git fetch --all --prune --tags` first, resolves the repo's default branch, then fans out all read-only queries (local branch state, `main` CI, beads remote/preflight/ready/in-progress, unmigrated GH issues) in parallel.
+Run the parallel gather script. It does `git fetch --all --prune --tags` first, resolves the repo's default branch, then fans out all read-only queries (local branch state, `main` CI, beads remote/ready/in-progress, unmigrated GH issues) in parallel. The script compacts each section's output to keep model-visible context cost low: `fetch`'s body is suppressed on success, `main_ci` is parsed in-script to one line per workflow, and the previously-emitted `bd_preflight` section is gone (its `bd preflight` template output was Go-specific and not actionable on most projects).
 
 ```sh
 ~/.claude/bin/start-session-gather-state
@@ -36,12 +36,11 @@ Output is a sectioned stream. Each section starts with `===<name> (exit=<N>)===`
 
 | Section | Drives step(s) | Notes on exit code |
 | --- | --- | --- |
-| `fetch` | 2 (folded in) | Non-zero = network/auth issue — surface before proceeding. |
+| `fetch` | 2 (folded in) | Body is empty on success (exit=0). Non-zero = network/auth issue — body contains the error; surface before proceeding. |
 | `local_state` | 3, 9 | Includes branch, dirty/clean, ahead/behind upstream, ahead/behind `origin/<default>`. |
-| `main_ci` | 7 | Content `gh-unavailable` = silent skip. Non-zero with other content = real error. |
+| `main_ci` | 7 | Content `gh-unavailable` / `jq-unavailable` = silent skip. Otherwise: first line is `workflows=<N>`; subsequent lines are `<workflow-name>=<conclusion-or-status>@<short-sha>` (one per most-recent run per workflow on `<default>`). Non-zero with other content = real error. |
 | `gh_unmigrated` | 8 | Content `gh-unavailable` or `jq-unavailable` = silent skip. First line is `count=<N>`; remaining lines are `#<n> <title>` per unmigrated issue. |
 | `bd_remote` | 4 | Section absent if no beads workspace. Empty content = no remote configured (single-machine setup). |
-| `bd_preflight` | 6 | Section absent if no beads workspace. Non-zero = preflight flagged something — surface. |
 | `bd_ready` | 9 | Section absent if no beads workspace. Plain `bd ready` output — pick the top 5 entries for the brief. |
 | `bd_in_progress` | 9 | Section absent if no beads workspace. Mirrors `/end-session`'s `bd_progress` section. |
 | `bd_inprogress_delivered` | 5 | Section absent if no beads workspace. Empty content = nothing to auto-close. Each line is `<id>\|<short-sha>\|<subject>` for an in_progress bead whose ID was referenced by a merged commit on `<default>` (`Closes <id>` / `Fixes <id>`). |
@@ -55,7 +54,7 @@ Rules for interpreting exit codes:
 
 ### 2. Surface fetch result (Tier 1)
 
-Folded into step 1's gather. The `fetch` section contains the output. If its exit code is non-zero, halt the rest of the phase and surface the error — every downstream step assumes a successful fetch.
+Folded into step 1's gather. On success, the `fetch` section is empty (exit=0, no body) — silent pass. If its exit code is non-zero, the body contains the error output; halt the rest of the phase and surface it — every downstream step assumes a successful fetch.
 
 ### 3. Sync the default branch (Tier 1 / Tier 3)
 
@@ -110,19 +109,19 @@ If the section is absent, empty, or nothing matched: skip silently. The session 
 
 False-positive risk is low: a stray `Closes <bead-id>` reference in a non-closing context would trigger a spurious close. If hit, recovery is `bd reopen <id>` — Tier 1 acceptable in exchange for not having to manually close every shipped bead.
 
-### 6. Beads preflight (Tier 1 — surface)
+### 6. (removed) — Beads preflight is no longer collected
 
-From gather section `bd_preflight` (absent if no beads workspace). Surface output verbatim. Includes lint, stale, orphans checks — all read-only. Carry the result forward into the session brief.
+`bd preflight`'s output is a Go-specific PR-readiness checklist (`go test`, `golangci-lint`, `gofmt`, …) that produces no useful signal on non-Go projects and was largely noise in the brief. If you want to run those checks for a specific repo where they apply, invoke `bd preflight --check` directly outside `/start-session`.
 
 ### 7. `main` CI status (Tier 1 — surface)
 
-From gather section `main_ci`. Parse the most recent run per workflow:
+From gather section `main_ci`. The script has already deduplicated to one most-recent run per workflow on `<default>` and emitted compact lines: `<workflow-name>=<conclusion-or-status>@<short-sha>`.
 
-- **Failed**: flag in the session brief with workflow name + URL. A red default branch is the loudest "not clean" signal — call it out before the user starts new work.
-- **In progress**: list with elapsed time.
-- **All green**: silent (the brief reports "green").
+- **Any line where `<conclusion-or-status>` is `failure` / `cancelled` / `timed_out`**: flag in the session brief with workflow name + short-sha. A red default branch is the loudest "not clean" signal — call it out before the user starts new work.
+- **Any line where `<conclusion-or-status>` is `in_progress`**: list with the short-sha. (Elapsed time is no longer captured — gather doesn't track createdAt in the compact form. If you need it, run `gh run list` directly.)
+- **All `success`**: silent (the brief reports "green").
 
-If the section content is `gh-unavailable` or the repo has no remote, skip silently and report `n/a` in the brief.
+If the section content is `gh-unavailable` / `jq-unavailable` or the repo has no remote, skip silently and report `n/a` in the brief.
 
 ### 8. Unmigrated GitHub Issues (Tier 2 — prompt)
 
@@ -162,7 +161,6 @@ Ready to pick up next:
 Needs attention:
   • <unmigrated GH issues: N>      (omit when 0 / n/a)
   • <main CI red on workflow X>    (omit when green)
-  • <bd preflight flagged …>       (omit when clean)
   • <feature branch behind main by N>          (omit when on default, even, or auto-switched)
   • <branch upstream gone but tree dirty>      (omit unless that case fires)
 ───────────────────────────────────────────────
