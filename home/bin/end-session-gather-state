@@ -97,6 +97,30 @@ if [ -f .beads/metadata.json ]; then
     run_section bd_preflight bd preflight
 fi
 
+# shellcheck disable=SC2016
+run_sh stale_claude_files '
+    # Detect files in ~/.claude/commands or ~/.claude/bin that chezmoi
+    # does not know about — typical drift after a slash command rename
+    # (chezmoi only adds/updates; never removes from target unless exact=true).
+    if ! command -v chezmoi >/dev/null 2>&1; then
+        echo "chezmoi-unavailable"
+        exit 1
+    fi
+    managed=$(mktemp)
+    actual=$(mktemp)
+    trap "rm -f $managed $actual" EXIT
+    chezmoi managed --include=files 2>/dev/null \
+      | grep -E "^\.claude/(commands|bin)/" \
+      | sort > "$managed"
+    for d in commands bin; do
+        [ -d "$HOME/.claude/$d" ] || continue
+        find "$HOME/.claude/$d" -mindepth 1 -maxdepth 1 -type f \
+          | sed "s|^$HOME/||"
+    done | sort > "$actual"
+    # Output: each line is a stale path under .claude/. Empty = nothing stale.
+    comm -23 "$actual" "$managed"
+'
+
 wait
 progress "all sections complete"
 
@@ -114,6 +138,6 @@ printf '===fetch (exit=%s)===\n' "$FETCH_EXIT"
 cat "$TMP/fetch.out"
 printf '\n'
 
-for s in local_state stashes worktrees merged_brs main_ci open_prs bd_progress bd_preflight; do
+for s in local_state stashes worktrees merged_brs main_ci open_prs bd_progress bd_preflight stale_claude_files; do
     [ -f "$TMP/$s.exit" ] && emit "$s"
 done

@@ -39,12 +39,13 @@ Output is a sectioned stream. Each section starts with `===<name> (exit=<N>)===`
 | `fetch` | 2 (folded in) | Non-zero = network/auth issue — surface before proceeding. |
 | `local_state` | 1, 4 | Dirty tree + unpushed commits for step 4. |
 | `stashes` | 9 | Exit 0 even when empty. |
-| `worktrees` | 12 | Exit 0 even when empty. |
+| `worktrees` | 13 | Exit 0 even when empty. |
 | `merged_brs` | 6 Batch A | Script appends `\|\| true` — exit 0 even if no matches. |
 | `main_ci` | 3 | Content `gh-unavailable` = silent skip. Non-zero with other content = real error. |
 | `open_prs` | 8 | Same skip convention as `main_ci`. |
 | `bd_progress` | 10 | Section absent if no beads workspace. All entries are `in_progress` by definition (that's the filter) — see step 10 for symbol-reading rules. |
 | `bd_preflight` | 11 | Non-zero = preflight flagged something — surface its output. |
+| `stale_claude_files` | 12 | Content `chezmoi-unavailable` = silent skip. Empty body (exit=0) = nothing stale. Otherwise: one path per line under `.claude/commands/` or `.claude/bin/` that's present locally but not tracked by chezmoi. |
 
 Rules for interpreting exit codes:
 
@@ -149,18 +150,37 @@ From gather section `bd_progress` (absent if no beads workspace). The section is
 
 From gather section `bd_preflight` (absent if no beads workspace). Surface output. Includes lint, stale, orphans checks — all read-only.
 
-### 12. Other worktrees (Tier 3 — surface)
+### 12. Stale Claude commands/bin files (Tier 1 — surface)
+
+From gather section `stale_claude_files` (silently skipped when `chezmoi` isn't on PATH).
+
+chezmoi only adds and updates target files; it never removes them when source files are renamed or deleted (unless the directory is configured `exact = true`, which has its own destructive risk for user-added files). Result: when a slash command is renamed in the source repo (e.g. `bd-migrate-embedded.md` → `bd-modernize.md`), the OLD file lingers at `~/.claude/commands/` on every machine that ever applied a version where it was present. Claude Code still sees the stale file and lists it as a slash command, so the drift compounds across versions.
+
+The gather computes `chezmoi managed` minus actual contents under `~/.claude/commands/` and `~/.claude/bin/`, and emits any extras (one path per line). Surface them with a one-line `rm` suggestion the user can paste:
+
+```text
+3 stale file(s) under ~/.claude/:
+  ~/.claude/commands/bd-migrate-embedded.md
+  ~/.claude/commands/old-thing.md
+  ~/.claude/bin/legacy-script
+
+Suggested: rm ~/.claude/commands/bd-migrate-embedded.md ~/.claude/commands/old-thing.md ~/.claude/bin/legacy-script
+```
+
+Don't `rm` automatically — the user might be testing an unstaged file, or these may belong to another tool. The check is "fast" (one `chezmoi managed` + two `find`s) so it runs unconditionally per session.
+
+### 13. Other worktrees (Tier 3 — surface)
 
 From gather section `worktrees`. If more than one entry, list non-primary worktrees with their branch. If any have uncommitted work, flag with `*`. Don't remove anything.
 
-### 13. Background processes
+### 14. Background processes
 
 Split by origin:
 
 - **Spawned by Claude in this session** (via `run_in_background`): list. Reap any that have completed (Tier 1 — auto). If still running and the task seems incomplete, surface before reaping.
 - **Started by the user / pre-existing**: surface only (Tier 3). Don't kill.
 
-### 14. Beads sync (Tier 1)
+### 15. Beads sync (Tier 1)
 
 If `.beads/metadata.json` exists:
 
@@ -170,7 +190,7 @@ bd dolt push
 
 If this fails, surface the error but don't block the phase — the user can retry manually.
 
-### 15. Phase 1 summary
+### 16. Phase 1 summary
 
 Print a concise summary. Each line says "none" loudly when clean, so noise scales with actual mess:
 
@@ -183,6 +203,7 @@ Print a concise summary. Each line says "none" loudly when clean, so noise scale
 - Stashes outstanding: `<count, or "none">`
 - Beads in_progress (yours): `<count, or "none">`
 - Beads preflight: `<pass/issues>`
+- Stale `~/.claude/` files: `<count, or "none" / "n/a (no chezmoi)">`
 - Other worktrees: `<count, or "none">`
 - Background processes (reaped): `<count>`
 - Background processes (user-owned, surfaced): `<count>`
