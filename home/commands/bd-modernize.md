@@ -229,6 +229,20 @@ If the push fails with a credential-prompt error, that's the Dolt v1.81.10 bug �
 
 If the push fails with `fatal: this operation must be run in a work tree`, Step 5c didn't catch all the cache hooks — re-run the `find … -name hooks -exec rm -rf` in 5c, then retry.
 
+If the push fails with `Error 1105: unknown push error; no common ancestor`, the local Dolt DB just created by `bd init --from-jsonl` (Step 4b) has a fresh `repository_id` with no shared history with the remote's existing `refs/dolt/data`. This happens whenever the remote was already seeded — typical for any project that's been on the modern target for a while and is now being re-modernised. Recovery (worked on `agentic-coding-config` 2026-05-04):
+
+```sh
+rm -rf .beads/embeddeddolt .beads/dolt    # discard local DB; .beads/issues.jsonl is untouched
+bd bootstrap                               # re-clone from remote (data-identical, just different history)
+```
+
+Then **two follow-ups** before retrying push:
+
+1. **Identity mismatch.** `bd bootstrap` clones the database with the remote's canonical `_project_id` but does **not** update `.beads/metadata.json` — bd will refuse all reads/writes with `workspace identity mismatch detected`. Edit `.beads/metadata.json` `project_id` to match the value bd shows in the error message (it prints both: the metadata.json one and the database `_project_id`). The database value is the canonical one.
+2. **Cache hooks re-created.** `bd bootstrap` re-creates the `.beads/embeddeddolt/.../.dolt/git-remote-cache/<hash>/repo.git/hooks/` directory that Step 5c removed earlier in the run. Re-run Step 5c's `find .beads/embeddeddolt -type d -name hooks -exec rm -rf {} +` before retrying push, otherwise it'll fail with the work-tree error covered above.
+
+Then `bd dolt push` is a clean no-op (local now matches remote). The skill could in principle pre-flight-detect this case (remote has populated `refs/dolt/data` → prefer `bd bootstrap` over `bd init --from-jsonl` at Step 4b); not implemented today.
+
 ### 5e. Disable JSONL auto-staging
 
 Append (or set) `export.git-add: false` in `.beads/config.yaml`. Leave `export.auto: true` (default) so the file stays fresh on disk for IDE visibility — it just never gets staged.
