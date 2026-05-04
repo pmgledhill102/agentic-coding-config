@@ -103,12 +103,28 @@ run_sh local_state '
 
 # shellcheck disable=SC2016
 run_sh main_ci '
-    if command -v gh >/dev/null 2>&1; then
-        gh run list --branch "$DEFAULT_BRANCH" --limit 10 \
-            --json status,conclusion,name,headSha,createdAt,url
-    else
+    if ! command -v gh >/dev/null 2>&1; then
         echo "gh-unavailable"
+        exit 1
     fi
+    if ! command -v jq >/dev/null 2>&1; then
+        echo "jq-unavailable"
+        exit 1
+    fi
+    # Parse to most-recent run per workflow on $DEFAULT_BRANCH.
+    # Output:
+    #   workflows=<N>
+    #   <name>=<conclusion-or-status>@<short-sha>
+    # On clean-and-green sessions this is 1-3 lines instead of a 10-element JSON dump.
+    gh run list --branch "$DEFAULT_BRANCH" --limit 20 \
+        --json status,conclusion,name,headSha,createdAt \
+      | jq -r '\''
+          group_by(.name)
+          | map(sort_by(.createdAt) | last)
+          | sort_by(.name) as $w
+          | "workflows=\($w | length)",
+            ($w[] | "\(.name)=\(.conclusion // .status)@\(.headSha[0:7])")
+        '\''
 '
 
 # shellcheck disable=SC2016
@@ -136,7 +152,6 @@ run_sh gh_unmigrated '
 
 if [ -f .beads/metadata.json ]; then
     run_section bd_remote bd dolt remote list
-    run_section bd_preflight bd preflight
     run_section bd_ready bd ready
     run_section bd_in_progress bd list --status=in_progress
     # shellcheck disable=SC2016
@@ -177,9 +192,13 @@ emit() {
 }
 
 printf '===fetch (exit=%s)===\n' "$FETCH_EXIT"
-cat "$TMP/fetch.out"
+# Suppress verbose fetch output on success (it's normal "From <remote>..." chatter
+# that the model doesn't need); on failure, dump it so the agent can diagnose.
+if [ "$FETCH_EXIT" -ne 0 ]; then
+    cat "$TMP/fetch.out"
+fi
 printf '\n'
 
-for s in local_state main_ci gh_unmigrated bd_remote bd_preflight bd_ready bd_in_progress bd_inprogress_delivered; do
+for s in local_state main_ci gh_unmigrated bd_remote bd_ready bd_in_progress bd_inprogress_delivered; do
     [ -f "$TMP/$s.exit" ] && emit "$s"
 done
