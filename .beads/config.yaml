@@ -54,3 +54,7 @@
 # - github.repo
 
 sync.remote: "git+ssh://git@github.com/pmgledhill102/agentic-coding-config.git"
+
+# Disable JSONL auto-staging — file stays fresh on disk for IDE visibility
+# but never enters commits (source of truth is Dolt + refs/dolt/data on origin).
+export.git-add: false

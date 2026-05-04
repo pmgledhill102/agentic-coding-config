@@ -3,3 +3,6 @@
 .dolt/
 *.db
 .beads-credential-key
+
+# Beads exports — source of truth is Dolt + refs/dolt/data on origin.
+.beads/issues.jsonl
