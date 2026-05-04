@@ -123,10 +123,10 @@ Proceed with the above mapping?
 
 ### Step 4: Create the beads
 
-**Don't pass descriptions inline.** GitHub bodies routinely contain quotes, apostrophes, code fences, multi-line shell output — escaping all that into a single `--description="..."` argument is brittle and breaks differently each time. Instead:
+**Don't pass descriptions inline.** GitHub bodies routinely contain quotes, apostrophes, code fences, multi-line shell output — escaping all that into a single `--description="..."` argument is brittle and breaks differently each time. `$(cat …)` substitution is a partial fix but can still trip Claude Code's harness re-prompt heuristic by surfacing multi-line content in the rendered command. Use `bd create --body-file=PATH` instead — bd reads the description directly from the file and the command line stays a single static line that matches the `Bash(bd *)` glob rule cleanly.
 
 1. For each confirmed candidate, write the full description to a temp file using the `Write` tool: `/tmp/bead-desc-<gh_number>.md`. The file content is plain text, no shell-escaping needed.
-2. Then run `bd create` with `--description="$(cat /tmp/bead-desc-<gh_number>.md)"`.
+2. Then run `bd create` with `--body-file=/tmp/bead-desc-<gh_number>.md` — no shell substitution involved.
 
 Description file template:
 
@@ -144,7 +144,7 @@ Then for each confirmed candidate, in order:
 ```sh
 bd create \
   --title="<decoded gh title>" \
-  --description="$(cat /tmp/bead-desc-<n>.md)" \
+  --body-file=/tmp/bead-desc-<n>.md \
   --type=<inferred or overridden> \
   --priority=<inferred or overridden>
 ```
