@@ -6,7 +6,7 @@ This command runs in two phases. Phase 1 is the tidy-up (mix of auto-actions and
 
 Every step in Phase 1 falls into one of three tiers — keep this in mind when adding or editing steps:
 
-- **Tier 1 — auto-act, no prompt**: safe, reversible, expected. Examples: `git fetch --prune`, `git pull --rebase`, `bd dolt push`, `bd preflight`, read-only surface listings.
+- **Tier 1 — auto-act, no prompt**: safe, reversible, expected. Examples: `git fetch --prune`, `git pull --rebase`, `bd dolt push`, read-only surface listings.
 - **Tier 2 — auto-act behind one batched confirmation**: destructive but predictable, judgment is yes/no for the whole list. Examples: deleting merged branches, deleting squash-merged branches, pushing `main` if ahead.
 - **Tier 3 — surface only, user drives**: needs per-item judgment, or affects shared state in ways one y/n can't capture. Examples: open PRs awaiting merge, `bd in_progress` issues, stashes, user-started background processes.
 
@@ -26,7 +26,7 @@ If the exit code is non-zero (or stdout is not `true`), print a single-line warn
 
 ### 1. Gather state (Tier 1 — one tool call)
 
-Run the parallel gather script. It does `git fetch --all --prune --tags` first, then fans out all read-only queries (status/branch/log, stashes, worktrees, merged branches, `main` CI, open PRs, beads in-progress, beads preflight) in parallel.
+Run the parallel gather script. It does `git fetch --all --prune --tags` first, then fans out all read-only queries (status/branch/log, stashes, worktrees, merged branches, `main` CI, open PRs, beads in-progress) in parallel.
 
 ```sh
 ~/.claude/bin/end-session-gather-state
@@ -44,8 +44,7 @@ Output is a sectioned stream. Each section starts with `===<name> (exit=<N>)===`
 | `main_ci` | 3 | Content `gh-unavailable` = silent skip. Non-zero with other content = real error. |
 | `open_prs` | 8 | Same skip convention as `main_ci`. |
 | `bd_progress` | 10 | Section absent if no beads workspace. All entries are `in_progress` by definition (that's the filter) — see step 10 for symbol-reading rules. |
-| `bd_preflight` | 11 | Non-zero = preflight flagged something — surface its output. |
-| `stale_claude_files` | 12 | Content `chezmoi-unavailable` = silent skip. Empty body (exit=0) = nothing stale. Otherwise: one path per line under `.claude/commands/` or `.claude/bin/` that's present locally but not tracked by chezmoi. |
+| `stale_claude_files` | 11 | Content `chezmoi-unavailable` = silent skip. Empty body (exit=0) = nothing stale. Otherwise: one path per line under `.claude/commands/` or `.claude/bin/` that's present locally but not tracked by chezmoi. |
 
 Rules for interpreting exit codes:
 
@@ -146,11 +145,7 @@ From gather section `bd_progress` (absent if no beads workspace). The section is
 - A `●` appearing later in the line (e.g., inside `[● P2]`) is a **priority indicator**, not a blocked-status flag. The bd legend printed at the bottom of `bd list` uses `●` for "blocked" and reuses the same glyph for priority — that collision is the trap.
 - If you want to know what's actually blocked, run `bd blocked` — don't infer from later-line glyphs.
 
-### 11. Beads preflight (Tier 1)
-
-From gather section `bd_preflight` (absent if no beads workspace). Surface output. Includes lint, stale, orphans checks — all read-only.
-
-### 12. Stale Claude commands/bin files (Tier 1 — surface)
+### 11. Stale Claude commands/bin files (Tier 1 — surface)
 
 From gather section `stale_claude_files` (silently skipped when `chezmoi` isn't on PATH).
 
@@ -169,18 +164,18 @@ Suggested: rm ~/.claude/commands/bd-migrate-embedded.md ~/.claude/commands/old-t
 
 Don't `rm` automatically — the user might be testing an unstaged file, or these may belong to another tool. The check is "fast" (one `chezmoi managed` + two `find`s) so it runs unconditionally per session.
 
-### 13. Other worktrees (Tier 3 — surface)
+### 12. Other worktrees (Tier 3 — surface)
 
 From gather section `worktrees`. If more than one entry, list non-primary worktrees with their branch. If any have uncommitted work, flag with `*`. Don't remove anything.
 
-### 14. Background processes
+### 13. Background processes
 
 Split by origin:
 
 - **Spawned by Claude in this session** (via `run_in_background`): list. Reap any that have completed (Tier 1 — auto). If still running and the task seems incomplete, surface before reaping.
 - **Started by the user / pre-existing**: surface only (Tier 3). Don't kill.
 
-### 15. Beads sync (Tier 1)
+### 14. Beads sync (Tier 1)
 
 If `.beads/metadata.json` exists:
 
@@ -190,7 +185,7 @@ bd dolt push
 
 If this fails, surface the error but don't block the phase — the user can retry manually.
 
-### 16. Phase 1 summary
+### 15. Phase 1 summary
 
 Print a concise summary. Each line says "none" loudly when clean, so noise scales with actual mess:
 
@@ -202,7 +197,6 @@ Print a concise summary. Each line says "none" loudly when clean, so noise scale
 - Open PRs needing action: `<count by category, or "none">`
 - Stashes outstanding: `<count, or "none">`
 - Beads in_progress (yours): `<count, or "none">`
-- Beads preflight: `<pass/issues>`
 - Stale `~/.claude/` files: `<count, or "none" / "n/a (no chezmoi)">`
 - Other worktrees: `<count, or "none">`
 - Background processes (reaped): `<count>`
