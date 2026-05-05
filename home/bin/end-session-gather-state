@@ -94,7 +94,6 @@ run_sh open_prs '
 
 if [ -f .beads/metadata.json ]; then
     run_section bd_progress bd list --status=in_progress
-    run_section bd_preflight bd preflight
 fi
 
 # shellcheck disable=SC2016
@@ -138,6 +137,6 @@ printf '===fetch (exit=%s)===\n' "$FETCH_EXIT"
 cat "$TMP/fetch.out"
 printf '\n'
 
-for s in local_state stashes worktrees merged_brs main_ci open_prs bd_progress bd_preflight stale_claude_files; do
+for s in local_state stashes worktrees merged_brs main_ci open_prs bd_progress stale_claude_files; do
     [ -f "$TMP/$s.exit" ] && emit "$s"
 done
