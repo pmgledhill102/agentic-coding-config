@@ -199,6 +199,7 @@ manually (see Never Allow). Closing PRs/issues and `gh api` (which can
 POST/DELETE) require prompting. These entries will be retired once the
 GitHub MCP server is validated — see GitHub MCP section below.
 
+- `Bash(gh issue create --repo pmgledhill102/*)` — narrower than `gh issue create *`. Restricts auto-approval to issues filed against the user's own repos. **Caveat**: Claude Code's Bash matcher is literal-prefix, so `--repo pmgledhill102/<name>` must be the **first flag** after `gh issue create` for the rule to match. Putting `--title` or `--body-file` first will fall back to manual approval. Symmetric `gh issue comment/edit/close --repo pmgledhill102/*` rules are deliberately deferred — they share the same shape and can be added when the friction surfaces.
 - `Bash(gh issue list *)`
 - `Bash(gh issue view *)`
 - `Bash(gh pr checks *)`
@@ -548,6 +549,26 @@ run. Write/Edit access remains gated.
 
 - `Read(~/.claude/retros.md)`
 - `Read(~/.claude/settings.json)`
+
+### Write permissions (scratch space)
+
+`/tmp` on macOS is per-user, ephemeral, and the standard scratch space —
+nothing durable or shared lives there. The blast radius of allowing
+`Write` is "Claude can scribble in scratch space," which is exactly
+what scratch space is for.
+
+User-level CLAUDE.md forbids heredocs (`cat <<'EOF'`) and ANSI-C
+quoting in bash commands, so any multi-line content for `gh issue
+create --body-file`, `bd create --body-file=...`, etc. has to flow
+through a temp file. Auto-approving `Write(/tmp/**)` removes the
+double-prompt friction (one for the command, one for the temp file)
+that otherwise discourages the structured-body pattern.
+
+- `Write(/tmp/**)` — scratch space for staging long, structured content
+  (issue bodies, bead descriptions, etc.) before passing to a CLI via
+  `--body-file` or `$(cat ...)`. Restrict scope further to
+  `Write(/tmp/claude-*)` (with a naming-convention discipline) if the
+  broad rule ever feels uncomfortable.
 
 ## Never allow
 
