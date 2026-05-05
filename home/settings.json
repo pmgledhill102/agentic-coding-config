@@ -127,6 +127,7 @@
       "Bash(gcloud sql instances list *)",
       "Bash(gcloud storage cat *)",
       "Bash(gcloud storage ls *)",
+      "Bash(gh issue create --repo pmgledhill102/*)",
       "Bash(gh issue list *)",
       "Bash(gh issue view *)",
       "Bash(gh pr checks *)",
@@ -304,7 +305,8 @@
       "mcp__google-developer-knowledge__get_documents",
       "mcp__google-developer-knowledge__search_documents",
       "Read(~/.claude/retros.md)",
-      "Read(~/.claude/settings.json)"
+      "Read(~/.claude/settings.json)",
+      "Write(/tmp/**)"
     ]
   },
   "hooks": {
