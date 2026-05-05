@@ -15,6 +15,10 @@
 - Before pushing follow-up commits to a PR branch, always check the PR is still open via `mcp__github__pull_request_read` (method: "get"). The user often reviews and merges PRs via the GitHub UI while work continues — if already merged, create a new branch and PR instead
 - When multiple related changes span different concerns, ask the user whether to use one branch or separate branches before committing
 
+## Beads (bd)
+
+- **Prefer `bd-push-safe` over bare `bd dolt push`**: the shim at `~/.claude/bin/bd-push-safe` strips the cache hooks that `bd init` / `bd bootstrap` re-create from `init.templatedir`. On machines where dotfiles git-templates invoke the pre-commit framework, bare `bd dolt push` fails with `fatal: this operation must be run in a work tree`; `bd-push-safe` is a drop-in replacement that just works. Tracked upstream as `agentic-coding-config-o5w`; once that lands the shim becomes a no-op and can be removed.
+
 ## Commit & PR Style
 
 - Use multiple `-m` flags for multi-paragraph commit messages: `git commit -m "Title" -m "Body" -m "Co-Authored-By: ..."`
