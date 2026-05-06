@@ -94,6 +94,29 @@ run_sh open_prs '
 
 if [ -f .beads/metadata.json ]; then
     run_section bd_progress bd list --status=in_progress
+    # shellcheck disable=SC2016
+    run_sh bd_inprogress_delivered '
+        # For each in_progress bead, find any merged commit on main whose
+        # message contains "Closes <id>" or "Fixes <id>" (case-insensitive)
+        # — those signal the bead was delivered but never closed. Output:
+        #   <id>|<short-sha>|<subject>
+        # one per line. Empty output is fine (nothing to auto-close).
+        # Mirrors the same section in start-session-gather-state.
+        bd list --status=in_progress 2>/dev/null \
+            | grep -oE "[a-z][a-z0-9-]+-[a-z0-9]{3}" \
+            | sort -u \
+            | while read -r id; do
+                sha=$(git log main \
+                    --grep="closes\s*${id}" \
+                    --grep="fixes\s*${id}" \
+                    -i -1 --format="%H" 2>/dev/null)
+                if [ -n "$sha" ]; then
+                    short=$(git rev-parse --short "$sha" 2>/dev/null)
+                    subject=$(git log -1 --format="%s" "$sha" 2>/dev/null)
+                    echo "${id}|${short}|${subject}"
+                fi
+              done
+    '
 fi
 
 # shellcheck disable=SC2016
@@ -137,6 +160,6 @@ printf '===fetch (exit=%s)===\n' "$FETCH_EXIT"
 cat "$TMP/fetch.out"
 printf '\n'
 
-for s in local_state stashes worktrees merged_brs main_ci open_prs bd_progress stale_claude_files; do
+for s in local_state stashes worktrees merged_brs main_ci open_prs bd_progress bd_inprogress_delivered stale_claude_files; do
     [ -f "$TMP/$s.exit" ] && emit "$s"
 done

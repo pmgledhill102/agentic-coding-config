@@ -44,6 +44,7 @@ Output is a sectioned stream. Each section starts with `===<name> (exit=<N>)===`
 | `main_ci` | 3 | Content `gh-unavailable` = silent skip. Non-zero with other content = real error. |
 | `open_prs` | 8 | Same skip convention as `main_ci`. |
 | `bd_progress` | 10 | Section absent if no beads workspace. All entries are `in_progress` by definition (that's the filter) — see step 10 for symbol-reading rules. |
+| `bd_inprogress_delivered` | 9.5 | Section absent if no beads workspace. Empty content = nothing to auto-close. Each line is `<id>\|<short-sha>\|<subject>` for an in_progress bead whose ID was referenced by a merged commit on `main` (`Closes <id>` / `Fixes <id>`). Mirrors `/start-session`'s section of the same name. |
 | `stale_claude_files` | 11 | Content `chezmoi-unavailable` = silent skip. Empty body (exit=0) = nothing stale. Otherwise: one path per line under `.claude/commands/` or `.claude/bin/` that's present locally but not tracked by chezmoi. |
 
 Rules for interpreting exit codes:
@@ -135,9 +136,25 @@ Never auto-merge. List, link, move on.
 
 From gather section `stashes`. If non-empty, surface count + entries. Don't drop or apply anything.
 
+### 9.5. Auto-close delivered in_progress beads (Tier 1)
+
+From gather section `bd_inprogress_delivered` (absent if no beads workspace; empty if nothing matched). Each line is `<id>|<short-sha>|<subject>` — an `in_progress` bead whose ID was referenced by a merged commit on `main` with `Closes <id>` or `Fixes <id>` in the message.
+
+These are deliveries that landed in this session (or a recent prior one) but never had their bead closed. The PR was already reviewed and merged; closing the bead is bookkeeping, not a judgment call. Auto-close each one — no prompt:
+
+```sh
+bd close <id> --reason="Auto-closed by /end-session: shipped via <short-sha>"
+```
+
+Step 14 (`bd dolt push`) persists the closures. If the section is absent, empty, or nothing matched: skip silently. The Phase 1 summary shows a `Beads auto-closed (delivered)` line listing what was closed (omit when nothing was closed).
+
+This step duplicates `/start-session`'s step 5 logic so deliveries close at end-of-session rather than waiting for the next session start. Defense in depth: if the user shuts down without running `/start-session` next morning, the closure already lands. False-positive risk is low (a stray `Closes <bead-id>` in non-closing context); recovery is `bd reopen <id>`.
+
 ### 10. Beads in-progress check (Tier 3 — surface)
 
 From gather section `bd_progress` (absent if no beads workspace). The section is the output of `bd list --status=in_progress`, so **every entry is in_progress** — never report these as "blocked". Filter to issues claimed by the current user (assignee matches `git config user.email` or local username). Surface count + IDs/titles. User decides which to close — common forgetfulness pattern.
+
+**Note**: any beads auto-closed in step 9.5 won't appear here — they're already closed by the time this step runs. So this list is genuinely "still outstanding work", not "delivered but not bookkept".
 
 **Reading bd's symbols (don't conflate them):**
 
@@ -196,6 +213,7 @@ Print a concise summary. Each line says "none" loudly when clean, so noise scale
 - `main` CI status: `<green / running: N (<workflow names>) / FAILED: <workflow name + run URL>>`
 - Open PRs needing action: `<count by category, or "none">`
 - Stashes outstanding: `<count, or "none">`
+- Beads auto-closed (delivered): `<list of ids, or "none">`
 - Beads in_progress (yours): `<count, or "none">`
 - Stale `~/.claude/` files: `<count, or "none" / "n/a (no chezmoi)">`
 - Other worktrees: `<count, or "none">`
