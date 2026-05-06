@@ -4,9 +4,19 @@
 #
 # A squash-merge on GitHub rewrites history, so `git branch --merged` does not
 # list them. After the remote branch is deleted they show up locally with
-# `upstream: gone`. Matching "upstream gone" AND "empty diff vs main" is the
-# safety net: if the working tree is already represented on main, `git branch
-# -D` is safe.
+# `upstream: gone`. We then need a "the work has actually landed" signal
+# before `-D`-ing the branch:
+#
+#   1. Empty diff vs main — fast, offline. The branch's tree is already
+#      reproduced on main (clean squash with no drift). Most common case.
+#   2. GitHub records a merged PR with this branch as headRefName — fallback
+#      for cases where main has subtle drift after the squash (whitespace
+#      normalisation, follow-up commits, rebase noise) so the diff is
+#      non-empty but the work was definitely delivered. Requires `gh` on
+#      PATH and authenticated; silently skipped otherwise.
+#
+# Either signal alone is sufficient. Both checks are conservative — they
+# only emit a branch when the work is provably on main.
 #
 # Output: one branch name per line, ready for xargs or a confirmation prompt.
 # Exit: always 0 (empty output is a valid result).
@@ -15,9 +25,23 @@
 
 set -uo pipefail
 
+# Returns 0 if GitHub records a merged PR whose head branch is $1.
+# Returns non-zero on no-match, missing gh, auth failure, or network error.
+gh_has_merged_pr() {
+    local branch=$1
+    command -v gh >/dev/null 2>&1 || return 1
+    local count
+    count=$(gh pr list --state merged --head "$branch" --json number --jq 'length' 2>/dev/null) || return 1
+    [ "${count:-0}" -gt 0 ]
+}
+
 git for-each-ref --format='%(refname:short) %(upstream:track)' refs/heads/ \
     | awk '$2 ~ /gone/ { print $1 }' \
     | grep -vE '^(main|master)$' \
     | while read -r branch; do
-        git diff --quiet main.."$branch" 2>/dev/null && echo "$branch"
+        if git diff --quiet main.."$branch" 2>/dev/null; then
+            echo "$branch"
+        elif gh_has_merged_pr "$branch"; then
+            echo "$branch"
+        fi
       done || true

@@ -93,7 +93,7 @@ Two batches. Present each list, ask **one** y/n per batch, then act on the whole
 
 Take the list from gather section `merged_brs`.
 
-**Batch B — Squash-merged branches** — branches whose upstream was deleted (`[upstream: gone]`, typical after GitHub squash-merge + branch delete) AND whose tree is identical to `main`. These won't show up in Batch A because squash-merging rewrites history; `-d` would refuse them. The empty-diff check is the safety net — if it passes, the content is already on `main` and `-D` is safe:
+**Batch B — Squash-merged branches** — branches whose upstream was deleted (`[upstream: gone]`, typical after GitHub squash-merge + branch delete) AND whose work is provably on `main`. These won't show up in Batch A because squash-merging rewrites history; `-d` would refuse them. The script accepts either of two "work is delivered" signals as the safety net — empty diff vs `main`, or GitHub records a merged PR with the branch as `headRefName` (fallback for cases where main has subtle post-squash drift that fails the diff but the PR clearly merged):
 
 ```sh
 ~/.claude/bin/end-session-squash-merged
@@ -105,7 +105,7 @@ For each batch:
 - Otherwise present the full list and ask once: "delete all of these? (y/n)".
 - On `y`: `-d` for Batch A, `-D` for Batch B.
 
-If a `[gone]` branch has a non-empty diff vs `main`, surface it by name ("`feat/x` — upstream gone but diffs against `main`, left alone") so the user can decide manually. Don't roll it into Batch B.
+If a `[gone]` branch has a non-empty diff vs `main` AND no merged PR is found via `gh`, surface it by name ("`feat/x` — upstream gone but diffs against `main` and no merged PR found, left alone") so the user can decide manually. Don't roll it into Batch B.
 
 For remote-tracking refs, `git fetch --prune` in step 2 already handled stale `origin/*` refs. Don't delete anything on the remote itself.
 
