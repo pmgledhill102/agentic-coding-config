@@ -114,16 +114,23 @@ run_sh main_ci '
     # Parse to most-recent run per workflow on $DEFAULT_BRANCH.
     # Output:
     #   workflows=<N>
-    #   <name>=<conclusion-or-status>@<short-sha>
-    # On clean-and-green sessions this is 1-3 lines instead of a 10-element JSON dump.
+    #   <name>=<conclusion-or-status>@<short-sha>           (success / in_progress / queued)
+    #   <name>=<conclusion>@<short-sha> <url>                (failure / cancelled / timed_out)
+    # The URL on failing runs lets the brief link the failing job inline; on
+    # clean-and-green sessions this is still 1-3 lines instead of a JSON dump.
     gh run list --branch "$DEFAULT_BRANCH" --limit 20 \
-        --json status,conclusion,name,headSha,createdAt \
+        --json status,conclusion,name,headSha,createdAt,url \
       | jq -r '\''
           group_by(.name)
           | map(sort_by(.createdAt) | last)
           | sort_by(.name) as $w
           | "workflows=\($w | length)",
-            ($w[] | "\(.name)=\(.conclusion // .status)@\(.headSha[0:7])")
+            ($w[] | (
+                if (.conclusion == "failure" or .conclusion == "cancelled" or .conclusion == "timed_out")
+                then "\(.name)=\(.conclusion)@\(.headSha[0:7]) \(.url)"
+                else "\(.name)=\(.conclusion // .status)@\(.headSha[0:7])"
+                end
+            ))
         '\''
 '
 
@@ -159,8 +166,35 @@ run_sh gh_unmigrated '
 
 if [ -f .beads/metadata.json ]; then
     run_section bd_remote bd dolt remote list
-    run_section bd_ready bd ready
-    run_section bd_in_progress bd list --status=in_progress
+    # shellcheck disable=SC2016
+    run_sh bd_ready '
+        # Top-5 ready issues, pre-formatted for the brief. Strip the legend,
+        # totals, and tree icons; emit one pipe-separated row per issue:
+        #   <id>|P<n>|<title>
+        # Empty output = no ready work. /start-session uses these rows directly
+        # in the brief without further parsing.
+        bd ready --limit 5 2>/dev/null \
+          | awk '\''NF>=5 && $4 ~ /^P[0-9]/ {
+              id=$2; pri=$4;
+              $1=$2=$3=$4="";
+              sub(/^ +/, "", $0);
+              print id "|" pri "|" $0
+            }'\''
+    '
+    # shellcheck disable=SC2016
+    run_sh bd_in_progress '
+        # In-progress beads, pre-formatted for the brief. Same pipe-separated
+        # row shape as bd_ready:
+        #   <id>|P<n>|<title>
+        # No limit (usually 0-3 items). Empty output = nothing in flight.
+        bd list --status=in_progress 2>/dev/null \
+          | awk '\''NF>=5 && $4 ~ /^P[0-9]/ {
+              id=$2; pri=$4;
+              $1=$2=$3=$4="";
+              sub(/^ +/, "", $0);
+              print id "|" pri "|" $0
+            }'\''
+    '
     # shellcheck disable=SC2016
     run_sh bd_inprogress_delivered '
         # For each in_progress bead, find any merged commit on $DEFAULT_BRANCH
