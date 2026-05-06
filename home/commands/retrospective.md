@@ -17,6 +17,13 @@ If we're not inside a git repo, treat the retro as cross-repo by default — eve
 Review the full conversation history and evaluate each of these dimensions. Skip any that aren't relevant.
 
 - **Approval friction**: Which tool calls required manual approval? Were any repeatedly approved and should be added to `allowedTools` in settings? Note the specific tool patterns.
+- **Shell-friction patterns**: Did Bash tool calls use shell shapes that a file-import alternative would replace? These shapes hide multi-line content on the rendered command line, can trigger the harness's re-prompt heuristic even with the bare command allow-listed, and break on quoting edge cases. Scan the transcript for these patterns:
+  - `--description="$(cat PATH)"` / `--body="$(cat PATH)"` / `--message="$(cat PATH)"` — propose the tool's file flag (e.g. `bd create --body-file=PATH`, `gh issue create --body-file=PATH`, `gh pr create --body-file=PATH`).
+  - Heredocs (`tool <<'EOF' … EOF`) — already banned in the user's CLAUDE.md, but spot any that leaked in. Propose `Write` to `/tmp/<slug>.md` followed by the tool's file flag.
+  - Inline JSON / multi-line flag values (`tool --metadata '{"k":"v",…}'`) — propose `tool --metadata @file.json` (or equivalent `@`-prefix file syntax).
+  - Long pipelines that re-derive content already on disk (`cat foo.md | tool --read-stdin`) — propose `tool --file=foo.md` when supported.
+
+  For each match, **verify the file alternative actually exists** before suggesting it (run `<tool> --help`, search docs, or rely on the known patterns above) — do not speculate. Surface findings as a concrete before/after snippet, and propose persisting the rule via `bd remember` so future sessions default to the file form. Example: *"The 3 `bd create` calls in this session used `--description=\"$(cat …)\"`. Switch to `--body-file=` for cleaner shell and fewer re-prompts."*
 - **CI round-trips**: How many push-then-fix cycles happened? What caused each failure? Could any have been caught locally first?
 - **Errors and debugging**: What errors were encountered? How long did each take to resolve? Were any red herrings?
 - **Approach pivots**: Where did the initial approach fail and require a different strategy? What was learned?
@@ -195,7 +202,7 @@ Next /start-session in the cross-repo'd repos will sweep the new Issues into bea
 
 ## What changed from the previous versions
 
-This command used to append a markdown entry to `~/.claude/retros.md` (the original flow), then was rewritten to output beads/Issues only without any journal (rev 1 of the new flow), then revised to include a per-session journal in `paul-context` (current). The final shape:
+This command used to append a markdown entry to `~/.claude/retros.md` (the original flow), then was rewritten to output beads/Issues only without any journal (rev 1 of the new flow), then revised to include a per-session journal in `paul-context` (current). A later revision (2026-05-06) added the **Shell-friction patterns** dimension to Section 2 so each retro proactively surfaces command-shape friction (`$(cat …)`, heredocs, inline JSON) and proposes verified file-flag alternatives. The final shape:
 
 - **Sandbox-agent reachable**: beads + GitHub Issues are network-reachable, and `paul-context/journal/` is a private git repo accessible via `gh` from anywhere.
 - **Per-entry, not single-master**: each retro produces a dated, slugged file in `paul-context/journal/`. The original `retros.md` decayed because it was one file containing everything. Per-entry files survive long-term scrolling.
