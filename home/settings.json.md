@@ -11,6 +11,15 @@ changing permission rules, update both files together.
 - `Bash(bd *)`
 - `Bash(beads *)`
 
+### BigQuery (read-only metadata)
+
+`bq query` is **not** auto-approved — its `--use_legacy_sql=false` flag
+doesn't constrain the query to SELECT, so it can execute DDL/DML.
+Listing and schema-introspection are safe.
+
+- `Bash(bq ls*)`
+- `Bash(bq show*)`
+
 ### Brew (read-only + services)
 
 - `Bash(brew --prefix *)`
@@ -99,6 +108,7 @@ of commands. `gcloud storage` is restricted to `cat` and `ls` — no `cp`,
 - `Bash(gcloud compute firewall-rules list *)`
 - `Bash(gcloud compute forwarding-rules describe *)`
 - `Bash(gcloud compute forwarding-rules list *)`
+- `Bash(gcloud compute images list *)`
 - `Bash(gcloud compute instances describe *)`
 - `Bash(gcloud compute instances get-serial-port-output *)`
 - `Bash(gcloud compute instances list *)`
@@ -109,6 +119,7 @@ of commands. `gcloud storage` is restricted to `cat` and `ls` — no `cp`,
 - `Bash(gcloud compute networks list *)`
 - `Bash(gcloud compute networks subnets describe *)`
 - `Bash(gcloud compute networks subnets list *)`
+- `Bash(gcloud compute operations list *)`
 - `Bash(gcloud compute shared-vpc *)`
 - `Bash(gcloud compute target-http-proxies describe *)`
 - `Bash(gcloud compute target-http-proxies list *)`
@@ -135,9 +146,16 @@ of commands. `gcloud storage` is restricted to `cat` and `ls` — no `cp`,
 
 - `Bash(gcloud iam service-accounts describe *)`
 - `Bash(gcloud iam service-accounts list *)`
+- `Bash(gcloud iam workload-identity-pools describe *)`
+- `Bash(gcloud iam workload-identity-pools providers describe *)`
 
 #### Logging
 
+`gcloud beta logging tail` streams log entries — read-only despite the
+`beta` prefix. `gcloud secrets versions access` is **not** auto-approved
+(reads secret material — credential-exfiltration risk).
+
+- `Bash(gcloud beta logging tail *)`
 - `Bash(gcloud logging read *)`
 
 #### Projects and services
@@ -183,7 +201,14 @@ of commands. `gcloud storage` is restricted to `cat` and `ls` — no `cp`,
 
 #### Storage (read-only)
 
+`gcloud storage` is restricted to read-only subcommands — `cat`, `ls`,
+`du`, and `buckets describe` / `buckets get-iam-policy`. No `cp`, `rm`,
+or `mv`.
+
+- `Bash(gcloud storage buckets describe*)`
+- `Bash(gcloud storage buckets get-iam-policy*)`
 - `Bash(gcloud storage cat *)`
+- `Bash(gcloud storage du*)`
 - `Bash(gcloud storage ls *)`
 
 ### gsutil (read-only, legacy CLI)
@@ -212,6 +237,7 @@ GitHub MCP server is validated — see GitHub MCP section below.
 - `Bash(gh run rerun *)`
 - `Bash(gh run view *)`
 - `Bash(gh run watch *)`
+- `Bash(gh variable list *)`
 - `Bash(gh workflow list *)`
 - `Bash(gh workflow view *)`
 
@@ -303,9 +329,11 @@ tasks. Only known-safe build/test/check goals are allowed.
 
 ### JavaScript / Node (run scripts and query only)
 
-`npm install`, `node *` (arbitrary execution), and `npx *` (downloads
-and runs packages) require prompting. Only `npm run` and read-only
-subcommands are auto-allowed.
+`npm install`, `node *` (arbitrary execution), and bare `npx *` (downloads
+and runs arbitrary packages) require prompting. Specific `npx <tool>`
+forms for known-safe packages are allowed individually — `playwright`
+(test runner) and `slidev` (slide dev server). Add new ones explicitly
+when friction surfaces; don't re-broaden to bare `npx *`.
 
 - `Bash(eslint *)`
 - `Bash(knip *)`
@@ -314,6 +342,8 @@ subcommands are auto-allowed.
 - `Bash(npm run *)`
 - `Bash(npm test *)`
 - `Bash(npm-check-updates *)`
+- `Bash(npx playwright *)`
+- `Bash(npx slidev *)`
 - `Bash(pnpm list *)`
 - `Bash(pnpm outdated *)`
 - `Bash(pnpm run *)`
@@ -457,6 +487,7 @@ equivalents for tool-availability checks, and compound commands like
 `command -v X && X --version` need the leading `command -v` matched
 separately.
 
+- `Bash(awk *)`
 - `Bash(command -v *)`
 - `Bash(cp *)`
 - `Bash(diff *)`
@@ -472,17 +503,33 @@ separately.
 - `Bash(wc *)`
 - `Bash(which *)`
 
+### Process management
+
+Threat model: process kills affect running processes only — not files,
+not credentials, not privilege boundaries (the agent already runs as
+the user). Worst case is killing the wrong process, which is "annoying"
+(restart a dev server, lose unsaved terminal scratch) but never silent
+or unrecoverable. The friction relief from not approving every
+`pkill -9 -f "<name>"` is worth the recoverable blast radius.
+
+- `Bash(kill *)`
+- `Bash(pkill *)` — subsumes `pkill -f *`
+
 ### Network diagnostics (read-only)
 
 Port-reachability probes, DNS lookups, and SSH config/auth diagnostics.
-All are read-only: `nc -zv` is pure port probe (the `-z` zero-I/O flag
-prevents sending data), `host` is a DNS query, `ssh -G` dumps resolved
-SSH config without connecting, and `ssh -o BatchMode=yes -T` is an
-auth test only (the `-T` disables PTY allocation so remote command
-execution is impossible). `curl` is deliberately NOT listed here —
-it can exfiltrate data via arbitrary POSTs.
+All are read-only: `nc -zv` / `nc -uvz` are pure port probes (the `-z`
+zero-I/O flag prevents sending data; the `-u` variant probes UDP), `dig`
+and `host` are DNS queries, `ssh -G` dumps resolved SSH config without
+connecting, and `ssh -o BatchMode=yes -T` is an auth test only (the `-T`
+disables PTY allocation so remote command execution is impossible).
+`curl` is deliberately NOT listed here — it can exfiltrate data via
+arbitrary POSTs (and `curl -s -H 'Authorization: Bearer …'` likewise
+remains in the Never Allow list).
 
+- `Bash(dig *)`
 - `Bash(host *)`
+- `Bash(nc -uvz *)`
 - `Bash(nc -zv *)`
 - `Bash(ssh -G *)`
 - `Bash(ssh -o BatchMode=yes -T *)`
@@ -591,9 +638,15 @@ the user revisits it.
 | Pattern | Reason |
 | ------- | ------ |
 | `Bash(python3 *)` / `Bash(python *)` | Arbitrary code execution — too broad |
-| `Bash(curl *)` / `Bash(curl -s *)` | Can exfiltrate data to arbitrary endpoints |
+| `Bash(go run *)` | Arbitrary code execution — same shape as `python *` |
+| `Bash(curl *)` / `Bash(curl -s *)` / `Bash(curl -s -H Authorization: Bearer*)` | Can exfiltrate data to arbitrary endpoints; auth-header + URL form is especially dangerous |
+| `Bash(yq *)` | `yq -i` mutates files in place — flag isn't constrainable here |
+| `Bash(bq query --use_legacy_sql=false*)` | Flag doesn't constrain to SELECT; can run DDL/DML |
 | `Bash(gcloud storage cp *)` | Write operation — uploads to GCS |
+| `Bash(gcloud run services update-traffic *)` | Mutates production Cloud Run traffic |
+| `Bash(gcloud secrets versions access *)` | Reads secret values — credential-exfiltration risk |
 | `Bash(gcloud monitoring *)` / `Bash(gcloud beta monitoring *)` / `Bash(gcloud alpha monitoring *)` | Can modify alerts and dashboards, not read-only |
+| `Bash(gh api *)` / `Bash(gh api repos/*)` | Full GitHub API including POST/PATCH/DELETE — prefer `mcp__github__*` |
 | `Bash(gh repo create *)` | Creates repositories — infrequent, should always prompt |
 | `Bash(gh pr merge *)` / `mcp__github__merge_pull_request` | PRs should be merged manually, never by Claude Code |
 
