@@ -24,6 +24,9 @@ TMP=$(mktemp -d -t start-session-gather.XXXXXX)
 trap 'rm -rf "$TMP"' EXIT
 
 # --- Phase 1: git fetch (blocks remote-aware sections below) ---
+# Capture local default-branch SHA *before* fetch so we can later compute the
+# delta of newly-merged commits (origin advanced; local hasn't pulled yet).
+PRE_FETCH_DEFAULT_SHA=$(git rev-parse main 2>/dev/null || git rev-parse master 2>/dev/null || echo "")
 progress "git fetch --all --prune --tags"
 git fetch --all --prune --tags >"$TMP/fetch.out" 2>&1
 FETCH_EXIT=$?
@@ -164,6 +167,37 @@ run_sh gh_unmigrated '
         '\''
 '
 
+export PRE_FETCH_DEFAULT_SHA
+
+# shellcheck disable=SC2016
+run_sh recent_main_commits '
+    # Commits that landed on origin/$DEFAULT_BRANCH between the previous
+    # local default-branch tip and the freshly-fetched origin tip — i.e.,
+    # what merged since the last time this checkout pulled main. Output:
+    #   count=<N>
+    #   <short-sha> <subject>
+    # one per line, oldest-first (topmost line is the most recent merge).
+    # Empty (count=0) when nothing new — typical when /start-session ran
+    # recently. Capped at 10 lines to keep the brief one-screen.
+    if [ -z "$PRE_FETCH_DEFAULT_SHA" ]; then
+        echo "count=0"
+        exit 0
+    fi
+    if ! git rev-parse --verify --quiet "origin/$DEFAULT_BRANCH" >/dev/null 2>&1; then
+        echo "count=0"
+        exit 0
+    fi
+    log=$(git log "$PRE_FETCH_DEFAULT_SHA..origin/$DEFAULT_BRANCH" \
+        --first-parent --oneline -n 10 2>/dev/null)
+    if [ -z "$log" ]; then
+        echo "count=0"
+    else
+        n=$(printf "%s\n" "$log" | wc -l | tr -d " ")
+        echo "count=$n"
+        printf "%s\n" "$log"
+    fi
+'
+
 if [ -f .beads/metadata.json ]; then
     run_section bd_remote bd dolt remote list
     # shellcheck disable=SC2016
@@ -240,6 +274,6 @@ if [ "$FETCH_EXIT" -ne 0 ]; then
 fi
 printf '\n'
 
-for s in local_state main_ci gh_unmigrated bd_remote bd_ready bd_in_progress bd_inprogress_delivered; do
+for s in local_state main_ci gh_unmigrated recent_main_commits bd_remote bd_ready bd_in_progress bd_inprogress_delivered; do
     [ -f "$TMP/$s.exit" ] && emit "$s"
 done

@@ -40,6 +40,7 @@ Output is a sectioned stream. Each section starts with `===<name> (exit=<N>)===`
 | `local_state` | 3, 9 | Includes branch, dirty/clean, ahead/behind upstream, ahead/behind `origin/<default>`. |
 | `main_ci` | 7 | Content `gh-unavailable` / `jq-unavailable` = silent skip. Otherwise: first line is `workflows=<N>`; subsequent lines are `<workflow-name>=<conclusion-or-status>@<short-sha>` (one per most-recent run per workflow on `<default>`). On `failure` / `cancelled` / `timed_out`, the line ends with a trailing space-separated run URL: `<workflow-name>=<conclusion>@<short-sha> <url>`. Non-zero with other content = real error. |
 | `gh_unmigrated` | 8 | Content `gh-unavailable` or `jq-unavailable` = silent skip. First line is `count=<N>`; remaining lines are `#<n> <title>` per unmigrated issue. |
+| `recent_main_commits` | 7.5 | First line is `count=<N>` (commits that merged into `origin/<default>` since the previous local tip). When non-zero, subsequent lines are `<short-sha> <subject>`, capped at 10. Empty when caught up. |
 | `bd_remote` | 4 | Section absent if no beads workspace. Empty content = no remote configured (single-machine setup). |
 | `bd_ready` | 9 | Section absent if no beads workspace. Empty content = no ready work. Otherwise up to 5 pipe-separated rows: `<id>\|P<n>\|<title>`. Already pre-summarised — use rows directly in the brief without further parsing. |
 | `bd_in_progress` | 9 | Section absent if no beads workspace. Empty content = nothing in flight. Otherwise pipe-separated rows: `<id>\|P<n>\|<title>` (no limit; usually 0-3). Same row shape as `bd_ready`. |
@@ -123,6 +124,15 @@ From gather section `main_ci`. The script has already deduplicated to one most-r
 
 If the section content is `gh-unavailable` / `jq-unavailable` or the repo has no remote, skip silently and report `n/a` in the brief.
 
+### 7.5. Recent merges to `<default>` (Tier 1 — surface)
+
+From gather section `recent_main_commits`. The first line is `count=<N>` — commits that merged into `origin/<default>` since the previous local tip (i.e. the activity the user missed since they last opened this repo). When non-zero, subsequent lines are `<short-sha> <subject>` (capped at 10, oldest-first; topmost line is the most recent).
+
+- **`count=0`**: silent. Caught up.
+- **`count >= 1`**: surface a `Recent merges:` block in the session brief listing the entries verbatim. Useful before picking up new work — orients the user on what landed while they were away.
+
+This is informational only — no action prompts. The section adds a few lines on busy days and zero on quiet ones.
+
 ### 8. Unmigrated GitHub Issues (Tier 2 — prompt)
 
 From gather section `gh_unmigrated`. The first line is `count=<N>`; remaining lines are `#<number> <title>` per unmigrated issue.
@@ -171,6 +181,10 @@ CI:       <green / N failing / N in-progress / n/a>
 Auto-closed (delivered):                            (omit when none)
   <id>  via <short-sha>  <commit subject>
 
+Recent merges:                                      (omit when count=0)
+  <short-sha>  <commit subject>
+  …                                                 (cap at gather's 10)
+
 In progress (you left these mid-flight):
   <id>  P<pri>  <title>            (or "none")
 
@@ -193,6 +207,7 @@ Rules:
 - "Ready to pick up next" is sourced from gather section `bd_ready`. Each row is already pipe-separated `<id>|P<n>|<title>` and pre-truncated to 5 — split on `|` and emit. `bd ready` already filters to issues whose blockers are all closed and sorts sensibly; preserve the gather order.
 - "In progress" is sourced from gather section `bd_in_progress`. Same `<id>|P<n>|<title>` row shape; no cap (usually 0–3 items). Note: any beads auto-closed in Step 5 won't appear here — they're already closed by the time the brief renders.
 - "Auto-closed (delivered)" is sourced from the IDs Step 5 closed. Omit the entire section when Step 5 closed nothing.
+- "Recent merges" is sourced from gather section `recent_main_commits`. Omit the entire section when `count=0`.
 - If the repo has no beads workspace, drop both Beads sections silently (the brief still shows git/CI/GH lines).
 - Truncate any title to ~78 columns to keep rows on one line.
 
