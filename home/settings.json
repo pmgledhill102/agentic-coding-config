@@ -306,7 +306,8 @@
       "mcp__google-developer-knowledge__search_documents",
       "Read(~/.claude/retros.md)",
       "Read(~/.claude/settings.json)",
-      "Write(/tmp/**)"
+      "Write(/tmp/**)",
+      "Write(~/dev/paul-context/_incoming/**)"
     ]
   },
   "hooks": {

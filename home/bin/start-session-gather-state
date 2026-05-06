@@ -137,14 +137,21 @@ run_sh gh_unmigrated '
         echo "jq-unavailable"
         exit 1
     fi
-    # gh issue list excludes PRs by default. The marker `Migrated to beads `
-    # is the idempotency anchor written by /bd-import-github-issues.
+    # gh issue list excludes PRs by default. Filter out:
+    #   - issues whose body has the marker "Migrated to beads " (idempotency
+    #     anchor written by /bd-import-github-issues),
+    #   - issues labeled "journal-draft" (sandbox-fallback drafts for the
+    #     paul-context inbox/promote pattern; drained by /promote-journal-inbox,
+    #     not /bd-import-github-issues).
     # Bind the filtered list to $u so we can both count and iterate it.
     # The '\'' sequence closes/reopens the outer single quote so jq can
     # take a single-quoted filter argument.
-    gh issue list --state open --limit 100 --json number,title,body \
+    gh issue list --state open --limit 100 --json number,title,body,labels \
       | jq -r '\''
-          map(select((.body // "") | test("Migrated to beads ") | not)) as $u
+          map(select(
+              ((.body // "") | test("Migrated to beads ") | not)
+              and ([(.labels // [])[].name] | index("journal-draft") | not)
+          )) as $u
           | "count=\($u | length)",
             ($u[] | "#\(.number) \(.title)")
         '\''

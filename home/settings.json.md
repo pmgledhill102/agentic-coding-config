@@ -569,6 +569,18 @@ that otherwise discourages the structured-body pattern.
   `--body-file` or `$(cat ...)`. Restrict scope further to
   `Write(/tmp/claude-*)` (with a naming-convention discipline) if the
   broad rule ever feels uncomfortable.
+- `Write(~/dev/paul-context/_incoming/**)` — journal-draft inbox for
+  the cross-repo retrospective skill. Drafts land here and are later
+  promoted into `paul-context/journal/` by `/promote-journal-inbox`
+  (run from `~/dev/paul-context/`). The directory is `.gitignored` in
+  the `paul-context` repo, so anything written here is local-only
+  until promotion — content can't pollute `paul-context`'s git
+  history regardless of what gets written. This single user-level
+  rule replaces what would otherwise be N per-project
+  `Write(~/dev/paul-context/journal/**)` grants plus git-on-paul-context
+  permissions in every project that runs `/end-session`. See
+  `paul-context/decisions/2026-05-05-journal-inbox-promotion.md` for
+  the full rationale.
 
 ## Never allow
 
