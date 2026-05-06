@@ -38,12 +38,14 @@ echo "===git status==="; git status --porcelain
 echo "===origin url==="; git remote get-url origin
 echo "===running dolt-server pid==="; [ -f .beads/dolt-server.pid ] && cat .beads/dolt-server.pid || echo "(none)"
 echo "===init.templatedir==="; td=$(git config --get init.templatedir); echo "templatedir=$td"; [ -n "$td" ] && ls "${td/#~/$HOME}/hooks/" 2>/dev/null | head -5
+echo "===root .gitignore blanket patterns==="; for pattern in .beads .claude; do grep -nE "^/?${pattern}/?\$" .gitignore 2>/dev/null && echo "WARN: bare ${pattern}/ pattern in .gitignore — would silently block 'git add ${pattern}/...' in Step 6"; done; true
 ```
 
 Interpret the results:
 
 - **`bd version` < 1.0**: stop, tell the user to upgrade (e.g. `brew upgrade beads`).
 - **`origin url` not on `github.com`**: Dolt git-remote feature won't work. Surface this; offer to skip the remote / push steps or stop entirely.
+- **Bare `.beads/` or `.claude/` blanket pattern detected** in root `.gitignore` (the WARN line above): STOP. The pattern silently blocks Step 6's `git add` — the commit goes through reporting nothing changed, the project stays on legacy state, and the failure is invisible (`paul-gledhill-dev` lost ~5 min to this exact trap). Show the offending line, propose replacing it with a JSONL-only ignore for `.beads/` (`.beads/issues.jsonl`) or removing it entirely for `.claude/`, and ask the user to fix `.gitignore` and re-run. Don't auto-edit — the bare pattern may have been added by another tool and removing it has wider implications.
 - **Compute `IS_LEGACY`** = `(.beads/metadata.json missing) OR (dolt_mode != "embedded") OR (.beads/dolt/ exists)`. This signal drives `.beads/config.yaml` preservation in Step 1 (legacy = wipe; modern = preserve).
 - **Compute `AT_TARGET`** = `dolt_mode == "embedded"` AND `bd dolt remote list` has a `git+...` or `https://github.com/...` remote matching origin AND JSONL tracked check returned exit 1 (untracked).
 - **If `AT_TARGET`**: skip to Step 6 (verification). Reports "already aligned" and exits in <30s. Done.
@@ -255,16 +257,14 @@ Use the `Edit` tool to append. If scripting it, ensure the file ends in a newlin
 
 ### 5f. Add `.beads/issues.jsonl` to project `.gitignore`
 
-Two parts — both against the **project root** `.gitignore` (not `.beads/.gitignore`, which `bd init` may regenerate):
+Pre-flight already verified the project root `.gitignore` has no bare `.beads/` or `.claude/` blanket pattern (those are stop conditions there — this step assumes they're absent).
 
-1. **Detect a bare `.beads/` pattern first.** If the file already has a line matching `.beads/?` or `/.beads/?` (no further path component), that pattern silently blocks `git add .beads/` and Step 6's commit fails with no obviously relevant error (`paul-gledhill-dev` lost ~5 min to this). Surface the offending line, propose replacing it with the JSONL-only pattern below, and ask the user whether to remove it. **Don't auto-remove** — the bare pattern may have been added by another tool and removing it has wider implications.
+Append the JSONL-only ignore to the **project root** `.gitignore` (not `.beads/.gitignore`, which `bd init` may regenerate). Idempotent — skip if already present:
 
-2. **Append the JSONL-only ignore** (idempotent — skip if already present):
-
-   ```gitignore
-   # Beads exports — source of truth is Dolt + refs/dolt/data on origin.
-   .beads/issues.jsonl
-   ```
+```gitignore
+# Beads exports — source of truth is Dolt + refs/dolt/data on origin.
+.beads/issues.jsonl
+```
 
 ### 5g. Untrack the JSONL (only if currently tracked)
 
