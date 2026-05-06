@@ -74,11 +74,12 @@ From the `mcp__github__list_issues` response, apply these filters in order:
 - **Filter by author allowlist (apply first)**: any item whose `user.login` is not in the allowlist above — exclude. **Do not surface filtered-out items' titles or bodies** in any subsequent output; keeping their content out of the model's context is the point of the filter. Track the count only.
 - **Filter out PRs**: any item where the `pull_request` field is non-null is a PR — exclude.
 - **Filter out already-migrated**: any item whose `body` matches the regex `Migrated to beads [a-z0-9-]+` — exclude. This is the idempotency check; re-runs skip these.
+- **Filter out journal drafts**: any item carrying the `journal-draft` label — exclude. These are journal entry drafts filed by the `retrospective` skill's sandbox fallback, drained by `/promote-journal-inbox`, not this skill. Importing them as beads would mis-categorise narrative content as actionable work. (See `paul-context/decisions/2026-05-05-journal-inbox-promotion.md`.)
 - **For each remaining issue**, capture: `number`, `title`, `body` (may be null/empty), `labels` (array of `{name}`), `assignees`, `created_at`, `html_url`.
 - **Decode HTML entities** in titles and bodies before further processing. The GitHub API returns `&#39;` for apostrophe, `&#34;` for double-quote, `&amp;` for ampersand, etc. Pass them verbatim to `bd create` and your bead title ends up as literal `Need a &#39;dotup&#39;...` Decode at minimum: `&#39;` → `'`, `&#34;` → `"`, `&amp;` → `&`, `&lt;` → `<`, `&gt;` → `>`. A more complete decoder is fine but not required for the common cases.
 - **Normalise mojibake in bodies**. Windows tool outputs (winget, MSBuild) often dump runs of unicode block characters (U+2588, U+2592) for progress bars; these get re-encoded as ASCII garbage like `ÔûêÔûêÔûêÔûÆ` somewhere along the API path. Strip runs of these specific mojibake patterns and add a one-line note to the bead description (`progress-bar mojibake stripped during import; see source URL for original`). Don't strip anything else — preserve all real content verbatim.
 
-When announcing the candidate list to the user (Step 3), include a one-line summary of any filter activity, e.g. `(2 issues from non-allowlisted authors skipped; 1 PR skipped; 0 already migrated)`. If the filtered candidate list is empty, report which filters consumed the input (`"5 issues filtered out — 4 by author allowlist, 1 already migrated; nothing to import"`) and stop.
+When announcing the candidate list to the user (Step 3), include a one-line summary of any filter activity, e.g. `(2 issues from non-allowlisted authors skipped; 1 PR skipped; 0 already migrated; 1 journal draft skipped)`. If the filtered candidate list is empty, report which filters consumed the input (`"5 issues filtered out — 4 by author allowlist, 1 journal draft; nothing to import"`) and stop.
 
 ### Step 2: Infer beads type and priority from labels
 
@@ -217,7 +218,7 @@ Report a summary to the user:
 - N beads created (with their IDs and titles)
 - N GitHub issues closed (or skipped if Step 5 was "skip")
 - N issues filtered by author allowlist (count only — IDs and titles stay out of context)
-- N issues skipped as already-migrated, N PRs skipped
+- N issues skipped as already-migrated, N PRs skipped, N `journal-draft` Issues skipped
 - Any failures (issues whose close didn't go through, etc.)
 
 ### Step 8: Push imported beads to remote

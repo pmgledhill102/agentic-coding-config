@@ -1,4 +1,4 @@
-Run a retrospective on this session: write a per-session journal entry to `paul-context/journal/`, route actionable findings into beads (current repo) or GitHub Issues (cross-repo), and capture durable lessons as memories. Do **not** append to `~/.claude/retros.md` — that file is retired (see `paul-context/decisions/2026-05-03-beads-per-repo-issues-as-inbox.md`).
+Run a retrospective on this session: draft a per-session journal entry into `paul-context/_incoming/` (or as a `journal-draft`-labeled Issue against `pmgledhill102/paul-context` when the local clone isn't available), route actionable findings into beads (current repo) or GitHub Issues (cross-repo), and capture durable lessons as memories. Do **not** append to `~/.claude/retros.md` — that file is retired (see `paul-context/decisions/2026-05-03-beads-per-repo-issues-as-inbox.md`). Do **not** commit or push to `paul-context` from this skill — promotion lives in `/promote-journal-inbox`, run from `~/dev/paul-context/` (see `paul-context/decisions/2026-05-05-journal-inbox-promotion.md`).
 
 ## Steps
 
@@ -73,7 +73,7 @@ For each finding, decide what kind of artifact it should produce:
 
 | Kind | When to use | How to produce |
 | --- | --- | --- |
-| **Journal entry** | Always (unless the session was uneventful — then skip and stop). Captures the narrative thread, Continue items, and Observations that don't fit into actionable artifacts | `Write` to `~/dev/paul-context/journal/<YYYY-MM-DD>-<short-slug>.md`. Then `git -C ~/dev/paul-context add + commit + push origin main`. Tight format: H1 title, project/duration metadata, Continue / Stop / Created / Observations sections, ~30-50 lines |
+| **Journal entry** | Always (unless the session was uneventful — then skip and stop). Captures the narrative thread, Continue items, and Observations that don't fit into actionable artifacts | Draft via the inbox/promote pattern. **Filesystem path** (preferred when `~/dev/paul-context/_incoming/` is writeable): `Write` to `~/dev/paul-context/_incoming/<YYYY-MM-DD>-<source-repo-slug>-<topic-slug>.md` — **no git ops against `paul-context`**. **GitHub Issue fallback** (sandbox / remote VM / no local clone): `gh issue create --repo pmgledhill102/paul-context --label journal-draft --title="journal: <filename-without-.md>" --body-file=/tmp/<filename>`. Tight format: H1 title, project/duration metadata, Continue / Stop / Created / Observations sections, ~30-50 lines. Promoted into `paul-context/journal/` later by `/promote-journal-inbox` |
 | **Same-repo bead** | Action whose subject is the **current cwd's repo** | `bd create --title=... --type=<task/bug/feature> --priority=N` (priority 0-4; P2 is "do this soon", P3 is "next time we touch this", P4 is "backlog"). **Body MUST include**: "From retro: paul-context/journal/<file>.md" |
 | **Cross-repo Issue** | Action whose subject is a *different* personal repo from cwd | `gh issue create --repo pmgledhill102/<target> --title=... --body=...` — picked up by `/start-session` there via `/bd-import-github-issues`. **Body MUST include** the journal cross-reference. **DO NOT** `cd` to the target repo and run `bd create` there, even if you have it cloned locally — see "No cd-shortcut" below |
 | **paul-context Issue** | Cross-cutting or no-clear-home findings | `gh issue create --repo pmgledhill102/paul-context --title=... --body=...`. **Body MUST include** the journal cross-reference |
@@ -126,11 +126,22 @@ Wait for explicit confirmation. Don't proceed on ambiguous input.
 **Order matters**: write the journal **first** so subsequent beads/issues can reference its path. Then create everything else.
 
 1. **journal** (always first):
-   - `Write` `~/dev/paul-context/journal/<YYYY-MM-DD>-<slug>.md` with the format under "Journal entry format" below.
-   - `git -C ~/dev/paul-context add journal/<file>.md`
-   - `git -C ~/dev/paul-context commit -m "journal: <YYYY-MM-DD> <slug>"` (paul-context has no branch protection — direct commit to main is the convention)
-   - `git -C ~/dev/paul-context push origin main`
-   - Capture the relative path `paul-context/journal/<file>.md` for cross-references.
+   - **Derive the filename.** `<source-repo-slug>` = sanitised basename of `git remote get-url origin` from the current cwd (lowercase, `[a-z0-9-]+`). If no git remote, use `basename "$PWD"`. `<topic-slug>` = kebab-cased session summary, ≤5 words. `<filename>` = `<YYYY-MM-DD>-<source-repo-slug>-<topic-slug>.md`.
+   - **Resolve same-project same-day collisions** at write-time: if the target already exists, append `-2`, `-3`, … before `.md` until unique. Filesystem path checks `~/dev/paul-context/_incoming/<filename>`; Issue path checks for an open Issue with the same title (rare in practice — same project, same day, same topic — but the suffix prevents silent merge of two distinct retros).
+   - **Pick the inbox path:**
+     - **Filesystem inbox** (preferred): if `[ -d ~/dev/paul-context/_incoming ] && [ -w ~/dev/paul-context/_incoming ]`, `Write` the journal markdown to `~/dev/paul-context/_incoming/<filename>`. **No git operations against `paul-context`.**
+     - **GitHub Issue fallback** (sandbox / remote VM / no local clone): stage the journal markdown with the `Write` tool to `/tmp/<filename>` (`Write(/tmp/**)` is auto-allowed), then file as a labeled Issue:
+
+       ```sh
+       gh issue create --repo pmgledhill102/paul-context \
+           --label journal-draft \
+           --title "journal: <filename-without-.md>" \
+           --body-file /tmp/<filename>
+       ```
+
+       The `journal-draft` label and the `journal:` (with trailing space) title prefix are how `/promote-journal-inbox` finds the draft. Promotion infers the eventual filename by stripping `journal:` (with trailing space) from the Issue title and appending `.md`, so the filename is stable from draft → committed.
+     - **Both unreachable** (rare — offline AND no local clone): print the full draft to the session log with clear `===BEGIN JOURNAL===` / `===END JOURNAL===` delimiters and stop. Don't silently discard content. Tell the user to save it manually.
+   - Capture `paul-context/journal/<filename>` (the eventual post-promotion path) for cross-references in subsequent beads/issues. The path is stable across both inbox paths because both preserve `<filename>` exactly.
 2. **memory**: Write the memory file with proper frontmatter (`name`, `description`, `type` of `user|feedback|project|reference`), then Edit `MEMORY.md` to add a one-line index entry. Follow the conventions in the parent CLAUDE.md auto-memory section.
 3. **bead** (same-repo): `bd create --title="..." --description="..." --type=... --priority=...` — run from the **current cwd**. Description **MUST** include `From retro: paul-context/journal/<file>.md` near the top. Capture the new ID for the summary.
 4. **issue** (cross-repo): `gh issue create --repo pmgledhill102/<repo> --title="..." --body="..."` — DO NOT `cd` into the target repo for `bd create` (see step 3a). Body **MUST** include `From retro: paul-context/journal/<file>.md`. Capture the URL.
@@ -177,7 +188,7 @@ Print a compact wrap-up:
 ```text
 Retrospective complete.
 
-  Journal:                    paul-context/journal/2026-05-03-foo.md (pushed)
+  Journal:                    paul-context/journal/2026-05-03-agentic-coding-config-foo.md (drafted to _incoming/; pending /promote-journal-inbox)
   Beads created (here):       3 — paul-context-abc, paul-context-def, paul-context-ghi
   Issues raised cross-repo:   2 — github.com/.../issues/14, github.com/.../issues/15
   Memories saved:             1 — feedback_xyz.md
@@ -202,13 +213,13 @@ Next /start-session in the cross-repo'd repos will sweep the new Issues into bea
 
 ## What changed from the previous versions
 
-This command used to append a markdown entry to `~/.claude/retros.md` (the original flow), then was rewritten to output beads/Issues only without any journal (rev 1 of the new flow), then revised to include a per-session journal in `paul-context` (current). A later revision (2026-05-06) added the **Shell-friction patterns** dimension to Section 2 so each retro proactively surfaces command-shape friction (`$(cat …)`, heredocs, inline JSON) and proposes verified file-flag alternatives. The final shape:
+This command used to append a markdown entry to `~/.claude/retros.md` (the original flow), then was rewritten to output beads/Issues only without any journal (rev 1 of the new flow), then revised to include a per-session journal in `paul-context` (current). A later revision (2026-05-06) added the **Shell-friction patterns** dimension to Section 2 so each retro proactively surfaces command-shape friction (`$(cat …)`, heredocs, inline JSON) and proposes verified file-flag alternatives. A subsequent revision (2026-05-06) replaced the direct-write-to-`journal/` flow with an **inbox/promote** pattern: drafts land in `paul-context/_incoming/` (or as a `journal-draft`-labeled Issue when the local clone isn't available), and `/promote-journal-inbox` (run from `~/dev/paul-context/`) drains both inboxes into `journal/`. Filename convention gained a `<source-repo-slug>` prefix so cross-project drafts can't clobber each other. The skill no longer performs git operations against `paul-context` from arbitrary projects — see `paul-context/decisions/2026-05-05-journal-inbox-promotion.md` for the rationale. The final shape:
 
-- **Sandbox-agent reachable**: beads + GitHub Issues are network-reachable, and `paul-context/journal/` is a private git repo accessible via `gh` from anywhere.
+- **Sandbox-agent reachable**: beads + GitHub Issues are network-reachable, and journal drafts fall back to a `journal-draft`-labeled Issue against `paul-context` when the local `_incoming/` directory isn't present. Sandbox runs surface as Issues; local runs surface as filesystem drafts; promotion is invisible to the eventual journal entry.
 - **Per-entry, not single-master**: each retro produces a dated, slugged file in `paul-context/journal/`. The original `retros.md` decayed because it was one file containing everything. Per-entry files survive long-term scrolling.
 - **Privacy gives candour**: `paul-context` is private, so retros can be honest ("got stuck", "almost shipped a broken design") without self-censorship that public agentic-coding-config would force.
 - **Different layers**: agentic-coding-config is *what I configure*; the journal is *how I reflected on using it*. Reflections live with personal context, not tool config.
 - **Cross-repo actions land in the right tracker**: an action surfaced during a `dotfiles` retro that affects `agentic-coding-config` becomes an Issue/bead *there*, with a backlink to the journal entry in `paul-context`.
-- **paul-context has no branch protection**: direct commit + push to `main`. No PR overhead per retro.
+- **paul-context has no branch protection**: `/promote-journal-inbox` commits + pushes to `main` directly. No PR overhead per retro.
 
 See `paul-context/decisions/2026-05-03-beads-per-repo-issues-as-inbox.md` for the work-tracking architecture, and `paul-context/decisions/2026-05-03-personal-infra-public-private-split.md` for the wider three-repo layout this fits into.
