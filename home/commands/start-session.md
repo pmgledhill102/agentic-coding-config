@@ -38,11 +38,11 @@ Output is a sectioned stream. Each section starts with `===<name> (exit=<N>)===`
 | --- | --- | --- |
 | `fetch` | 2 (folded in) | Body is empty on success (exit=0). Non-zero = network/auth issue — body contains the error; surface before proceeding. |
 | `local_state` | 3, 9 | Includes branch, dirty/clean, ahead/behind upstream, ahead/behind `origin/<default>`. |
-| `main_ci` | 7 | Content `gh-unavailable` / `jq-unavailable` = silent skip. Otherwise: first line is `workflows=<N>`; subsequent lines are `<workflow-name>=<conclusion-or-status>@<short-sha>` (one per most-recent run per workflow on `<default>`). Non-zero with other content = real error. |
+| `main_ci` | 7 | Content `gh-unavailable` / `jq-unavailable` = silent skip. Otherwise: first line is `workflows=<N>`; subsequent lines are `<workflow-name>=<conclusion-or-status>@<short-sha>` (one per most-recent run per workflow on `<default>`). On `failure` / `cancelled` / `timed_out`, the line ends with a trailing space-separated run URL: `<workflow-name>=<conclusion>@<short-sha> <url>`. Non-zero with other content = real error. |
 | `gh_unmigrated` | 8 | Content `gh-unavailable` or `jq-unavailable` = silent skip. First line is `count=<N>`; remaining lines are `#<n> <title>` per unmigrated issue. |
 | `bd_remote` | 4 | Section absent if no beads workspace. Empty content = no remote configured (single-machine setup). |
-| `bd_ready` | 9 | Section absent if no beads workspace. Plain `bd ready` output — pick the top 5 entries for the brief. |
-| `bd_in_progress` | 9 | Section absent if no beads workspace. Mirrors `/end-session`'s `bd_progress` section. |
+| `bd_ready` | 9 | Section absent if no beads workspace. Empty content = no ready work. Otherwise up to 5 pipe-separated rows: `<id>\|P<n>\|<title>`. Already pre-summarised — use rows directly in the brief without further parsing. |
+| `bd_in_progress` | 9 | Section absent if no beads workspace. Empty content = nothing in flight. Otherwise pipe-separated rows: `<id>\|P<n>\|<title>` (no limit; usually 0-3). Same row shape as `bd_ready`. |
 | `bd_inprogress_delivered` | 5 | Section absent if no beads workspace. Empty content = nothing to auto-close. Each line is `<id>\|<short-sha>\|<subject>` for an in_progress bead whose ID was referenced by a merged commit on `<default>` (`Closes <id>` / `Fixes <id>`). |
 
 Rules for interpreting exit codes:
@@ -115,9 +115,9 @@ False-positive risk is low: a stray `Closes <bead-id>` reference in a non-closin
 
 ### 7. `main` CI status (Tier 1 — surface)
 
-From gather section `main_ci`. The script has already deduplicated to one most-recent run per workflow on `<default>` and emitted compact lines: `<workflow-name>=<conclusion-or-status>@<short-sha>`.
+From gather section `main_ci`. The script has already deduplicated to one most-recent run per workflow on `<default>` and emitted compact lines: `<workflow-name>=<conclusion-or-status>@<short-sha>`. Failing runs include the URL on the same line: `<workflow-name>=<conclusion>@<short-sha> <url>`.
 
-- **Any line where `<conclusion-or-status>` is `failure` / `cancelled` / `timed_out`**: flag in the session brief with workflow name + short-sha. A red default branch is the loudest "not clean" signal — call it out before the user starts new work.
+- **Any line where `<conclusion-or-status>` is `failure` / `cancelled` / `timed_out`**: flag in the session brief with workflow name + short-sha + run URL (the URL is on the same line — surface it inline so the user can click straight through). A red default branch is the loudest "not clean" signal — call it out before the user starts new work.
 - **Any line where `<conclusion-or-status>` is `in_progress`**: list with the short-sha. (Elapsed time is no longer captured — gather doesn't track createdAt in the compact form. If you need it, run `gh run list` directly.)
 - **All `success`**: silent (the brief reports "green").
 
@@ -190,8 +190,8 @@ Needs attention:
 Rules:
 
 - Sections with nothing to say collapse to a single `none` line; "Needs attention" is omitted entirely when empty.
-- "Ready to pick up next" is sourced from gather section `bd_ready`. Take the first 5 rows of `bd ready`'s output. `bd ready` already filters to issues whose blockers are all closed and sorts sensibly — preserve its order.
-- "In progress" is sourced from gather section `bd_in_progress`. No cap (usually 0–3 items). Note: any beads auto-closed in Step 5 won't appear here — they're already closed by the time the brief renders.
+- "Ready to pick up next" is sourced from gather section `bd_ready`. Each row is already pipe-separated `<id>|P<n>|<title>` and pre-truncated to 5 — split on `|` and emit. `bd ready` already filters to issues whose blockers are all closed and sorts sensibly; preserve the gather order.
+- "In progress" is sourced from gather section `bd_in_progress`. Same `<id>|P<n>|<title>` row shape; no cap (usually 0–3 items). Note: any beads auto-closed in Step 5 won't appear here — they're already closed by the time the brief renders.
 - "Auto-closed (delivered)" is sourced from the IDs Step 5 closed. Omit the entire section when Step 5 closed nothing.
 - If the repo has no beads workspace, drop both Beads sections silently (the brief still shows git/CI/GH lines).
 - Truncate any title to ~78 columns to keep rows on one line.
