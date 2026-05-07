@@ -7,8 +7,8 @@ This command runs in two phases. Phase 1 is the tidy-up (mix of auto-actions and
 Every step in Phase 1 falls into one of three tiers — keep this in mind when adding or editing steps:
 
 - **Tier 1 — auto-act, no prompt**: safe, reversible, expected. Examples: `git fetch --prune`, `git pull --rebase`, `bd dolt push`, read-only surface listings.
-- **Tier 2 — auto-act behind one batched confirmation**: destructive but predictable, judgment is yes/no for the whole list. Examples: deleting merged branches, deleting squash-merged branches, pushing `main` if ahead.
-- **Tier 3 — surface only, user drives**: needs per-item judgment, or affects shared state in ways one y/n can't capture. Examples: open PRs awaiting merge, `bd in_progress` issues, stashes, user-started background processes.
+- **Tier 2 — auto-act behind one batched confirmation**: destructive but predictable, judgment is yes/no for the whole list. Examples: deleting merged branches, deleting squash-merged branches, pushing `main` if ahead. Per-repo opt-in to Tier 1 is available via `.agent-policy` (see below) for users who always say "yes" in a given repo.
+- **Tier 3 — surface only, user drives**: needs per-item judgment, or affects shared state in ways one y/n can't capture. Examples: open PRs awaiting merge, `bd in_progress` issues, stashes, user-started background processes. **Never** opt-in via `.agent-policy` — these require human judgment by design.
 
 When in doubt, downgrade a tier (Tier 1 → 2, or 2 → 3). Never upgrade silently.
 
@@ -22,7 +22,42 @@ git rev-parse --is-inside-work-tree
 
 If the exit code is non-zero (or stdout is not `true`), print a single-line warning (`` `/end-session` requires a git-backed repo — nothing to tidy, stopping. ``) and stop. Do not run any further checks, do not proceed to Phase 2.
 
+## Repo-level policy (`.agent-policy`)
+
+**Optional.** A POSIX shell `KEY=VALUE` file at the repo root that opts specific Tier 2 prompts into Tier 1 (auto-run, no prompt) on a per-repo basis. The file is shared with `/start-session` (which has its own keys); each command consults the keys it cares about. Defaults (file absent or key unset) preserve every prompt — adding the file never makes any repo behave more aggressively than before.
+
+**Supported keys (this command):**
+
+| Key | When `=true` | Affects |
+| --- | --- | --- |
+| `AUTO_DELETE_MERGED_BRANCHES` | Auto-delete Batch A (`-d`, fully merged into `origin/main`) — no prompt | Step 6 Batch A |
+| `AUTO_DELETE_SQUASH_MERGED_BRANCHES` | Auto-delete Batch B (`-D`, squash-merged with the safety net check) — no prompt | Step 6 Batch B |
+| `AUTO_PUSH_MAIN_IF_AHEAD` | Auto-push `main` when local is ahead of `origin/main` — no prompt | Step 7 |
+
+Any value other than `true` is treated as unset. Unknown keys (including `/start-session`'s own keys when read by this command) are ignored silently.
+
+**Trust model:** the file is sourced as POSIX shell, so a hostile commit could place arbitrary commands in it. Treat `.agent-policy` the same as `.envrc` / `.editorconfig` — only commit it on repos you control, and only opt into automation you actually want.
+
+**Note on the two delete keys:** Batch A and Batch B are separate keys deliberately. Batch A uses `-d` and only succeeds for branches with reachable upstream history — fully safe. Batch B uses `-D` (force) and relies on a safety net (empty diff vs `main` OR a merged PR via `gh`) to identify squash-merged work. Some users will trust Batch A but want to keep Batch B prompted.
+
+**Example `.agent-policy`:**
+
+```sh
+# .agent-policy — opt-in automation for /end-session in this repo
+AUTO_DELETE_MERGED_BRANCHES=true
+AUTO_PUSH_MAIN_IF_AHEAD=true
+# Leave AUTO_DELETE_SQUASH_MERGED_BRANCHES unset to keep the Batch B prompt.
+```
+
 ## Phase 1 — Tidy-up
+
+If `.agent-policy` exists at the repo root, source it once before proceeding:
+
+```sh
+[ -f .agent-policy ] && . ./.agent-policy
+```
+
+This loads any opt-in keys consulted by Tier 2 steps. The file is optional; if absent, every Tier 2 step prompts as today.
 
 ### 1. Gather state (Tier 1 — one tool call)
 
@@ -117,7 +152,7 @@ git pull --rebase origin main
 
 If the rebase fails (conflicts, divergent history), stop and surface the error — don't attempt `--abort` or destructive recovery without asking.
 
-### 6. Prune obsolete local branches (Tier 2 — two batches, each prompted once)
+### 6. Prune obsolete local branches (Tier 2 — two batches, each prompted once; per-batch policy opt-in)
 
 Two batches. Present each list, ask **one** y/n per batch, then act on the whole list. Never iterate per-branch.
 
@@ -134,20 +169,25 @@ Take the list from gather section `merged_brs`.
 For each batch:
 
 - If empty, say so and move on.
-- Otherwise present the full list and ask once: "delete all of these? (y/n)".
-- On `y`: `-d` for Batch A, `-D` for Batch B.
+- Otherwise present the full list. Then **either**:
+  - **If the corresponding `.agent-policy` key is `true`** (`AUTO_DELETE_MERGED_BRANCHES` for Batch A, `AUTO_DELETE_SQUASH_MERGED_BRANCHES` for Batch B): skip the prompt and delete directly. Add a `Policy:` line to the Phase 1 summary noting the auto-delete fired with the deleted branch count.
+  - **Otherwise (default)**: ask once: "delete all of these? (y/n)".
+- On `y` (or policy fire): `-d` for Batch A, `-D` for Batch B.
 
-If a `[gone]` branch has a non-empty diff vs `main` AND no merged PR is found via `gh`, surface it by name ("`feat/x` — upstream gone but diffs against `main` and no merged PR found, left alone") so the user can decide manually. Don't roll it into Batch B.
+If a `[gone]` branch has a non-empty diff vs `main` AND no merged PR is found via `gh`, surface it by name ("`feat/x` — upstream gone but diffs against `main` and no merged PR found, left alone") so the user can decide manually. Don't roll it into Batch B — the safety net protects the auto-delete path too.
 
 For remote-tracking refs, `git fetch --prune` in step 2 already handled stale `origin/*` refs. Don't delete anything on the remote itself.
 
-### 7. Push main if ahead (Tier 2)
+### 7. Push main if ahead (Tier 2 — prompt, or Tier 1 with policy opt-in)
 
 ```sh
 git log origin/main..HEAD --oneline
 ```
 
-If main is ahead of origin/main (shouldn't normally happen, but catches the case where commits landed locally), ask before pushing.
+If main is ahead of origin/main (shouldn't normally happen, but catches the case where commits landed locally):
+
+- **If `AUTO_PUSH_MAIN_IF_AHEAD=true` (from `.agent-policy`)**: push directly without prompting. Add a `Policy:` line to the Phase 1 summary noting the push fired and the commit count.
+- **Otherwise (default)**: ask before pushing.
 
 ### 8. Open PRs needing your action (Tier 3 — surface only)
 
@@ -251,6 +291,7 @@ Print a concise summary. Each line says "none" loudly when clean, so noise scale
 - Background processes (reaped): `<count>`
 - Background processes (user-owned, surfaced): `<count>`
 - Beads pushed: `<yes/no/n/a>`
+- Policy: `<list of .agent-policy keys that fired this session, e.g. "AUTO_DELETE_MERGED_BRANCHES → 3 deleted">` — omit the line entirely when no keys fired or the file is absent. Don't list keys that were set but had nothing to do (e.g. `AUTO_DELETE_MERGED_BRANCHES=true` with no merged branches).
 - Anything skipped/surfaced: `<list>`
 
 ## Phase 2 — Retrospective
@@ -271,8 +312,9 @@ On `n`: stop. The session is tidied; the user can run `/retrospective` later if 
 
 ## Guardrails
 
-- **`-D` (force delete) is allowed only for Batch B of step 6** — branches that are `[upstream: gone]` AND have an empty `git diff` against `main`. Everywhere else: always `-d`. If `-d` refuses, that's signal — surface it, don't override.
+- **`-D` (force delete) is allowed only for Batch B of step 6** — branches that are `[upstream: gone]` AND have an empty `git diff` against `main` (or a merged PR via `gh`). Everywhere else: always `-d`. If `-d` refuses, that's signal — surface it, don't override. The Batch B safety net protects the `AUTO_DELETE_SQUASH_MERGED_BRANCHES` opt-in path identically — auto-delete only acts on entries that already passed the safety check.
 - **Never `git push --force` or `git reset --hard`.** Those aren't session-tidy operations; if they're needed, the user should drive them.
 - **Never auto-merge PRs, auto-close issues, or auto-drop stashes.** Per-item judgment lives with the user (Tier 3).
-- **Ask before every Tier 2 destructive action** (branch deletes, force-pushing). One y/n per batch is fine — don't ask per-branch if a single list is presented.
+- **Ask before every Tier 2 destructive action by default** (branch deletes, force-pushing). One y/n per batch is fine — don't ask per-branch if a single list is presented. The `.agent-policy` keys (`AUTO_DELETE_MERGED_BRANCHES`, `AUTO_DELETE_SQUASH_MERGED_BRANCHES`, `AUTO_PUSH_MAIN_IF_AHEAD`) are the only sanctioned way to skip the prompt, and they're per-repo opt-in.
 - **Don't modify settings, config, or unrelated files.** This command's scope is git, GitHub, beads, and process state only.
+- **`.agent-policy` only promotes Tier 2 → Tier 1 for the keys it explicitly governs.** Tier 3 surfaces (user judgment) cannot be opted in. Unknown keys are ignored silently.
