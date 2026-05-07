@@ -7,8 +7,8 @@ This command runs in a single phase. It mirrors `/end-session`'s shape — paral
 Every step falls into one of three tiers — keep this in mind when adding or editing steps:
 
 - **Tier 1 — auto-act, no prompt**: safe, reversible, expected. Examples: `git fetch --prune`, `git pull --rebase` on the default branch, `bd dolt pull`, read-only surface listings.
-- **Tier 2 — auto-act behind one batched confirmation**: predictable but should be a conscious choice. Example: chaining into `/bd-import-github-issues` when unmigrated GitHub issues exist.
-- **Tier 3 — surface only, user drives**: needs per-item judgment. Examples: a feature branch trailing `main`, in-progress beads left mid-flight from the last session, red `main` CI.
+- **Tier 2 — auto-act behind one batched confirmation**: predictable but should be a conscious choice. Example: chaining into `/bd-import-github-issues` when unmigrated GitHub issues exist. Per-repo opt-in to Tier 1 is available via `.agent-policy` (see below) for users who always say "yes" in a given repo.
+- **Tier 3 — surface only, user drives**: needs per-item judgment. Examples: a feature branch trailing `main`, in-progress beads left mid-flight from the last session, red `main` CI. **Never** opt-in via `.agent-policy` — these require human judgment by design.
 
 When in doubt, downgrade a tier (Tier 1 → 2, or 2 → 3). Never upgrade silently.
 
@@ -22,7 +22,38 @@ git rev-parse --is-inside-work-tree
 
 If the exit code is non-zero (or stdout is not `true`), print a single-line warning (`` `/start-session` requires a git-backed repo — nothing to sync, stopping. ``) and stop.
 
+## Repo-level policy (`.agent-policy`)
+
+**Optional.** A POSIX shell `KEY=VALUE` file at the repo root that opts specific Tier 2 prompts into Tier 1 (auto-run, no prompt) on a per-repo basis. Defaults (file absent or key unset) preserve the prompt — adding the file never makes any repo behave more aggressively than before.
+
+**Supported keys:**
+
+| Key | When `=true` | Affects |
+| --- | --- | --- |
+| `AUTO_GITHUB_IMPORT` | Auto-run `/bd-import-github-issues` when `count > 0` — no prompt | Step 8 |
+| `AUTO_JOURNAL_PROMOTE` | Auto-run `/promote-journal-inbox` when filesystem `_incoming/` count >= 1 — no prompt | Step 8.5 |
+
+Any value other than `true` is treated as unset. Unknown keys are ignored silently (forward-compatibility).
+
+**Trust model:** the file is sourced as POSIX shell, so a hostile commit could place arbitrary commands in it. Treat `.agent-policy` the same as `.envrc` / `.editorconfig` — only commit it on repos you control, and only opt into automation you actually want. The file lives at the repo root (not under `.claude/`, which is reserved for the harness's own config).
+
+**Example `.agent-policy`:**
+
+```sh
+# .agent-policy — opt-in automation for /start-session in this repo
+AUTO_GITHUB_IMPORT=true
+AUTO_JOURNAL_PROMOTE=true
+```
+
 ## Phase 1 — Sync
+
+If `.agent-policy` exists at the repo root, source it once before proceeding:
+
+```sh
+[ -f .agent-policy ] && . ./.agent-policy
+```
+
+This loads any opt-in keys consulted by Tier 2 steps. The file is optional; if absent, every Tier 2 step prompts as today.
 
 ### 1. Gather state (Tier 1 — one tool call)
 
@@ -133,20 +164,23 @@ From gather section `recent_main_commits`. The first line is `count=<N>` — com
 
 This is informational only — no action prompts. The section adds a few lines on busy days and zero on quiet ones.
 
-### 8. Unmigrated GitHub Issues (Tier 2 — prompt)
+### 8. Unmigrated GitHub Issues (Tier 2 — prompt, or Tier 1 with policy opt-in)
 
 From gather section `gh_unmigrated`. The first line is `count=<N>`; remaining lines are `#<number> <title>` per unmigrated issue.
 
 - **`gh-unavailable` / `jq-unavailable` / no remote**: skip silently.
 - **`count=0`**: silent.
-- **`count > 0`**: print the count and (up to) the first 5 titles, then prompt:
+- **`count > 0`**: print the count and (up to) the first 5 titles, then:
 
-  > `<N>` open GitHub issue(s) haven't been imported into beads yet. Run `/bd-import-github-issues` now? (y/n)
+  - **If `AUTO_GITHUB_IMPORT=true` (from `.agent-policy`)**: skip the prompt and invoke `/bd-import-github-issues` directly. Add a `Policy:` line to the session brief noting that the import fired automatically.
+  - **Otherwise (default)**: prompt:
 
-  - **yes** → invoke `/bd-import-github-issues` directly. That command does its own `bd dolt pull` (Step 0) and `bd dolt push` (Step 8); a second pull right after step 4 is a clean no-op, and the push at the end is what we want anyway.
-  - **no / empty / cancel** → carry on. Surface the count in the session brief under "Needs attention" so it's visible at a glance.
+    > `<N>` open GitHub issue(s) haven't been imported into beads yet. Run `/bd-import-github-issues` now? (y/n)
 
-### 8.5. Paul-context inbox surface (Tier 2 — prompt, paul-context only)
+    - **yes** → invoke `/bd-import-github-issues` directly. That command does its own `bd dolt pull` (Step 0) and `bd dolt push` (Step 8); a second pull right after step 4 is a clean no-op, and the push at the end is what we want anyway.
+    - **no / empty / cancel** → carry on. Surface the count in the session brief under "Needs attention" so it's visible at a glance.
+
+### 8.5. Paul-context inbox surface (Tier 2 — prompt, paul-context only; Tier 1 with policy opt-in)
 
 **Only fires when the current working tree is `paul-context`** (`basename "$(git rev-parse --show-toplevel)" = "paul-context"`). Otherwise skip silently. This is a runtime filesystem check, not part of the gather output — `/start-session` runs in many repos and a generic gather section would always be empty for the rest.
 
@@ -157,12 +191,15 @@ ls -1 _incoming/ 2>/dev/null
 Filter the listing to entries matching `^[0-9]{4}-[0-9]{2}-[0-9]{2}-[a-z0-9-]+\.md$` (excludes `README.md` and any non-conforming files). Count the matches.
 
 - **0 matches**: skip silently.
-- **>= 1 match**: print the count and (up to first 5) filenames, then prompt:
+- **>= 1 match**: print the count and (up to first 5) filenames, then:
 
-  > `<N>` journal draft(s) pending in `_incoming/`. Run `/promote-journal-inbox` now? (y/n)
+  - **If `AUTO_JOURNAL_PROMOTE=true` (from `.agent-policy`)**: skip the prompt and invoke `/promote-journal-inbox` directly. Add a `Policy:` line to the session brief noting that the promote fired automatically.
+  - **Otherwise (default)**: prompt:
 
-  - **yes** → invoke `/promote-journal-inbox` directly. That command's pre-flight verifies cwd, then drains both filesystem `_incoming/` and `journal-draft`-labeled Issues from `pmgledhill102/paul-context`, commits each draft separately, single-pushes, and closes the drained Issues. Carry the result into the session brief.
-  - **no / empty / cancel** → carry on. Surface the count in the session brief under "Needs attention" so it's visible at a glance.
+    > `<N>` journal draft(s) pending in `_incoming/`. Run `/promote-journal-inbox` now? (y/n)
+
+    - **yes** → invoke `/promote-journal-inbox` directly. That command's pre-flight verifies cwd, then drains both filesystem `_incoming/` and `journal-draft`-labeled Issues from `pmgledhill102/paul-context`, commits each draft separately, single-pushes, and closes the drained Issues. Carry the result into the session brief.
+    - **no / empty / cancel** → carry on. Surface the count in the session brief under "Needs attention" so it's visible at a glance.
 
 Note: this surface only counts the **filesystem** half of the inbox. The Issue-side half (sandbox-fallback drafts) isn't enumerated here — surfacing it would require an extra `gh issue list --label journal-draft` call, and the filesystem count is the dominant signal because the local machine is where the user lives. `/promote-journal-inbox` itself drains both inboxes when invoked, so user action is consistent regardless of which path filed the draft.
 
@@ -177,6 +214,10 @@ Sync:     <default> <ahead/behind/even>   upstream <ahead/behind/even/gone/n/a>
           [auto-switched <feature> → <default> (upstream gone)]    (only when Step 3 auto-switched)
 Dolt:     <pulled / up-to-date / no remote / FAILED>
 CI:       <green / N failing / N in-progress / n/a>
+
+Policy:                                             (omit when no policy keys fired)
+  AUTO_GITHUB_IMPORT=true → imported <N> issue(s)
+  AUTO_JOURNAL_PROMOTE=true → promoted <N> draft(s)
 
 Auto-closed (delivered):                            (omit when none)
   <id>  via <short-sha>  <commit subject>
@@ -208,6 +249,7 @@ Rules:
 - "In progress" is sourced from gather section `bd_in_progress`. Same `<id>|P<n>|<title>` row shape; no cap (usually 0–3 items). Note: any beads auto-closed in Step 5 won't appear here — they're already closed by the time the brief renders.
 - "Auto-closed (delivered)" is sourced from the IDs Step 5 closed. Omit the entire section when Step 5 closed nothing.
 - "Recent merges" is sourced from gather section `recent_main_commits`. Omit the entire section when `count=0`.
+- "Policy" lists each `.agent-policy` key that fired this session (i.e. promoted a Tier 2 prompt to Tier 1 auto-action). Omit the entire section when no keys fired or the file is absent. Don't list keys that were set but had nothing to do (e.g. `AUTO_GITHUB_IMPORT=true` when `count=0`) — only list actual fires.
 - If the repo has no beads workspace, drop both Beads sections silently (the brief still shows git/CI/GH lines).
 - Truncate any title to ~78 columns to keep rows on one line.
 
@@ -217,5 +259,6 @@ Rules:
 - **Never auto-rebase a feature branch** onto an advanced default branch. Surface the gap and stop. The user picks the strategy.
 - **Never switch branches except when the upstream is gone and the tree is clean.** That single case (PR merged + branch auto-deleted on remote, no local uncommitted work) is auto-handled per Step 3. Otherwise, `/start-session` reports state on whatever branch the user is on.
 - **`bd dolt pull` failures halt the phase.** Don't attempt auto-resolve, don't fall back to JSONL, don't rebuild the DB. Surface and stop.
-- **Don't push anything except the auto-close result in Step 5.** Pushes generally belong to `/end-session` (for git/`main`) and `/bd-import-github-issues` (for beads after import). The single carve-out is Step 5's `bd dolt push` after auto-closing delivered in_progress beads — that push is what makes the auto-close cross-machine durable. `/start-session` is otherwise read-mostly.
+- **Don't push anything except the auto-close result in Step 5.** Pushes generally belong to `/end-session` (for git/`main`) and `/bd-import-github-issues` (for beads after import). The single carve-out is Step 5's `bd dolt push` after auto-closing delivered in_progress beads — that push is what makes the auto-close cross-machine durable. `/start-session` is otherwise read-mostly. (Note: if `AUTO_GITHUB_IMPORT=true` fires, `/bd-import-github-issues` runs its own push — that's the import command's contract, not a new carve-out.)
 - **Don't modify settings, config, or unrelated files.** Scope is git, beads, and GitHub-issue surface only.
+- **`.agent-policy` only promotes Tier 2 → Tier 1 for the keys it explicitly governs.** Tier 3 surfaces (user judgment) cannot be opted in. Unknown keys are ignored silently.
