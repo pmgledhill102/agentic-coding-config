@@ -138,8 +138,16 @@ Proceed with the above mapping?
 
 **Don't pass descriptions inline.** GitHub bodies routinely contain quotes, apostrophes, code fences, multi-line shell output — escaping all that into a single `--description="..."` argument is brittle and breaks differently each time. `$(cat …)` substitution is a partial fix but can still trip Claude Code's harness re-prompt heuristic by surfacing multi-line content in the rendered command. Use `bd create --body-file=PATH` instead — bd reads the description directly from the file and the command line stays a single static line that matches the `Bash(bd *)` glob rule cleanly.
 
-1. For each confirmed candidate, write the full description to a temp file using the `Write` tool: `/tmp/bead-desc-<gh_number>.md`. The file content is plain text, no shell-escaping needed.
-2. Then run `bd create` with `--body-file=/tmp/bead-desc-<gh_number>.md` — no shell substitution involved.
+**Capture a per-run token first** so temp-file paths can't collide with prior runs (the `Write` tool refuses to clobber a path it hasn't read in this session — even if the file's content is stale from a previous import in another project that happened to share GitHub issue numbers):
+
+```sh
+RUN_TS=$(date +%s)
+```
+
+Use `RUN_TS` as a prefix on every temp-file path. Re-runs in the same boot session — and runs across different projects with overlapping GH issue numbers — are then collision-free by construction.
+
+1. For each confirmed candidate, write the full description to a temp file using the `Write` tool: `/tmp/bead-import-<RUN_TS>-<gh_number>.md`. The file content is plain text, no shell-escaping needed.
+2. Then run `bd create` with `--body-file=/tmp/bead-import-<RUN_TS>-<gh_number>.md` — no shell substitution involved.
 
 Description file template:
 
@@ -157,7 +165,7 @@ Then for each confirmed candidate, in order:
 ```sh
 bd create \
   --title="<decoded gh title>" \
-  --body-file=/tmp/bead-desc-<n>.md \
+  --body-file=/tmp/bead-import-<RUN_TS>-<n>.md \
   --type=<inferred or overridden> \
   --priority=<inferred or overridden>
 ```
@@ -170,7 +178,7 @@ Notes:
 
 - Don't try to preserve GitHub labels as bd labels — beads doesn't have a labels concept the same way. The label names are already captured indirectly via type/priority inference; the original list is in the GitHub issue's history (still accessible after closing).
 - Don't try to map GitHub assignees — for solo-dev usage they're always you; for multi-user teams the mapping needs more thought and is out of scope for v1.
-- The `/tmp/bead-desc-<n>.md` files are leftover after the run. Harmless; they're cleared on next reboot. If you want them gone immediately, `rm /tmp/bead-desc-*.md` at the end.
+- The `/tmp/bead-import-<RUN_TS>-<n>.md` files are leftover after the run. Harmless; they're cleared on next reboot. If you want them gone immediately, `rm /tmp/bead-import-${RUN_TS}-*.md` at the end (or just `rm /tmp/bead-import-*.md` to sweep all prior runs too — the `<RUN_TS>` prefix keeps each run's files easy to scope).
 
 ### Step 5: Confirmation B — close the GitHub issues?
 
