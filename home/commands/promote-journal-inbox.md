@@ -34,8 +34,8 @@ If empty, surface `(no filesystem drafts pending)` and skip to Phase 2.
 For each `<filename>` in the sorted list:
 
 1. **Conflict check**: if `journal/<filename>` already exists, skip. Append to the conflict-list as `<filename> — already in journal/, left in _incoming/`. Continue with the next draft.
-2. `git mv _incoming/<filename> journal/<filename>` — preserves the filename exactly.
-3. Stage with `git add journal/<filename>` (already staged by `git mv`, but explicit is safer for the followup commit).
+2. `mv _incoming/<filename> journal/<filename>` — preserves the filename exactly. Plain `mv` (not `git mv`) because `_incoming/*.md` is gitignored at the repo level — `git mv` refuses to move untracked sources with `fatal: not under version control`. The destination lives under `journal/` (tracked), so step 3 picks it up cleanly.
+3. Stage with `git add journal/<filename>`.
 4. Derive the commit message slug: strip the leading `<YYYY-MM-DD>-` from `<filename>` and the trailing `.md`. The remainder is `<source-repo-slug>-<topic-slug>`.
 5. Commit each draft separately:
 
