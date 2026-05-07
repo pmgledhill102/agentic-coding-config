@@ -96,13 +96,15 @@ if [ -f .beads/metadata.json ]; then
     run_section bd_progress bd list --status=in_progress
     # shellcheck disable=SC2016
     run_sh bd_inprogress_delivered '
-        # For each in_progress bead, find any merged commit on main whose
-        # message contains "Closes <id>" or "Fixes <id>" (case-insensitive)
-        # — those signal the bead was delivered but never closed. Output:
+        # For each open OR in_progress bead, find any merged commit on main
+        # whose message contains "Closes <id>" or "Fixes <id>" (case-insensitive)
+        # — those signal the bead was delivered but never closed. Open is
+        # included to catch beads that shipped via a Closes-trailer commit
+        # but were never claimed (so they stayed open). Output:
         #   <id>|<short-sha>|<subject>
         # one per line. Empty output is fine (nothing to auto-close).
         # Mirrors the same section in start-session-gather-state.
-        bd list --status=in_progress 2>/dev/null \
+        bd list --status=in_progress,open 2>/dev/null \
             | grep -oE "[a-z][a-z0-9-]+-[a-z0-9]{3}" \
             | sort -u \
             | while read -r id; do

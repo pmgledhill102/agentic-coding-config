@@ -44,7 +44,7 @@ Output is a sectioned stream. Each section starts with `===<name> (exit=<N>)===`
 | `main_ci` | 3 | Content `gh-unavailable` = silent skip. Non-zero with other content = real error. |
 | `open_prs` | 8 | Same skip convention as `main_ci`. |
 | `bd_progress` | 10 | Section absent if no beads workspace. All entries are `in_progress` by definition (that's the filter) — see step 10 for symbol-reading rules. |
-| `bd_inprogress_delivered` | 9.5 | Section absent if no beads workspace. Empty content = nothing to auto-close. Each line is `<id>\|<short-sha>\|<subject>` for an in_progress bead whose ID was referenced by a merged commit on `main` (`Closes <id>` / `Fixes <id>`). Mirrors `/start-session`'s section of the same name. |
+| `bd_inprogress_delivered` | 9.5 | Section absent if no beads workspace. Empty content = nothing to auto-close. Each line is `<id>\|<short-sha>\|<subject>` for an open or in_progress bead whose ID was referenced by a merged commit on `main` (`Closes <id>` / `Fixes <id>`). Open is included to catch beads that shipped via a `Closes`-trailer commit but were never claimed. Mirrors `/start-session`'s section of the same name. |
 | `stale_claude_files` | 11 | Content `chezmoi-unavailable` = silent skip. Empty body (exit=0) = nothing stale. Otherwise: one path per line under `.claude/commands/` or `.claude/bin/` that's present locally but not tracked by chezmoi. |
 
 Rules for interpreting exit codes:
@@ -138,7 +138,7 @@ From gather section `stashes`. If non-empty, surface count + entries. Don't drop
 
 ### 9.5. Auto-close delivered in_progress beads (Tier 1)
 
-From gather section `bd_inprogress_delivered` (absent if no beads workspace; empty if nothing matched). Each line is `<id>|<short-sha>|<subject>` — an `in_progress` bead whose ID was referenced by a merged commit on `main` with `Closes <id>` or `Fixes <id>` in the message.
+From gather section `bd_inprogress_delivered` (absent if no beads workspace; empty if nothing matched). Each line is `<id>|<short-sha>|<subject>` — an open or in_progress bead whose ID was referenced by a merged commit on `main` with `Closes <id>` or `Fixes <id>` in the message. Open is included to catch beads that shipped via a `Closes`-trailer commit but were never claimed (so they stayed open instead of moving to in_progress).
 
 These are deliveries that landed in this session (or a recent prior one) but never had their bead closed. The PR was already reviewed and merged; closing the bead is bookkeeping, not a judgment call. Auto-close each one — no prompt:
 
