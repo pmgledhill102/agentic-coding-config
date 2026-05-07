@@ -44,7 +44,7 @@ Output is a sectioned stream. Each section starts with `===<name> (exit=<N>)===`
 | `bd_remote` | 4 | Section absent if no beads workspace. Empty content = no remote configured (single-machine setup). |
 | `bd_ready` | 9 | Section absent if no beads workspace. Empty content = no ready work. Otherwise up to 5 pipe-separated rows: `<id>\|P<n>\|<title>`. Already pre-summarised — use rows directly in the brief without further parsing. |
 | `bd_in_progress` | 9 | Section absent if no beads workspace. Empty content = nothing in flight. Otherwise pipe-separated rows: `<id>\|P<n>\|<title>` (no limit; usually 0-3). Same row shape as `bd_ready`. |
-| `bd_inprogress_delivered` | 5 | Section absent if no beads workspace. Empty content = nothing to auto-close. Each line is `<id>\|<short-sha>\|<subject>` for an in_progress bead whose ID was referenced by a merged commit on `<default>` (`Closes <id>` / `Fixes <id>`). |
+| `bd_inprogress_delivered` | 5 | Section absent if no beads workspace. Empty content = nothing to auto-close. Each line is `<id>\|<short-sha>\|<subject>` for an open or in_progress bead whose ID was referenced by a merged commit on `<default>` (`Closes <id>` / `Fixes <id>`). Open is included to catch beads that shipped via a `Closes`-trailer commit but were never claimed. |
 
 Rules for interpreting exit codes:
 
@@ -96,7 +96,7 @@ If it fails (auth, network, or genuine conflict), halt the phase and surface the
 
 ### 5. Auto-close delivered in_progress beads (Tier 1)
 
-Read gather section `bd_inprogress_delivered` (absent if no beads workspace; empty if nothing matched). Each line is `<id>|<short-sha>|<subject>` — an `in_progress` bead whose ID was referenced by a merged commit on the default branch with `Closes <id>` or `Fixes <id>` in the message.
+Read gather section `bd_inprogress_delivered` (absent if no beads workspace; empty if nothing matched). Each line is `<id>|<short-sha>|<subject>` — an open or in_progress bead whose ID was referenced by a merged commit on the default branch with `Closes <id>` or `Fixes <id>` in the message. Open is included to catch beads that shipped via a `Closes`-trailer commit but were never claimed (so they stayed open instead of moving to in_progress).
 
 These are deliveries that never got their bead closed. The PR was already reviewed and merged; closing the bead is bookkeeping, not a judgment call. Auto-close each one — no prompt:
 
