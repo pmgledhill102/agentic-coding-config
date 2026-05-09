@@ -32,10 +32,11 @@
 - **Lint before pushing**: Always run the relevant linter/test suite locally before `git push`. Only push if everything passes — avoids CI round-trips
 - **Use native binaries over package runners**: When a linter/formatter is installed on PATH (`which <tool>`), invoke it directly (e.g. `markdownlint-cli2 "path"`) rather than wrapping it in `npx`/`pipx`/`uvx`. Wrappers introduce version drift from what CI and pre-commit use, are slower, and may trigger permission prompts
 - **Single-concern PRs**: Each PR should contain a single logical change. If multiple tasks are completed in a session, create separate PRs for each rather than bundling unrelated changes
+- **PR-stacking discipline**: only claim "stacked on" when the second branch literally has the first as parent (`git log --oneline first..second` shows just the second's commits). Branching both off `main` and writing "stacked on PR #N" in the body is misleading — reviewers can merge in any order, and the second PR's diff includes the first's changes. If they're truly independent, branch each from `main` and don't say stacked
 - **Batch reads before edits**: When modifying multiple files, read all target files first, then make all edits — avoids "file not read yet" errors on parallel Edit calls
 - **Always create a beads issue**: Even for quick single-file fixes, run `bd create` before starting work — maintains the audit trail and keeps the habit consistent
 
 ## Shell Scripts
 
 - **Target POSIX sh or ensure macOS/zsh compatibility**: Avoid bash-only builtins (`mapfile`, `readarray`, `declare -A`). Be aware that `$(( expr ))` returns exit code 1 when result is 0 (breaks `set -e`), and empty arrays behave differently in zsh with `set -u`
-- **Verify CLI flags before using them**: Run `<tool> --help` or `<tool> help <subcommand>` locally before committing — avoids round-trips from non-existent flags (e.g., `brew bundle --no-lock`)
+- **Verify CLI flags before using them — for both commands you run AND advice you give the user**: Run `<tool> --help` or `<tool> help <subcommand>` locally before committing or before recommending a flag in chat. `--no-lock`-style hallucinations waste a round-trip whether they fire in your bash call or in the user's terminal after you suggest them
