@@ -15,6 +15,12 @@
 - Before pushing follow-up commits to a PR branch, always check the PR is still open via `mcp__github__pull_request_read` (method: "get"). The user often reviews and merges PRs via the GitHub UI while work continues — if already merged, create a new branch and PR instead
 - When multiple related changes span different concerns, ask the user whether to use one branch or separate branches before committing
 
+## Agent Config (`~/.claude/` files)
+
+- **`~/.claude/` is chezmoi-managed from `pmgledhill102/agentic-coding-config`.** Do not edit these files directly — chezmoi will overwrite on the next apply and the change is lost. This includes `~/.claude/CLAUDE.md` itself, `~/.claude/settings.json`, slash commands under `~/.claude/commands/`, hooks, scripts under `~/.claude/bin/`, everything sourced from the `home/` directory of that repo.
+- **To request a change, open a GitHub issue against `pmgledhill102/agentic-coding-config`** (auto-approved via `gh issue create --repo pmgledhill102/*` — keep `--repo` as the first flag for the allow rule to match). Describe what should change and why; add acceptance criteria if useful. The user sweeps the GH-issue inbox into beads via `/bd-import-github-issues` at the start of a-c-c sessions and addresses tickets there, where the chezmoi source actually lives.
+- **Do not reach across repos to make the edit yourself.** Cross-repo file edits (e.g. `cd ~/dev/agentic-coding-config && edit home/...` from a session in another project) bypass the issue queue, skip the review/PR flow, and pollute the current session's context with unrelated work. Leave a message; don't reach across.
+
 ## Beads (bd)
 
 - **Prefer `~/.claude/bin/bd-push-safe` over bare `bd dolt push`**: the shim at `~/.claude/bin/bd-push-safe` strips the cache hooks that `bd init` / `bd bootstrap` re-create from `init.templatedir`. On machines where dotfiles git-templates invoke the pre-commit framework, bare `bd dolt push` fails with `fatal: this operation must be run in a work tree`; `~/.claude/bin/bd-push-safe` is a drop-in replacement that just works. **Always use the absolute path** — `~/.claude/bin/` is not on `PATH` on every machine, so bare `bd-push-safe` will trigger a permission prompt and then fail with "command not found". Tracked upstream as `agentic-coding-config-o5w`; once that lands the shim becomes a no-op and can be removed.
