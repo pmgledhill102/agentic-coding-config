@@ -39,6 +39,8 @@
       "Bash(diff *)",
       "Bash(dig *)",
       "Bash(dolt *)",
+      "Bash(~/.claude/bin/bd-push-safe)",
+      "Bash(~/.claude/bin/bd-push-safe *)",
       "Bash(~/.claude/bin/end-session-*)",
       "Bash(~/.claude/bin/start-session-*)",
       "Bash(/Applications/draw.io.app/Contents/MacOS/draw.io *)",

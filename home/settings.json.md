@@ -11,6 +11,22 @@ changing permission rules, update both files together.
 - `Bash(bd *)`
 - `Bash(beads *)`
 
+The `bd-push-safe` shim at `~/.claude/bin/bd-push-safe` is a drop-in
+replacement for `bd dolt push` that strips the cache hooks `bd init` /
+`bd bootstrap` re-create from `init.templatedir`. On machines whose
+dotfiles git-templates invoke the pre-commit framework, bare
+`bd dolt push` fails with `fatal: this operation must be run in a work
+tree`; the shim makes it just work. Tracked upstream as
+`agentic-coding-config-o5w`; once that lands the shim becomes a no-op
+and these rules can be removed. `~/.claude/bin/` is **not** currently
+on `PATH`, so only the absolute-path form is auto-approved — if the
+bare-name form is ever needed, add `Bash(bd-push-safe)` /
+`Bash(bd-push-safe *)` then. The companion entries live in the
+`~/.claude/bin/` cluster alongside the session-lifecycle scripts.
+
+- `Bash(~/.claude/bin/bd-push-safe)`
+- `Bash(~/.claude/bin/bd-push-safe *)`
+
 ### BigQuery (read-only metadata)
 
 `bq query` is **not** auto-approved — its `--use_legacy_sql=false` flag

@@ -17,7 +17,7 @@
 
 ## Beads (bd)
 
-- **Prefer `bd-push-safe` over bare `bd dolt push`**: the shim at `~/.claude/bin/bd-push-safe` strips the cache hooks that `bd init` / `bd bootstrap` re-create from `init.templatedir`. On machines where dotfiles git-templates invoke the pre-commit framework, bare `bd dolt push` fails with `fatal: this operation must be run in a work tree`; `bd-push-safe` is a drop-in replacement that just works. Tracked upstream as `agentic-coding-config-o5w`; once that lands the shim becomes a no-op and can be removed.
+- **Prefer `~/.claude/bin/bd-push-safe` over bare `bd dolt push`**: the shim at `~/.claude/bin/bd-push-safe` strips the cache hooks that `bd init` / `bd bootstrap` re-create from `init.templatedir`. On machines where dotfiles git-templates invoke the pre-commit framework, bare `bd dolt push` fails with `fatal: this operation must be run in a work tree`; `~/.claude/bin/bd-push-safe` is a drop-in replacement that just works. **Always use the absolute path** — `~/.claude/bin/` is not on `PATH` on every machine, so bare `bd-push-safe` will trigger a permission prompt and then fail with "command not found". Tracked upstream as `agentic-coding-config-o5w`; once that lands the shim becomes a no-op and can be removed.
 
 ## Commit & PR Style
 
