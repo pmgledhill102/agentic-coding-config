@@ -670,10 +670,33 @@ the user revisits it.
 
 ### PreToolUse (Bash)
 
-1. **Pre-push lint gate** — Intercepts `git push` commands and runs
-   `pre-commit run --all-files` if a `.pre-commit-config.yaml` exists in
-   the repo. Blocks the push if linting fails. 120s timeout. Repos without
-   pre-commit config are unaffected.
+1. **pre-commit lint gate** — `~/.claude/bin/precommit-claude-hook`. A single
+   script that runs the pre-commit framework against the repo's
+   `.pre-commit-config.yaml` on the `git commit` / `git push` commands Claude
+   makes via its Bash tool, **blocking** on failure with `exit 2` (the only
+   PreToolUse exit code that both stops the tool call and feeds stderr back to
+   Claude — `exit 1` and other non-zero codes are non-blocking). 120s timeout.
+
+   This is the global replacement for the commit/push-stage hooks that
+   `init.templatedir` git-templates used to install per-repo — part of the
+   vanilla-git migration (epic `agentic-coding-config-6ls`) that removes those
+   templates (which also poisoned Dolt's bare cache mirrors and broke
+   `bd dolt push`) and retires the `bd-push-safe` shim.
+
+   Two stages:
+   - `git commit` → `--hook-stage pre-commit` on the **staged delta** (fast;
+     correct commit-stage semantics). Falls back to `--all-files` for
+     `git commit -a`/`--all`, where git stages files *after* the hook fires.
+   - `git push` → `--hook-stage pre-push --all-files` (whole-tree backstop
+     before CI; also covers manual / `--no-verify` commits the commit stage
+     never saw).
+
+   **Silent on success:** output is captured and emitted only on failure, so
+   passing checks add nothing to the transcript or to context. Fast-exits
+   (no-op) when: the command isn't a `git commit`/`git push`, `--no-verify`/`-n`
+   is present, no `.pre-commit-config.yaml` exists, or `pre-commit` isn't
+   installed. Only governs commands Claude runs via its Bash tool — manual
+   terminal commits/pushes are CI-backed.
 
 ### PostToolUse (Write|Edit)
 
