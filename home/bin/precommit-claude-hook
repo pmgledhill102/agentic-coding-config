@@ -1,0 +1,85 @@
+#!/bin/sh
+# precommit-claude-hook — Claude Code PreToolUse(Bash) hook.
+#
+# Runs the pre-commit framework on the `git commit` / `git push` commands
+# Claude makes through its Bash tool, blocking (exit 2 — the only PreToolUse
+# exit code that both stops the tool call AND feeds stderr back to Claude)
+# when linting fails. SILENT ON SUCCESS: all output is captured and emitted
+# only on failure, so passing checks add nothing to the transcript or to
+# Claude's context.
+#
+# Two stages:
+#   git commit -> lint the staged delta (commit-stage semantics; fast). A
+#                 `git commit -a`/`--all` stages files AFTER this hook fires,
+#                 so the staged set is incomplete -> fall back to --all-files.
+#   git push   -> lint the whole tree (--all-files): a last gate before CI
+#                 that also covers manual / --no-verify commits the commit
+#                 stage never saw.
+#
+# Replaces the per-repo hooks that init.templatedir git-templates used to
+# install (which also poisoned Dolt's bare cache mirrors and broke
+# `bd dolt push`). Going vanilla-git removes those templates; this global
+# hook is the single thing layered on top. See epic agentic-coding-config-6ls
+# / agentic-coding-config-175.
+#
+# Scope/limits: only governs commands Claude runs via its Bash tool — manual
+# terminal commits/pushes are CI-backed. Reads the payload as JSON on stdin;
+# needs `jq` (no jq -> no-op).
+
+set -u
+
+# --- Read payload; degrade gracefully without jq. -------------------------
+command -v jq >/dev/null 2>&1 || exit 0
+payload=$(cat)
+cmd=$(printf '%s' "$payload" | jq -r '.tool_input.command // empty')
+cwd=$(printf '%s' "$payload" | jq -r '.cwd // empty')
+
+# --- Classify the command. ------------------------------------------------
+# This hook fires on EVERY Bash call, so the common not-a-commit/push case
+# must exit immediately. Honour the standard --no-verify / -n escape hatch
+# (caveat: a message literally containing " --no-verify"/" -n " also skips —
+# a false skip, not a false block; CI still covers it).
+stage=""
+case "$cmd" in
+  *"git commit"*)
+    case "$cmd" in
+      *" --no-verify "*|*" --no-verify"|*" -n "*|*" -n") exit 0 ;;
+    esac
+    stage="pre-commit" ;;
+  *"git push"*)
+    case "$cmd" in
+      *" --no-verify "*|*" --no-verify") exit 0 ;;
+    esac
+    stage="pre-push" ;;
+  *) exit 0 ;;
+esac
+
+# --- Move into the repo the command targets. ------------------------------
+if [ -n "$cwd" ]; then
+  root=$(git -C "$cwd" rev-parse --show-toplevel 2>/dev/null) || exit 0
+else
+  root=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0
+fi
+cd "$root" || exit 0
+
+# --- Nothing to do without a config or without pre-commit installed. ------
+[ -f .pre-commit-config.yaml ] || exit 0
+command -v pre-commit >/dev/null 2>&1 || exit 0
+
+# --- Choose file scope per stage. -----------------------------------------
+if [ "$stage" = "pre-push" ]; then
+  scope="--all-files"
+else
+  scope=""
+  case "$cmd" in
+    *" -a"*|*" --all"*) scope="--all-files" ;;
+  esac
+fi
+
+# --- Run it. Block (exit 2) on failure; silent on success. ----------------
+# shellcheck disable=SC2086
+if ! out=$(pre-commit run --hook-stage "$stage" $scope 2>&1); then
+  printf 'pre-commit (%s) failed — blocked. Fix these and re-run:\n\n%s\n' "$stage" "$out" >&2
+  exit 2
+fi
+exit 0
