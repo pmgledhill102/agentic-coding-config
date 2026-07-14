@@ -1,0 +1,491 @@
+#!/usr/bin/env python3
+"""Migrate a beads (bd) database to GitHub Issues, deterministically.
+
+Reads a `bd export --all` JSONL file and recreates the issues in a GitHub
+repository, preserving:
+
+  - hierarchy   : beads `parent-child` dependencies -> GitHub sub-issues
+  - dependencies: beads `blocks` dependencies       -> GitHub "blocked by"
+  - supersedes  : beads `supersedes` dependencies   -> cross-reference comment
+  - priority    : beads 0-4                         -> labels P0-P4
+  - type        : beads issue_type                  -> labels `type: <t>`
+  - status      : open/closed (+ provenance footer with original timestamps)
+  - memories    : `bd remember` records             -> markdown file for triage
+
+Design constraints (see docs/beads-migration-runbook.md):
+
+  - Deterministic: issues are created in (created_at, id) order, so repeated
+    runs against the same export produce the same numbering.
+  - Idempotent: every completed step is recorded in a state file immediately;
+    re-runs skip completed work. Safe to interrupt and resume.
+  - Rate-limit aware: mutating calls are paced (default 2s apart, ~30/min,
+    well under GitHub's 80 content-creating requests/min secondary limit) and
+    retried with exponential backoff + jitter, honoring Retry-After.
+  - Eventual-consistency aware: never uses the search API. Verification uses
+    direct GETs by issue number (strongly consistent). Linking of freshly
+    created issues retries briefly on 404.
+  - Dry-run by default: pass --apply to write anything.
+
+Requires: python3 (stdlib only) and an authenticated `gh` CLI for the token.
+"""
+
+import argparse
+import json
+import os
+import random
+import subprocess
+import sys
+import time
+import urllib.error
+import urllib.parse
+import urllib.request
+
+API_ROOT = "https://api.github.com"
+API_VERSION = "2022-11-28"
+
+PRIORITY_LABELS = {
+    0: ("P0", "b60205", "Critical"),
+    1: ("P1", "d93f0b", "High"),
+    2: ("P2", "fbca04", "Medium"),
+    3: ("P3", "0e8a16", "Low"),
+    4: ("P4", "c5def5", "Backlog"),
+}
+TYPE_LABEL_COLOR = "1d76db"
+IMPORT_LABEL = ("beads-import", "ededed", "Migrated from beads")
+
+RETRYABLE_STATUSES = {403, 429, 500, 502, 503, 504}
+LINK_NOT_FOUND_RETRIES = 5  # 404s right after creation: consistency guard
+
+
+class ApiError(Exception):
+    def __init__(self, status, body, url):
+        super().__init__(f"HTTP {status} for {url}: {body[:300]}")
+        self.status = status
+
+
+class GitHub:
+    """Minimal GitHub REST client with pacing, retries and backoff."""
+
+    def __init__(self, token, repo, write_interval, max_retries):
+        self.token = token
+        self.repo = repo
+        self.write_interval = write_interval
+        self.max_retries = max_retries
+        self._last_write = 0.0
+
+    def _request(self, method, path, payload):
+        url = f"{API_ROOT}/repos/{self.repo}{path}"
+        data = json.dumps(payload).encode() if payload is not None else None
+        req = urllib.request.Request(url, data=data, method=method)
+        req.add_header("Authorization", f"Bearer {self.token}")
+        req.add_header("Accept", "application/vnd.github+json")
+        req.add_header("X-GitHub-Api-Version", API_VERSION)
+        if data is not None:
+            req.add_header("Content-Type", "application/json")
+        try:
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                body = resp.read().decode()
+                return resp.status, dict(resp.headers), body
+        except urllib.error.HTTPError as e:
+            return e.code, dict(e.headers or {}), e.read().decode()
+
+    def call(self, method, path, payload=None, not_found_retries=0):
+        """Perform a request with pacing (writes) and retry/backoff."""
+        mutating = method in ("POST", "PATCH", "PUT", "DELETE")
+        attempt = 0
+        nf_attempt = 0
+        while True:
+            if mutating:
+                wait = self._last_write + self.write_interval - time.monotonic()
+                if wait > 0:
+                    time.sleep(wait)
+            status, headers, body = self._request(method, path, payload)
+            if mutating:
+                self._last_write = time.monotonic()
+            if status < 300:
+                return json.loads(body) if body.strip() else {}
+            if status == 404 and nf_attempt < not_found_retries:
+                nf_attempt += 1
+                delay = min(2.0 * (2 ** (nf_attempt - 1)), 30.0)
+                log(f"  404 (may be consistency lag), retry {nf_attempt}/"
+                    f"{not_found_retries} in {delay:.0f}s: {path}")
+                time.sleep(delay)
+                continue
+            if status in RETRYABLE_STATUSES and attempt < self.max_retries:
+                attempt += 1
+                delay = min(2.0 * (2 ** (attempt - 1)), 60.0)
+                delay *= random.uniform(0.75, 1.25)
+                retry_after = headers.get("Retry-After") or headers.get("retry-after")
+                if retry_after:
+                    try:
+                        delay = max(delay, float(retry_after))
+                    except ValueError:
+                        pass
+                log(f"  HTTP {status}, retry {attempt}/{self.max_retries} "
+                    f"in {delay:.0f}s: {method} {path}")
+                time.sleep(delay)
+                continue
+            raise ApiError(status, body, path)
+
+    def paginate(self, path):
+        results = []
+        page = 1
+        while True:
+            sep = "&" if "?" in path else "?"
+            batch = self.call("GET", f"{path}{sep}per_page=100&page={page}")
+            results.extend(batch)
+            if len(batch) < 100:
+                return results
+            page += 1
+
+
+def log(msg):
+    print(msg, flush=True)
+
+
+def die(msg):
+    print(f"error: {msg}", file=sys.stderr)
+    sys.exit(1)
+
+
+def gh_output(args):
+    try:
+        return subprocess.run(
+            ["gh"] + args, capture_output=True, text=True, check=True
+        ).stdout.strip()
+    except FileNotFoundError:
+        die("gh CLI not found on PATH; it is required for authentication")
+    except subprocess.CalledProcessError as e:
+        die(f"gh {' '.join(args)} failed: {e.stderr.strip()}")
+
+
+def load_export(path):
+    issues, memories = [], []
+    with open(path, encoding="utf-8") as f:
+        for line_no, line in enumerate(f, 1):
+            if not line.strip():
+                continue
+            try:
+                row = json.loads(line)
+            except json.JSONDecodeError as e:
+                die(f"{path}:{line_no}: invalid JSON ({e})")
+            kind = row.get("_type")
+            if kind == "issue":
+                if not row.get("id") or not row.get("title"):
+                    die(f"{path}:{line_no}: issue record missing id/title")
+                issues.append(row)
+            elif kind == "memory":
+                memories.append(row)
+    issues.sort(key=lambda r: (r.get("created_at") or "", r["id"]))
+    return issues, memories
+
+
+def load_state(path):
+    if os.path.exists(path):
+        with open(path, encoding="utf-8") as f:
+            return json.load(f)
+    return {"issues": {}, "links": {}, "closed": {}, "commented": {}}
+
+
+def save_state(path, state):
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(state, f, indent=2, sort_keys=True)
+    os.replace(tmp, path)
+
+
+def wanted_labels(issue):
+    labels = [IMPORT_LABEL[0]]
+    if issue.get("priority") in PRIORITY_LABELS:
+        labels.append(PRIORITY_LABELS[issue["priority"]][0])
+    if issue.get("issue_type"):
+        labels.append(f"type: {issue['issue_type']}")
+    return labels
+
+
+def issue_body(issue):
+    parts = []
+    if issue.get("description"):
+        parts.append(issue["description"].rstrip())
+    if issue.get("notes"):
+        parts.append("## Notes\n\n" + issue["notes"].rstrip())
+    prov = [f"Migrated from beads `{issue['id']}`"]
+    if issue.get("created_at"):
+        prov.append(f"created {issue['created_at']}")
+    if issue.get("closed_at"):
+        prov.append(f"closed {issue['closed_at']}")
+    if issue.get("close_reason"):
+        prov.append(f"close reason: {issue['close_reason']}")
+    parts.append("---\n" + ", ".join(prov) + ".")
+    return "\n\n".join(parts)
+
+
+def collect_edges(issues):
+    """Return (parent_child, blocks, supersedes) as (issue_id, other_id) pairs.
+
+    beads edge semantics: {issue_id: X, depends_on_id: Y} means X depends on Y.
+      parent-child: Y is X's parent.
+      blocks:       X is blocked by Y.
+      supersedes:   X is superseded by Y (old depends on new).
+    """
+    ids = {i["id"] for i in issues}
+    parent_child, blocks, supersedes, dangling = [], [], [], []
+    for issue in issues:
+        for dep in issue.get("dependencies") or []:
+            pair = (dep["issue_id"], dep["depends_on_id"])
+            if pair[0] not in ids or pair[1] not in ids:
+                dangling.append((dep.get("type"), pair))
+                continue
+            if dep.get("type") == "parent-child":
+                parent_child.append(pair)
+            elif dep.get("type") == "blocks":
+                blocks.append(pair)
+            elif dep.get("type") == "supersedes":
+                supersedes.append(pair)
+    return sorted(set(parent_child)), sorted(set(blocks)), \
+        sorted(set(supersedes)), dangling
+
+
+def write_memories(memories, path, dry_run):
+    if not memories:
+        return
+    lines = ["# Memories exported from beads", ""]
+    for m in sorted(memories, key=lambda m: m.get("key") or ""):
+        lines.append(f"## {m.get('key', '(no key)')}")
+        lines.append("")
+        lines.append(m.get("value", "").rstrip())
+        lines.append("")
+    if dry_run:
+        log(f"[dry-run] would write {len(memories)} memories to {path}")
+        return
+    with open(path, "w", encoding="utf-8") as f:
+        f.write("\n".join(lines))
+    log(f"wrote {len(memories)} memories to {path}")
+
+
+def ensure_labels(gh, needed, dry_run):
+    existing = {l["name"] for l in gh.paginate("/labels")}
+    catalogue = {IMPORT_LABEL[0]: IMPORT_LABEL}
+    for name, color, desc in PRIORITY_LABELS.values():
+        catalogue[name] = (name, color, desc)
+    for name in sorted(needed):
+        if name in existing:
+            continue
+        _, color, desc = catalogue.get(
+            name, (name, TYPE_LABEL_COLOR, "Issue type (migrated from beads)"))
+        if dry_run:
+            log(f"[dry-run] would create label {name}")
+            continue
+        gh.call("POST", "/labels",
+                {"name": name, "color": color, "description": desc})
+        log(f"created label {name}")
+
+
+def verify(gh, issues, state, parent_child, blocks):
+    failures = []
+    for issue in issues:
+        rec = state["issues"].get(issue["id"])
+        if not rec:
+            failures.append(f"{issue['id']}: never created")
+            continue
+        live = gh.call("GET", f"/issues/{rec['number']}")
+        expect_state = "closed" if issue.get("status") == "closed" else "open"
+        if live.get("state") != expect_state:
+            failures.append(f"{issue['id']}: #{rec['number']} state "
+                            f"{live.get('state')} != {expect_state}")
+        live_labels = {l["name"] for l in live.get("labels", [])}
+        missing = set(wanted_labels(issue)) - live_labels
+        if missing:
+            failures.append(
+                f"{issue['id']}: #{rec['number']} missing labels {missing}")
+    by_parent = {}
+    for child, parent in parent_child:
+        by_parent.setdefault(parent, set()).add(child)
+    for parent, children in sorted(by_parent.items()):
+        p = state["issues"].get(parent)
+        subs = {s["number"]
+                for s in gh.paginate(f"/issues/{p['number']}/sub_issues")}
+        for child in children:
+            c = state["issues"].get(child)
+            if not c or c["number"] not in subs:
+                failures.append(f"sub-issue link missing: {child} under {parent}")
+    for blocked, blocker in blocks:
+        b = state["issues"].get(blocked)
+        blockers = {x["number"] for x in gh.paginate(
+            f"/issues/{b['number']}/dependencies/blocked_by")}
+        if state["issues"].get(blocker, {}).get("number") not in blockers:
+            failures.append(f"blocked-by link missing: {blocked} <- {blocker}")
+    return failures
+
+
+def main():
+    ap = argparse.ArgumentParser(
+        description="Migrate a beads export to GitHub Issues (dry-run by "
+                    "default; pass --apply to write).")
+    ap.add_argument("--repo", help="owner/name (default: current repo via gh)")
+    ap.add_argument("--export", dest="export_path",
+                    help="bd export JSONL (default: run `bd export --all`)")
+    ap.add_argument("--state", default=".beads/github-migration-state.json",
+                    help="state file for idempotent resume")
+    ap.add_argument("--memories-out", default=".beads/memories-export.md",
+                    help="where to write exported bd memories")
+    ap.add_argument("--write-interval", type=float, default=2.0,
+                    help="minimum seconds between mutating API calls")
+    ap.add_argument("--max-retries", type=int, default=5)
+    ap.add_argument("--apply", action="store_true",
+                    help="actually create issues (otherwise dry-run)")
+    ap.add_argument("--skip-verify", action="store_true",
+                    help="skip the post-migration verification pass")
+    args = ap.parse_args()
+    dry_run = not args.apply
+
+    repo = args.repo or gh_output(
+        ["repo", "view", "--json", "nameWithOwner", "--jq", ".nameWithOwner"])
+    if "/" not in repo:
+        die(f"could not resolve repository (got {repo!r}); pass --repo")
+
+    export_path = args.export_path
+    if not export_path:
+        export_path = os.path.join(".beads", "migration-export.jsonl")
+        log(f"exporting beads database to {export_path}")
+        gh_dir = os.path.dirname(export_path)
+        if gh_dir and not os.path.isdir(gh_dir):
+            die("no .beads/ directory here; run from the repo root or pass "
+                "--export")
+        result = subprocess.run(
+            ["bd", "export", "--all", "-o", export_path],
+            capture_output=True, text=True)
+        if result.returncode != 0 or not os.path.exists(export_path):
+            die(f"bd export failed: {result.stderr.strip()[:300]}")
+
+    issues, memories = load_export(export_path)
+    parent_child, blocks, supersedes, dangling = collect_edges(issues)
+    log(f"repo={repo} issues={len(issues)} memories={len(memories)} "
+        f"parent-child={len(parent_child)} blocks={len(blocks)} "
+        f"supersedes={len(supersedes)}"
+        + (" (DRY RUN)" if dry_run else ""))
+    for kind, pair in dangling:
+        log(f"warning: skipping dangling {kind} edge {pair[0]} -> {pair[1]}")
+
+    state = load_state(args.state)
+    token = None if dry_run else gh_output(["auth", "token"])
+    gh = None if dry_run else GitHub(
+        token, repo, args.write_interval, args.max_retries)
+
+    write_memories(memories, args.memories_out, dry_run)
+
+    needed_labels = set()
+    for issue in issues:
+        needed_labels.update(wanted_labels(issue))
+    if dry_run:
+        log(f"[dry-run] labels needed: {sorted(needed_labels)}")
+    else:
+        ensure_labels(gh, needed_labels, dry_run)
+
+    # Phase 1: create issues in deterministic order.
+    for issue in issues:
+        if issue["id"] in state["issues"]:
+            continue
+        labels = wanted_labels(issue)
+        if dry_run:
+            log(f"[dry-run] create: {issue['id']} \"{issue['title']}\" "
+                f"labels={labels} status={issue.get('status')}")
+            continue
+        created = gh.call("POST", "/issues", {
+            "title": issue["title"],
+            "body": issue_body(issue),
+            "labels": labels,
+        })
+        state["issues"][issue["id"]] = {
+            "number": created["number"], "id": created["id"]}
+        save_state(args.state, state)
+        log(f"created #{created['number']} <- {issue['id']} "
+            f"\"{issue['title']}\"")
+
+    # Phase 2: hierarchy (child depends_on parent -> sub-issue of parent).
+    for child, parent in parent_child:
+        key = f"sub:{child}"
+        if state["links"].get(key):
+            continue
+        if dry_run:
+            log(f"[dry-run] sub-issue: {child} under {parent}")
+            continue
+        c, p = state["issues"][child], state["issues"][parent]
+        gh.call("POST", f"/issues/{p['number']}/sub_issues",
+                {"sub_issue_id": c["id"]},
+                not_found_retries=LINK_NOT_FOUND_RETRIES)
+        state["links"][key] = True
+        save_state(args.state, state)
+        log(f"linked #{c['number']} as sub-issue of #{p['number']}")
+
+    # Phase 3: blocks (X depends_on Y -> X blocked by Y).
+    for blocked, blocker in blocks:
+        key = f"dep:{blocked}->{blocker}"
+        if state["links"].get(key):
+            continue
+        if dry_run:
+            log(f"[dry-run] blocked-by: {blocked} blocked by {blocker}")
+            continue
+        b, k = state["issues"][blocked], state["issues"][blocker]
+        gh.call("POST", f"/issues/{b['number']}/dependencies/blocked_by",
+                {"issue_id": k["id"]},
+                not_found_retries=LINK_NOT_FOUND_RETRIES)
+        state["links"][key] = True
+        save_state(args.state, state)
+        log(f"marked #{b['number']} blocked by #{k['number']}")
+
+    # Phase 4: supersedes -> cross-reference comment (GitHub backlinks it).
+    for older, newer in supersedes:
+        key = f"sup:{older}->{newer}"
+        if state["commented"].get(key):
+            continue
+        if dry_run:
+            log(f"[dry-run] comment: {older} superseded by {newer}")
+            continue
+        o, n = state["issues"][older], state["issues"][newer]
+        gh.call("POST", f"/issues/{o['number']}/comments",
+                {"body": f"Superseded by #{n['number']} "
+                         f"(beads `{newer}` superseded `{older}`)."},
+                not_found_retries=LINK_NOT_FOUND_RETRIES)
+        state["commented"][key] = True
+        save_state(args.state, state)
+        log(f"commented superseded-by on #{o['number']} -> #{n['number']}")
+
+    # Phase 5: close issues that were closed in beads (after linking, so
+    # sub-issue/dependency creation never races a closed parent).
+    for issue in issues:
+        if issue.get("status") != "closed":
+            continue
+        if state["closed"].get(issue["id"]):
+            continue
+        if dry_run:
+            log(f"[dry-run] close: {issue['id']}")
+            continue
+        rec = state["issues"][issue["id"]]
+        gh.call("PATCH", f"/issues/{rec['number']}",
+                {"state": "closed", "state_reason": "completed"})
+        state["closed"][issue["id"]] = True
+        save_state(args.state, state)
+        log(f"closed #{rec['number']} ({issue['id']})")
+
+    if dry_run:
+        log("dry run complete; re-run with --apply to migrate")
+        return
+
+    # Phase 6: verify via strongly consistent direct reads (never search).
+    if args.skip_verify:
+        log("verification skipped (--skip-verify)")
+        return
+    log("verifying via direct reads...")
+    failures = verify(gh, issues, state, parent_child, blocks)
+    if failures:
+        for f in failures:
+            log(f"VERIFY FAIL: {f}")
+        die(f"verification failed for {len(failures)} item(s); state file "
+            f"{args.state} is intact — fix and re-run to resume")
+    log(f"verification passed: {len(issues)} issues, "
+        f"{len(parent_child)} sub-issue links, {len(blocks)} dependencies")
+
+
+if __name__ == "__main__":
+    main()
