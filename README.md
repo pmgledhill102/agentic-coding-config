@@ -29,7 +29,7 @@ nothing else.
 
 **Why an `archive` external instead of `git-repo`:** `git-repo` externals
 mount the entire repo tree at the target with no filtering — `.git/`,
-`.beads/`, README, ADRs, all of it. `archive` externals support `include`
+`docs/`, README, ADRs, all of it. `archive` externals support `include`
 glob patterns and `stripComponents`, which lets us deploy only the files
 that should live in `~/.claude/`. The trade-off is that `archive`
 re-downloads on each refresh (vs `git-repo`'s incremental fetch); for a
@@ -53,7 +53,8 @@ restructure that introduced `home/` is on top of that history.
 ├── README.md                  # repo-meta: this file
 ├── CLAUDE.md, AGENTS.md       # repo-meta: project instructions for working ON this repo
 ├── adrs/                      # repo-meta: architecture decisions
-├── .github/, .pre-commit-config.yaml, .markdownlint.yaml, .beads/, .gitignore
+├── docs/                      # repo-meta: workflow docs and runbooks
+├── .github/, .pre-commit-config.yaml, .markdownlint.yaml, .gitignore
 └── home/                      # ← THIS subdirectory mounts at ~/.claude/
     ├── CLAUDE.md              → ~/.claude/CLAUDE.md  (universal policy)
     ├── settings.json          → ~/.claude/settings.json
@@ -152,9 +153,9 @@ the foundation, then stack any combination.
 ## What deploys vs what doesn't
 
 The archive external's `include` pattern means **only `home/**` deploys**.
-Everything at the repo root (this `README.md`, `adrs/`, `.github/`,
-`.pre-commit-config.yaml`, `.markdownlint.yaml`, `.beads/`, `.gitignore`,
-the project-level `CLAUDE.md` and `AGENTS.md` from `bd init`) stays in the
+Everything at the repo root (this `README.md`, `adrs/`, `docs/`,
+`.github/`, `.pre-commit-config.yaml`, `.markdownlint.yaml`, `.gitignore`,
+the project-level `CLAUDE.md` and `AGENTS.md`) stays in the
 repo and never lands at `~/.claude/`. No `.chezmoiignore` needed for these
 — the archive filter handles it cleanly.
 
