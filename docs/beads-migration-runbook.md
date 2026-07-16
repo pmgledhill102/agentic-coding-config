@@ -35,6 +35,34 @@ these repos; check `comment_count` in the export before migrating a
 repo where they matter), assignees, and in-progress status
 (`in_progress` issues arrive as open — re-claim by assigning yourself).
 
+## Sequencing: disable bd before or after migrating?
+
+**After — with one exception.** The migration needs bd alive (`bd export
+--all` reads the local database), and most per-repo integration is
+gated on `.beads/metadata.json`, so it disables itself when `.beads/`
+is removed in the post-migration checklist. Disabling first would break
+the export and leave the repo with no tracker at all.
+
+Per repo, the order is:
+
+1. **Freeze bd writes first (the only "before" step).** Stop creating
+   beads issues in the repo, so the export snapshot cannot go stale
+   between export and cutover — anything created after the export is
+   stranded. Take the export at migration time, not days ahead.
+2. **Migrate** (procedure below).
+3. **Run the post-migration checklist in the same session** — not as a
+   lazy follow-up. `bd prime` output instructs every session to use
+   beads for all tracking, which contradicts the new workflow the
+   moment migration completes; deleting `.beads/` and stripping the
+   CLAUDE.md/AGENTS.md blocks closes that conflict window.
+
+**Global config is retired last, not first.** The `bd prime` hooks,
+`bd-*` commands, `bd-push-safe`, and the `bd`/`beads`/`dolt` permission
+entries in `home/settings.json` are shared by every repo — they must
+survive until the final repo migrates, and they are inert in migrated
+repos once the sentinel is gone. One final PR removes the lot (see
+"Global cleanup" below).
+
 ## Procedure
 
 ```bash
