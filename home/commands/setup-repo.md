@@ -83,7 +83,25 @@ Warning: Default branch is 'master'. Consider renaming to 'main':
   git push origin --delete master
 ```
 
-### 7. Verify
+### 7. Work-tracking labels
+
+Create the standard work-tracking label set (see `agentic-coding-config`
+`docs/github-issues-workflow.md`). `--force` makes this idempotent —
+existing labels are updated, not duplicated:
+
+```sh
+gh label create "P0" --color b60205 --description "Critical" --force
+gh label create "P1" --color d93f0b --description "High" --force
+gh label create "P2" --color fbca04 --description "Medium" --force
+gh label create "P3" --color 0e8a16 --description "Low" --force
+gh label create "P4" --color c5def5 --description "Backlog" --force
+gh label create "type: epic" --color 1d76db --force
+gh label create "type: feature" --color 1d76db --force
+gh label create "type: task" --color 1d76db --force
+gh label create "type: bug" --color 1d76db --force
+```
+
+### 8. Verify
 
 After applying changes, verify the configuration took effect:
 

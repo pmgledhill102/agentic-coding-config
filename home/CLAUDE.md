@@ -21,6 +21,15 @@
 - **To request a change, open a GitHub issue against `pmgledhill102/agentic-coding-config`** (auto-approved via `gh issue create --repo pmgledhill102/*` — keep `--repo` as the first flag for the allow rule to match). Describe what should change and why; add acceptance criteria if useful. The user sweeps the GH-issue inbox into beads via `/bd-import-github-issues` at the start of a-c-c sessions and addresses tickets there, where the chezmoi source actually lives.
 - **Do not reach across repos to make the edit yourself.** Cross-repo file edits (e.g. `cd ~/dev/agentic-coding-config && edit home/...` from a session in another project) bypass the issue queue, skip the review/PR flow, and pollute the current session's context with unrelated work. Leave a message; don't reach across.
 
+## Work Tracking
+
+- **Repos with a `.beads/` directory still use beads** — follow the `bd prime` workflow there (transition state; see the Beads section below)
+- **All other repos use GitHub Issues**, per the conventions in `agentic-coding-config` `docs/github-issues-workflow.md`:
+  - Create an issue before starting work; close it via `Closes #<n>` in the PR body
+  - Hierarchy via sub-issues (`gh issue create --parent <n>`); dependencies via `--blocked-by`
+  - Priority labels `P0`–`P4`; type labels `type: epic|feature|task|bug` (issue types are org-only — labels ARE the convention on personal repos)
+  - **Use `gh issue list` or direct reads (`gh issue view <n>`) for anything time-sensitive — never `gh search issues`**: the search API is eventually consistent, so a just-created issue can be invisible to it for seconds to minutes. Deduplicate against `gh issue list --state all`, not search
+
 ## Beads (bd)
 
 - **Prefer `~/.claude/bin/bd-push-safe` over bare `bd dolt push`**: the shim at `~/.claude/bin/bd-push-safe` strips the cache hooks that `bd init` / `bd bootstrap` re-create from `init.templatedir`. On machines where dotfiles git-templates invoke the pre-commit framework, bare `bd dolt push` fails with `fatal: this operation must be run in a work tree`; `~/.claude/bin/bd-push-safe` is a drop-in replacement that just works. **Always use the absolute path** — `~/.claude/bin/` is not on `PATH` on every machine, so bare `bd-push-safe` will trigger a permission prompt and then fail with "command not found". Tracked upstream as `agentic-coding-config-o5w`; once that lands the shim becomes a no-op and can be removed.
@@ -40,7 +49,7 @@
 - **Single-concern PRs**: Each PR should contain a single logical change. If multiple tasks are completed in a session, create separate PRs for each rather than bundling unrelated changes
 - **PR-stacking discipline**: only claim "stacked on" when the second branch literally has the first as parent (`git log --oneline first..second` shows just the second's commits). Branching both off `main` and writing "stacked on PR #N" in the body is misleading — reviewers can merge in any order, and the second PR's diff includes the first's changes. If they're truly independent, branch each from `main` and don't say stacked
 - **Batch reads before edits**: When modifying multiple files, read all target files first, then make all edits — avoids "file not read yet" errors on parallel Edit calls
-- **Always create a beads issue**: Even for quick single-file fixes, run `bd create` before starting work — maintains the audit trail and keeps the habit consistent
+- **Always create a tracking issue**: Even for quick single-file fixes, create an issue in the repo's tracker before starting work (GitHub Issues, or `bd create` where `.beads/` exists) — maintains the audit trail and keeps the habit consistent
 
 ## Shell Scripts
 
