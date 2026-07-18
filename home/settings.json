@@ -4,8 +4,6 @@
       "Bash(actionlint *)",
       "Bash(awk *)",
       "Bash(bandit *)",
-      "Bash(bd *)",
-      "Bash(beads *)",
       "Bash(bq ls*)",
       "Bash(bq show*)",
       "Bash(brakeman *)",
@@ -38,9 +36,6 @@
       "Bash(deptry *)",
       "Bash(diff *)",
       "Bash(dig *)",
-      "Bash(dolt *)",
-      "Bash(~/.claude/bin/bd-push-safe)",
-      "Bash(~/.claude/bin/bd-push-safe *)",
       "Bash(~/.claude/bin/end-session-*)",
       "Bash(~/.claude/bin/start-session-*)",
       "Bash(/Applications/draw.io.app/Contents/MacOS/draw.io *)",
@@ -331,17 +326,6 @@
     ]
   },
   "hooks": {
-    "PreCompact": [
-      {
-        "matcher": "",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bd prime"
-          }
-        ]
-      }
-    ],
     "PreToolUse": [
       {
         "matcher": "Bash",
@@ -372,17 +356,6 @@
             "type": "command",
             "command": "FILE_PATH=$(jq -r '.tool_input.file_path // empty'); [[ \"$FILE_PATH\" == *.tf ]] && DIR=$(dirname \"$FILE_PATH\") && [[ -d \"$DIR/.terraform\" ]] && cd \"$DIR\" && terraform validate || true",
             "timeout": 30
-          }
-        ]
-      }
-    ],
-    "SessionStart": [
-      {
-        "matcher": "",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bd prime"
           }
         ]
       }

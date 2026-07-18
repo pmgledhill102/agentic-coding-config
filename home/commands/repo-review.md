@@ -1,4 +1,4 @@
-Run a repo currency and cleanup review: validate ADRs against the code, surface deprecated or outdated dependencies, flag stale docs and dead code, and emit an actionable findings list. Read-only — never modifies project code or dependencies. Output is a findings summary plus action items (Beads tasks when the project uses Beads, otherwise a markdown report file in the repo).
+Run a repo currency and cleanup review: validate ADRs against the code, surface deprecated or outdated dependencies, flag stale docs and dead code, and emit an actionable findings list. Read-only — never modifies project code or dependencies. Output is a findings summary plus action items (GitHub Issues when the repo has a github.com origin remote, otherwise a markdown report file in the repo).
 
 ## When to use
 
@@ -15,14 +15,14 @@ Don't run during ongoing feature work — the action-item output is a sweep-up s
 - **No silent fallback when scanners are missing.** Pre-flight halts with an install list. The user installs the tools and re-runs.
 - **No automatic scanner installation.** The command prints install commands; the user runs them.
 - **No SARIF or CI integration.** Output is markdown for humans. CI integration is out of scope for v1.
-- **No bidirectional sync.** Beads tasks are created if the project uses Beads. Nothing is pushed to GitHub Issues, Jira, etc.
+- **No bidirectional sync.** Issues are created in the repo's own GitHub tracker. Nothing is pushed to Jira or other external trackers.
 
 ## Operational notes
 
 - **Foreground everything.** Scanners are I/O-bound; running them sequentially in the foreground is fine and keeps output legible.
 - **Expected runtime**: 1–3 min on a small repo, 5–10 min on a large multi-language repo (most of which is `pip-audit` / `cargo-audit` fetching advisory data).
 - **Per-language gating.** A scanner is only required if the corresponding manifest is detected. A pure-Python repo doesn't need `cargo-audit`.
-- **`bd create` foreground sync.** Each call ~1s. For a typical 5–20 action-item batch, 30s total.
+- **`gh issue create` pacing.** Pace writes ~2s apart when creating a batch — GitHub's secondary rate limits allow at most 80 content-creating requests/min, and bursts trigger 403s. For a typical 5–20 action-item batch, under a minute total.
 
 ## Pre-flight: detect, verify, prepare
 
@@ -44,7 +44,6 @@ echo "===adr search==="
 for d in docs/decisions docs/adr doc/adr architecture/decisions adrs .adr-log; do
   [ -d "$d" ] && echo "found: $d" && ls "$d" | head -10
 done
-echo "===beads==="; [ -f .beads/metadata.json ] && echo "yes" || echo "no"
 echo "===dependabot==="; [ -f .github/dependabot.yml ] || [ -f .github/dependabot.yaml ] && echo "yes" || echo "no"
 echo "===renovate==="; [ -f renovate.json ] || [ -f .renovaterc ] || [ -f .renovaterc.json ] && echo "yes" || echo "no"
 echo "===pre-commit==="; [ -f .pre-commit-config.yaml ] && echo "yes" || echo "no"
@@ -92,7 +91,7 @@ Once detection and verification pass, give the user a one-paragraph summary befo
 
 ```text
 Reviewing <project>: detected <langs>. Found <N> ADRs in <path> (or "no ADRs").
-Beads: <yes|no>. Will run phases A–E and output <action-items target>.
+GitHub Issues: <yes|no — origin url contains github.com>. Will run phases A–E and output <action-items target>.
 Estimated runtime: <X> min. Proceed? (y/n)
 ```
 
@@ -332,14 +331,14 @@ Compile every finding into a single ranked list:
 [P3] (task)    Delete stale branches: feature/foo, refactor/bar (12 total, oldest 2024-01)
 ```
 
-Type tags follow Beads conventions: `bug` (CVE / breakage), `feature` (proposed adoption like Renovate), `task` (cleanup, default).
+Type tags follow the GitHub Issues label conventions (`docs/github-issues-workflow.md` in `agentic-coding-config`): `bug` (CVE / breakage), `feature` (proposed adoption like Renovate), `task` (cleanup, default).
 
-### If Beads is detected
+### If the repo has a github.com origin remote
 
 Show the action item list, then ask once:
 
 ```text
-<N> action items proposed. Create them as Beads tasks?
+<N> action items proposed. Create them as GitHub Issues?
   - "yes" — create all
   - "skip <n>,<m>" — create all except listed indices
   - "cancel" — abort
@@ -347,9 +346,9 @@ Show the action item list, then ask once:
 
 On confirmation, for each accepted item:
 
-1. Write the description to `/tmp/repo-review-<index>.md` using the `Write` tool (per the `bd-import-github-issues.md` pattern — never inline-escape multi-line content).
-2. Run `bd create --title="<short>" --description="$(cat /tmp/repo-review-<i>.md)" --type=<type> --priority=<0..4>` synchronously.
-3. Capture the bead ID. Build a mapping table.
+1. Write the description to `/tmp/repo-review-<index>.md` using the `Write` tool (never inline-escape multi-line content).
+2. Run `gh issue create --title "<short>" --body-file /tmp/repo-review-<i>.md --label "type: <type>,P<0..4>"` synchronously (prefer `mcp__github__issue_write` when the GitHub MCP server is connected). Pace successive creates ~2s apart to stay under GitHub's secondary rate limits. If the standard labels (`P0`–`P4`, `type: *`) don't exist yet, bootstrap them per `docs/github-issues-workflow.md` (idempotent `gh label create --force` loop) before the batch.
+3. Capture the issue number/URL. Build a mapping table.
 
 Description file template:
 
@@ -362,9 +361,9 @@ Source: /repo-review run on YYYY-MM-DD
 Generated by /repo-review.
 ```
 
-If any `bd create` fails, STOP — do not silently continue. Surface the partial state.
+If any `gh issue create` fails, STOP — do not silently continue. Surface the partial state.
 
-### If Beads is not detected
+### If the repo has no github.com origin remote
 
 Write the action items to a markdown file:
 
@@ -399,7 +398,7 @@ Print the file path on completion. Suggest the user commit the file so the revie
 
 Re-running on the same day:
 
-- Beads path: re-creates duplicate beads. Surface a warning if any existing bead's title matches an action item title and ask the user to confirm before re-creating.
+- GitHub Issues path: re-creates duplicate issues. Deduplicate against `gh issue list --state all` (never `gh search issues` — the search API is eventually consistent); surface a warning if any existing issue's title matches an action item title and ask the user to confirm before re-creating.
 - Markdown path: overwrites today's file. Yesterday's review (if committed) is preserved in git history.
 
 The command itself does not maintain a state file — its source of truth is the current state of the repo.

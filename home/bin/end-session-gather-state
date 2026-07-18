@@ -92,34 +92,29 @@ run_sh open_prs '
     fi
 '
 
-if [ -f .beads/metadata.json ]; then
-    run_section bd_progress bd list --status=in_progress
-    # shellcheck disable=SC2016
-    run_sh bd_inprogress_delivered '
-        # For each open OR in_progress bead, find any merged commit on main
-        # whose message contains "Closes <id>" or "Fixes <id>" (case-insensitive)
-        # — those signal the bead was delivered but never closed. Open is
-        # included to catch beads that shipped via a Closes-trailer commit
-        # but were never claimed (so they stayed open). Output:
-        #   <id>|<short-sha>|<subject>
-        # one per line. Empty output is fine (nothing to auto-close).
-        # Mirrors the same section in start-session-gather-state.
-        bd list --status=in_progress,open 2>/dev/null \
-            | grep -oE "[a-z][a-z0-9-]+-[a-z0-9]{3}" \
-            | sort -u \
-            | while read -r id; do
-                sha=$(git log main \
-                    --grep="closes\s*${id}" \
-                    --grep="fixes\s*${id}" \
-                    -i -1 --format="%H" 2>/dev/null)
-                if [ -n "$sha" ]; then
-                    short=$(git rev-parse --short "$sha" 2>/dev/null)
-                    subject=$(git log -1 --format="%s" "$sha" 2>/dev/null)
-                    echo "${id}|${short}|${subject}"
-                fi
-              done
-    '
-fi
+# shellcheck disable=SC2016
+run_sh gh_assigned '
+    # My active work: open GitHub issues assigned to me. Output:
+    #   #<number> <title>
+    # one per line. Empty output = nothing in flight. Mirrors the
+    # gh_assigned section in start-session-gather-state (simpler row shape —
+    # /end-session only surfaces, it does not rank by priority).
+    if ! git remote get-url origin 2>/dev/null | grep -q "github.com"; then
+        echo "not-github"
+        exit 1
+    fi
+    if ! command -v gh >/dev/null 2>&1; then
+        echo "gh-unavailable"
+        exit 1
+    fi
+    if ! command -v jq >/dev/null 2>&1; then
+        echo "jq-unavailable"
+        exit 1
+    fi
+    gh issue list --assignee @me --state open --limit 20 \
+        --json number,title \
+      | jq -r '\''.[] | "#\(.number) \(.title)"'\''
+'
 
 # shellcheck disable=SC2016
 run_sh stale_claude_files '
@@ -162,6 +157,6 @@ printf '===fetch (exit=%s)===\n' "$FETCH_EXIT"
 cat "$TMP/fetch.out"
 printf '\n'
 
-for s in local_state stashes worktrees merged_brs main_ci open_prs bd_progress bd_inprogress_delivered stale_claude_files; do
+for s in local_state stashes worktrees merged_brs main_ci open_prs gh_assigned stale_claude_files; do
     [ -f "$TMP/$s.exit" ] && emit "$s"
 done

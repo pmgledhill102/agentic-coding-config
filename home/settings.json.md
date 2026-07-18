@@ -6,27 +6,6 @@ changing permission rules, update both files together.
 
 ## Permissions: allow
 
-### Beads / BD (task management)
-
-- `Bash(bd *)`
-- `Bash(beads *)`
-
-The `bd-push-safe` shim at `~/.claude/bin/bd-push-safe` is a drop-in
-replacement for `bd dolt push` that strips the cache hooks `bd init` /
-`bd bootstrap` re-create from `init.templatedir`. On machines whose
-dotfiles git-templates invoke the pre-commit framework, bare
-`bd dolt push` fails with `fatal: this operation must be run in a work
-tree`; the shim makes it just work. Tracked upstream as
-`agentic-coding-config-o5w`; once that lands the shim becomes a no-op
-and these rules can be removed. `~/.claude/bin/` is **not** currently
-on `PATH`, so only the absolute-path form is auto-approved — if the
-bare-name form is ever needed, add `Bash(bd-push-safe)` /
-`Bash(bd-push-safe *)` then. The companion entries live in the
-`~/.claude/bin/` cluster alongside the session-lifecycle scripts.
-
-- `Bash(~/.claude/bin/bd-push-safe)`
-- `Bash(~/.claude/bin/bd-push-safe *)`
-
 ### BigQuery (read-only metadata)
 
 `bq query` is **not** auto-approved — its `--use_legacy_sql=false` flag
@@ -47,10 +26,6 @@ Listing and schema-introspection are safe.
 ### Chezmoi
 
 - `Bash(chezmoi *)`
-
-### Dolt (database for beads)
-
-- `Bash(dolt *)`
 
 ### Session-lifecycle scripts
 
@@ -622,13 +597,13 @@ what scratch space is for.
 
 User-level CLAUDE.md forbids heredocs (`cat <<'EOF'`) and ANSI-C
 quoting in bash commands, so any multi-line content for `gh issue
-create --body-file`, `bd create --body-file=...`, etc. has to flow
+create --body-file`, `gh pr create --body-file`, etc. has to flow
 through a temp file. Auto-approving `Write(/tmp/**)` removes the
 double-prompt friction (one for the command, one for the temp file)
 that otherwise discourages the structured-body pattern.
 
 - `Write(/tmp/**)` — scratch space for staging long, structured content
-  (issue bodies, bead descriptions, etc.) before passing to a CLI via
+  (issue bodies, PR bodies, etc.) before passing to a CLI via
   `--body-file` or `$(cat ...)`. Restrict scope further to
   `Write(/tmp/claude-*)` (with a naming-convention discipline) if the
   broad rule ever feels uncomfortable.
@@ -679,9 +654,7 @@ the user revisits it.
 
    This is the global replacement for the commit/push-stage hooks that
    `init.templatedir` git-templates used to install per-repo — part of the
-   vanilla-git migration (epic `agentic-coding-config-6ls`) that removes those
-   templates (which also poisoned Dolt's bare cache mirrors and broke
-   `bd dolt push`) and retires the `bd-push-safe` shim.
+   vanilla-git migration that removed those templates.
 
    Two stages:
    - `git commit` → `--hook-stage pre-commit` on the **staged delta** (fast;
@@ -706,14 +679,6 @@ the user revisits it.
 2. **terraform validate** — Validates the module directory after `.tf` file
    changes. Only runs if `.terraform/` exists in the file's directory
    (i.e., `terraform init` has been run). 30s timeout.
-
-### PreCompact
-
-Runs `bd prime` before context compaction to preserve task state.
-
-### SessionStart
-
-Runs `bd prime` at session start to load task context.
 
 ## StatusLine
 

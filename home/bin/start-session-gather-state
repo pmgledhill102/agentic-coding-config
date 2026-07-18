@@ -138,7 +138,16 @@ run_sh main_ci '
 '
 
 # shellcheck disable=SC2016
-run_sh gh_unmigrated '
+run_sh gh_ready '
+    # Ready work: open issues with no direct blocked-by relationship, per
+    # docs/github-issues-workflow.md. Note -is:blocked filters direct blocks
+    # only (no transitive query). Output: pipe-separated rows,
+    #   #<number>|P<n>|<title>
+    # (priority "-" when no P0-P4 label). Empty output = no ready work.
+    if ! git remote get-url origin 2>/dev/null | grep -q "github.com"; then
+        echo "not-github"
+        exit 1
+    fi
     if ! command -v gh >/dev/null 2>&1; then
         echo "gh-unavailable"
         exit 1
@@ -147,23 +156,36 @@ run_sh gh_unmigrated '
         echo "jq-unavailable"
         exit 1
     fi
-    # gh issue list excludes PRs by default. Filter out:
-    #   - issues whose body has the marker "Migrated to beads " (idempotency
-    #     anchor written by /bd-import-github-issues),
-    #   - issues labeled "journal-draft" (sandbox-fallback drafts for the
-    #     paul-context inbox/promote pattern; drained by /promote-journal-inbox,
-    #     not /bd-import-github-issues).
-    # Bind the filtered list to $u so we can both count and iterate it.
-    # The '\'' sequence closes/reopens the outer single quote so jq can
-    # take a single-quoted filter argument.
-    gh issue list --state open --limit 100 --json number,title,body,labels \
+    gh issue list --search "is:open -is:blocked" --limit 10 \
+        --json number,title,labels \
       | jq -r '\''
-          map(select(
-              ((.body // "") | test("Migrated to beads ") | not)
-              and ([(.labels // [])[].name] | index("journal-draft") | not)
-          )) as $u
-          | "count=\($u | length)",
-            ($u[] | "#\(.number) \(.title)")
+          .[] | "#\(.number)|\([(.labels // [])[].name]
+                  | map(select(test("^P[0-4]$"))) | first // "-")|\(.title)"
+        '\''
+'
+
+# shellcheck disable=SC2016
+run_sh gh_assigned '
+    # My active work: open issues assigned to me. Same row shape as gh_ready:
+    #   #<number>|P<n>|<title>
+    # Empty output = nothing in flight.
+    if ! git remote get-url origin 2>/dev/null | grep -q "github.com"; then
+        echo "not-github"
+        exit 1
+    fi
+    if ! command -v gh >/dev/null 2>&1; then
+        echo "gh-unavailable"
+        exit 1
+    fi
+    if ! command -v jq >/dev/null 2>&1; then
+        echo "jq-unavailable"
+        exit 1
+    fi
+    gh issue list --assignee @me --state open --limit 20 \
+        --json number,title,labels \
+      | jq -r '\''
+          .[] | "#\(.number)|\([(.labels // [])[].name]
+                  | map(select(test("^P[0-4]$"))) | first // "-")|\(.title)"
         '\''
 '
 
@@ -198,64 +220,6 @@ run_sh recent_main_commits '
     fi
 '
 
-if [ -f .beads/metadata.json ]; then
-    run_section bd_remote bd dolt remote list
-    # shellcheck disable=SC2016
-    run_sh bd_ready '
-        # Top-5 ready issues, pre-formatted for the brief. Strip the legend,
-        # totals, and tree icons; emit one pipe-separated row per issue:
-        #   <id>|P<n>|<title>
-        # Empty output = no ready work. /start-session uses these rows directly
-        # in the brief without further parsing.
-        bd ready --limit 5 2>/dev/null \
-          | awk '\''NF>=5 && $4 ~ /^P[0-9]/ {
-              id=$2; pri=$4;
-              $1=$2=$3=$4="";
-              sub(/^ +/, "", $0);
-              print id "|" pri "|" $0
-            }'\''
-    '
-    # shellcheck disable=SC2016
-    run_sh bd_in_progress '
-        # In-progress beads, pre-formatted for the brief. Same pipe-separated
-        # row shape as bd_ready:
-        #   <id>|P<n>|<title>
-        # No limit (usually 0-3 items). Empty output = nothing in flight.
-        bd list --status=in_progress 2>/dev/null \
-          | awk '\''NF>=5 && $4 ~ /^P[0-9]/ {
-              id=$2; pri=$4;
-              $1=$2=$3=$4="";
-              sub(/^ +/, "", $0);
-              print id "|" pri "|" $0
-            }'\''
-    '
-    # shellcheck disable=SC2016
-    run_sh bd_inprogress_delivered '
-        # For each open OR in_progress bead, find any merged commit on
-        # $DEFAULT_BRANCH whose message contains "Closes <id>" or
-        # "Fixes <id>" (case-insensitive) — those signal the bead was
-        # delivered but never closed. Open is included to catch beads that
-        # shipped via a Closes-trailer commit but were never claimed (so
-        # they stayed open). Output:
-        #   <id>|<short-sha>|<subject>
-        # one per line. Empty output is fine (nothing to auto-close).
-        bd list --status=in_progress,open 2>/dev/null \
-            | grep -oE "[a-z][a-z0-9-]+-[a-z0-9]{3}" \
-            | sort -u \
-            | while read -r id; do
-                sha=$(git log "$DEFAULT_BRANCH" \
-                    --grep="closes\s*${id}" \
-                    --grep="fixes\s*${id}" \
-                    -i -1 --format="%H" 2>/dev/null)
-                if [ -n "$sha" ]; then
-                    short=$(git rev-parse --short "$sha" 2>/dev/null)
-                    subject=$(git log -1 --format="%s" "$sha" 2>/dev/null)
-                    echo "${id}|${short}|${subject}"
-                fi
-              done
-    '
-fi
-
 wait
 progress "all sections complete"
 
@@ -277,6 +241,6 @@ if [ "$FETCH_EXIT" -ne 0 ]; then
 fi
 printf '\n'
 
-for s in local_state main_ci gh_unmigrated recent_main_commits bd_remote bd_ready bd_in_progress bd_inprogress_delivered; do
+for s in local_state main_ci recent_main_commits gh_ready gh_assigned; do
     [ -f "$TMP/$s.exit" ] && emit "$s"
 done

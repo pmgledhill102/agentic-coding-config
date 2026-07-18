@@ -17,10 +17,8 @@
 #                 stage never saw.
 #
 # Replaces the per-repo hooks that init.templatedir git-templates used to
-# install (which also poisoned Dolt's bare cache mirrors and broke
-# `bd dolt push`). Going vanilla-git removes those templates; this global
-# hook is the single thing layered on top. See epic agentic-coding-config-6ls
-# / agentic-coding-config-175.
+# install. Going vanilla-git removed those templates; this global hook is
+# the single thing layered on top.
 #
 # Scope/limits: only governs commands Claude runs via its Bash tool — manual
 # terminal commits/pushes are CI-backed. Reads the payload as JSON on stdin;
