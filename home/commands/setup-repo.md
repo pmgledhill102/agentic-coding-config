@@ -85,6 +85,12 @@ Warning: Default branch is 'master'. Consider renaming to 'main':
 
 ### 7. Work-tracking labels
 
+**Guard: skip this step in repos with an established label taxonomy.** Run
+`gh label list` first — if the repo already has a purposeful labelling scheme
+(e.g. `lifeos`, whose `kind:`/`effort:`/`area:`/`list:` labels are a format
+contract parsed by its mobile apps), do NOT add the standard set; the local
+taxonomy is authoritative. Only bootstrap repos with default/no labels.
+
 Create the standard work-tracking label set (see `agentic-coding-config`
 `docs/github-issues-workflow.md`). `--force` makes this idempotent —
 existing labels are updated, not duplicated:
