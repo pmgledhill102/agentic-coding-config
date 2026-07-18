@@ -2,68 +2,54 @@
 
 This file provides instructions and context for AI coding agents working on this project.
 
-<!-- BEGIN BEADS INTEGRATION v:1 profile:minimal hash:ca08a54f -->
-## Beads Issue Tracker
+## Issue Tracking
 
-This project uses **bd (beads)** for issue tracking. Run `bd prime` to see full workflow context and commands.
+This project uses **GitHub Issues** — see
+[docs/github-issues-workflow.md](docs/github-issues-workflow.md) for the
+conventions (sub-issue hierarchy, P0–P4 priority labels, `type: *` labels,
+blocked-by dependencies).
 
-### Quick Reference
-
-```bash
-bd ready              # Find available work
-bd show <id>          # View issue details
-bd update <id> --claim  # Claim work
-bd close <id>         # Complete work
-```
-
-### Rules
-
-- Use `bd` for ALL task tracking — do NOT use TodoWrite, TaskCreate, or markdown TODO lists
-- Run `bd prime` for detailed command reference and session close protocol
-- Use `bd remember` for persistent knowledge — do NOT use MEMORY.md files
+- Create an issue before starting work; close it when the work merges
+  (`Closes #<n>` in the PR body closes it automatically)
+- Use `gh issue list` or direct reads for anything time-sensitive — never
+  `gh search issues`, which is eventually consistent
 
 ## Session Completion
 
-**When ending a work session**, you MUST complete ALL steps below. Work is NOT complete until `git push` succeeds.
+**When ending a work session:**
 
-**MANDATORY WORKFLOW:**
+1. **File issues for remaining work** — anything that needs follow-up
+2. **Run quality gates** (if code changed) — tests, linters, builds
+3. **Update issue status** — close finished work, comment on in-progress items
+4. **Push to remote** — work is not complete until `git push` succeeds:
 
-1. **File issues for remaining work** - Create issues for anything that needs follow-up
-2. **Run quality gates** (if code changed) - Tests, linters, builds
-3. **Update issue status** - Close finished work, update in-progress items
-4. **PUSH TO REMOTE** - This is MANDATORY:
    ```bash
    git pull --rebase
-   bd dolt push
    git push
    git status  # MUST show "up to date with origin"
    ```
-5. **Clean up** - Clear stashes, prune remote branches
-6. **Verify** - All changes committed AND pushed
-7. **Hand off** - Provide context for next session
 
-**CRITICAL RULES:**
-- Work is NOT complete until `git push` succeeds
-- NEVER stop before pushing - that leaves work stranded locally
-- NEVER say "ready to push when you are" - YOU must push
-- If push fails, resolve and retry until it succeeds
-<!-- END BEADS INTEGRATION -->
-
+5. **Clean up** — clear stashes, prune remote branches
 
 ## Build & Test
 
-_Add your build and test commands here_
+No build step. Quality gates (run before pushing; CI runs the same):
 
 ```bash
-# Example:
-# npm install
-# npm test
+markdownlint-cli2 "**/*.md"        # markdown lint
+shellcheck home/bin/*              # shell scripts (CI scans home/bin/)
+HOME=/tmp/chezmoi-test chezmoi init --source . --dry-run  # template sanity
 ```
 
 ## Architecture Overview
 
-_Add a brief overview of your project architecture_
+The `home/` directory is the chezmoi source that mounts at `~/.claude/`
+on every machine (see README for the external/archive mechanics).
+Everything at the repo root — `adrs/`, `docs/`, CI config, this file —
+is repo-meta and never deploys.
 
 ## Conventions & Patterns
 
-_Add your project-specific conventions here_
+- `home/settings.json` and `home/settings.json.md` must change together
+  (CI enforces the sync; the `.md` carries the rationale)
+- ADRs in `adrs/` record decisions; `docs/` holds workflow docs and runbooks
