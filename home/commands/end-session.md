@@ -1,4 +1,4 @@
-End-of-session tidy-up: leave git, GitHub, beads, and Claude Code state at a verifiable "clean walk-away" point, then optionally run the retrospective.
+End-of-session tidy-up: leave git, GitHub, and Claude Code state at a verifiable "clean walk-away" point, then optionally run the retrospective.
 
 This command runs in two phases. Phase 1 is the tidy-up (mix of auto-actions and confirmations). Phase 2 is a prompt to kick off the retrospective. The retrospective itself is read-only — it only updates `~/.claude/retros.md` — so all repo-state changes must happen in Phase 1.
 
@@ -6,9 +6,9 @@ This command runs in two phases. Phase 1 is the tidy-up (mix of auto-actions and
 
 Every step in Phase 1 falls into one of three tiers — keep this in mind when adding or editing steps:
 
-- **Tier 1 — auto-act, no prompt**: safe, reversible, expected. Examples: `git fetch --prune`, `git pull --rebase`, `bd dolt push`, read-only surface listings.
+- **Tier 1 — auto-act, no prompt**: safe, reversible, expected. Examples: `git fetch --prune`, `git pull --rebase`, read-only surface listings.
 - **Tier 2 — auto-act behind one batched confirmation**: destructive but predictable, judgment is yes/no for the whole list. Examples: deleting merged branches, deleting squash-merged branches, pushing `main` if ahead. Per-repo opt-in to Tier 1 is available via `.agent-policy` (see below) for users who always say "yes" in a given repo.
-- **Tier 3 — surface only, user drives**: needs per-item judgment, or affects shared state in ways one y/n can't capture. Examples: open PRs awaiting merge, `bd in_progress` issues, stashes, user-started background processes. **Never** opt-in via `.agent-policy` — these require human judgment by design.
+- **Tier 3 — surface only, user drives**: needs per-item judgment, or affects shared state in ways one y/n can't capture. Examples: open PRs awaiting merge, open issues still assigned to you, stashes, user-started background processes. **Never** opt-in via `.agent-policy` — these require human judgment by design.
 
 When in doubt, downgrade a tier (Tier 1 → 2, or 2 → 3). Never upgrade silently.
 
@@ -61,7 +61,7 @@ This loads any opt-in keys consulted by Tier 2 steps. The file is optional; if a
 
 ### 1. Gather state (Tier 1 — one tool call)
 
-Run the parallel gather script. It does `git fetch --all --prune --tags` first, then fans out all read-only queries (status/branch/log, stashes, worktrees, merged branches, `main` CI, open PRs, beads in-progress) in parallel.
+Run the parallel gather script. It does `git fetch --all --prune --tags` first, then fans out all read-only queries (status/branch/log, stashes, worktrees, merged branches, `main` CI, open PRs, assigned GitHub issues) in parallel.
 
 ```sh
 ~/.claude/bin/end-session-gather-state
@@ -78,8 +78,7 @@ Output is a sectioned stream. Each section starts with `===<name> (exit=<N>)===`
 | `merged_brs` | 6 Batch A | Script appends `\|\| true` — exit 0 even if no matches. |
 | `main_ci` | 3 | Content `gh-unavailable` = silent skip. Non-zero with other content = real error. |
 | `open_prs` | 8 | Same skip convention as `main_ci`. |
-| `bd_progress` | 10 | Section absent if no beads workspace. All entries are `in_progress` by definition (that's the filter) — see step 10 for symbol-reading rules. |
-| `bd_inprogress_delivered` | 9.5 | Section absent if no beads workspace. Empty content = nothing to auto-close. Each line is `<id>\|<short-sha>\|<subject>` for an open or in_progress bead whose ID was referenced by a merged commit on `main` (`Closes <id>` / `Fixes <id>`). Open is included to catch beads that shipped via a `Closes`-trailer commit but were never claimed. Mirrors `/start-session`'s section of the same name. |
+| `gh_assigned` | 10 | Content `not-github` / `gh-unavailable` / `jq-unavailable` = silent skip. Empty content = nothing in flight. Otherwise one `#<n> <title>` line per open issue assigned to me. |
 | `stale_claude_files` | 11 | Content `chezmoi-unavailable` = silent skip. Empty body (exit=0) = nothing stale. Otherwise: one path per line under `.claude/commands/` or `.claude/bin/` that's present locally but not tracked by chezmoi. |
 
 Rules for interpreting exit codes:
@@ -91,7 +90,7 @@ Rules for interpreting exit codes:
 
 ### 1.5. Fast-path when state is fully clean (Tier 1 — narration optimisation)
 
-When the gather output shows nothing actionable, skip the per-step narration entirely and jump straight to step 14 (beads push) and step 15 (summary). This keeps a typical short-session `/end-session` to ~12 lines of output instead of ~24 (one redundant "Step N — none" line per step).
+When the gather output shows nothing actionable, skip the per-step narration entirely and jump straight to step 14 (summary). This keeps a typical short-session `/end-session` to ~12 lines of output instead of ~24 (one redundant "Step N — none" line per step).
 
 Apply when **all** of the following hold (single-pass check over already-collected gather output — no extra calls):
 
@@ -99,8 +98,7 @@ Apply when **all** of the following hold (single-pass check over already-collect
 - `local_state.unpushed` is empty (no unpushed commits — covers steps 4 and 7)
 - `merged_brs` is empty
 - `stashes` is empty
-- `bd_progress` is empty (no in_progress beads)
-- `bd_inprogress_delivered` is empty (nothing to auto-close)
+- `gh_assigned` is empty (or content is `not-github` / `gh-unavailable`)
 - `open_prs` is empty (or content is `gh-unavailable`)
 - `main_ci` has no `failure` / `cancelled` / `timed_out` line (an `in_progress` workflow is allowed — summary still surfaces it)
 - `stale_claude_files` is empty (or content is `chezmoi-unavailable`)
@@ -108,10 +106,9 @@ Apply when **all** of the following hold (single-pass check over already-collect
 
 If the predicate holds:
 
-1. **Still run step 14** (`bd dolt push`) if `.beads/metadata.json` exists — that's an unconditional action, not narration.
-2. Emit step 15's summary directly. Every actionable line says "none"; static lines (main rebased, beads pushed) reflect the already-clean state.
-3. Do **not** narrate steps 2–13 individually. No "Step 4 — pass", no "Step 6 — nothing to prune", no per-step status lines. The summary IS the output.
-4. Phase 2's retrospective prompt still fires as today.
+1. Emit step 14's summary directly. Every actionable line says "none"; static lines (main rebased) reflect the already-clean state.
+2. Do **not** narrate steps 2–13 individually. No "Step 4 — pass", no "Step 6 — nothing to prune", no per-step status lines. The summary IS the output.
+3. Phase 2's retrospective prompt still fires as today.
 
 If **any** predicate fails, run every step as before — a messy session's narration is unchanged.
 
@@ -207,47 +204,26 @@ Never auto-merge. List, link, move on.
 
 From gather section `stashes`. If non-empty, surface count + entries. Don't drop or apply anything.
 
-### 9.5. Auto-close delivered in_progress beads (Tier 1)
+### 10. Open issues assigned to you (Tier 3 — surface)
 
-From gather section `bd_inprogress_delivered` (absent if no beads workspace; empty if nothing matched). Each line is `<id>|<short-sha>|<subject>` — an open or in_progress bead whose ID was referenced by a merged commit on `main` with `Closes <id>` or `Fixes <id>` in the message. Open is included to catch beads that shipped via a `Closes`-trailer commit but were never claimed (so they stayed open instead of moving to in_progress).
+From gather section `gh_assigned` (silently skipped when the repo has no github.com origin or `gh` / `jq` is unavailable). Each line is `#<n> <title>` — an open GitHub issue assigned to you. Surface count + numbers/titles. User decides which to close — common forgetfulness pattern.
 
-These are deliveries that landed in this session (or a recent prior one) but never had their bead closed. The PR was already reviewed and merged; closing the bead is bookkeeping, not a judgment call. Auto-close each one — no prompt:
-
-```sh
-bd close <id> --reason="Auto-closed by /end-session: shipped via <short-sha>"
-```
-
-Step 14 (`bd dolt push`) persists the closures. If the section is absent, empty, or nothing matched: skip silently. The Phase 1 summary shows a `Beads auto-closed (delivered)` line listing what was closed (omit when nothing was closed).
-
-This step duplicates `/start-session`'s step 5 logic so deliveries close at end-of-session rather than waiting for the next session start. Defense in depth: if the user shuts down without running `/start-session` next morning, the closure already lands. False-positive risk is low (a stray `Closes <bead-id>` in non-closing context); recovery is `bd reopen <id>`.
-
-### 10. Beads in-progress check (Tier 3 — surface)
-
-From gather section `bd_progress` (absent if no beads workspace). The section is the output of `bd list --status=in_progress`, so **every entry is in_progress** — never report these as "blocked". Filter to issues claimed by the current user (assignee matches `git config user.email` or local username). Surface count + IDs/titles. User decides which to close — common forgetfulness pattern.
-
-**Note**: any beads auto-closed in step 9.5 won't appear here — they're already closed by the time this step runs. So this list is genuinely "still outstanding work", not "delivered but not bookkept".
-
-**Reading bd's symbols (don't conflate them):**
-
-- The leading glyph on each line is the **status**: `○` open · `◐` in_progress · `●` blocked · `✓` closed · `❄` deferred. In this section it's always `◐`.
-- A `●` appearing later in the line (e.g., inside `[● P2]`) is a **priority indicator**, not a blocked-status flag. The bd legend printed at the bottom of `bd list` uses `●` for "blocked" and reuses the same glyph for priority — that collision is the trap.
-- If you want to know what's actually blocked, run `bd blocked` — don't infer from later-line glyphs.
+Issues whose work merged this session via a `Closes #<n>` reference in the PR body are closed automatically by GitHub on merge, so they won't appear here. Anything listed is genuinely still outstanding — if a listed issue actually shipped without the `Closes #<n>` trailer, suggest `gh issue close <n> --comment "Shipped in #<pr>"`.
 
 ### 11. Stale Claude commands/bin files (Tier 1 — surface)
 
 From gather section `stale_claude_files` (silently skipped when `chezmoi` isn't on PATH).
 
-chezmoi only adds and updates target files; it never removes them when source files are renamed or deleted (unless the directory is configured `exact = true`, which has its own destructive risk for user-added files). Result: when a slash command is renamed in the source repo (e.g. `bd-migrate-embedded.md` → `bd-modernize.md`), the OLD file lingers at `~/.claude/commands/` on every machine that ever applied a version where it was present. Claude Code still sees the stale file and lists it as a slash command, so the drift compounds across versions.
+chezmoi only adds and updates target files; it never removes them when source files are renamed or deleted (unless the directory is configured `exact = true`, which has its own destructive risk for user-added files). Result: when a slash command is renamed or retired in the source repo, the OLD file lingers at `~/.claude/commands/` on every machine that ever applied a version where it was present. Claude Code still sees the stale file and lists it as a slash command, so the drift compounds across versions.
 
 The gather computes `chezmoi managed` minus actual contents under `~/.claude/commands/` and `~/.claude/bin/`, and emits any extras (one path per line). Surface them with a one-line `rm` suggestion the user can paste:
 
 ```text
-3 stale file(s) under ~/.claude/:
-  ~/.claude/commands/bd-migrate-embedded.md
+2 stale file(s) under ~/.claude/:
   ~/.claude/commands/old-thing.md
   ~/.claude/bin/legacy-script
 
-Suggested: rm ~/.claude/commands/bd-migrate-embedded.md ~/.claude/commands/old-thing.md ~/.claude/bin/legacy-script
+Suggested: rm ~/.claude/commands/old-thing.md ~/.claude/bin/legacy-script
 ```
 
 Don't `rm` automatically — the user might be testing an unstaged file, or these may belong to another tool. The check is "fast" (one `chezmoi managed` + two `find`s) so it runs unconditionally per session.
@@ -263,17 +239,7 @@ Split by origin:
 - **Spawned by Claude in this session** (via `run_in_background`): list. Reap any that have completed (Tier 1 — auto). If still running and the task seems incomplete, surface before reaping.
 - **Started by the user / pre-existing**: surface only (Tier 3). Don't kill.
 
-### 14. Beads sync (Tier 1)
-
-If `.beads/metadata.json` exists:
-
-```sh
-bd dolt push
-```
-
-If this fails, surface the error but don't block the phase — the user can retry manually.
-
-### 15. Phase 1 summary
+### 14. Phase 1 summary
 
 Print a concise summary. Each line says "none" loudly when clean, so noise scales with actual mess. (Step 1.5's fast-path also lands here directly when the predicate holds — same format, all "none" lines.)
 
@@ -284,13 +250,11 @@ Print a concise summary. Each line says "none" loudly when clean, so noise scale
 - `main` CI status: `<green / running: N (<workflow names>) / FAILED: <workflow name + run URL>>`
 - Open PRs needing action: `<count by category, or "none">`
 - Stashes outstanding: `<count, or "none">`
-- Beads auto-closed (delivered): `<list of ids, or "none">`
-- Beads in_progress (yours): `<count, or "none">`
+- Open issues assigned to you: `<count, or "none">`
 - Stale `~/.claude/` files: `<count, or "none" / "n/a (no chezmoi)">`
 - Other worktrees: `<count, or "none">`
 - Background processes (reaped): `<count>`
 - Background processes (user-owned, surfaced): `<count>`
-- Beads pushed: `<yes/no/n/a>`
 - Policy: `<list of .agent-policy keys that fired this session, e.g. "AUTO_DELETE_MERGED_BRANCHES → 3 deleted">` — omit the line entirely when no keys fired or the file is absent. Don't list keys that were set but had nothing to do (e.g. `AUTO_DELETE_MERGED_BRANCHES=true` with no merged branches).
 - Anything skipped/surfaced: `<list>`
 
@@ -316,5 +280,5 @@ On `n`: stop. The session is tidied; the user can run `/retrospective` later if 
 - **Never `git push --force` or `git reset --hard`.** Those aren't session-tidy operations; if they're needed, the user should drive them.
 - **Never auto-merge PRs, auto-close issues, or auto-drop stashes.** Per-item judgment lives with the user (Tier 3).
 - **Ask before every Tier 2 destructive action by default** (branch deletes, force-pushing). One y/n per batch is fine — don't ask per-branch if a single list is presented. The `.agent-policy` keys (`AUTO_DELETE_MERGED_BRANCHES`, `AUTO_DELETE_SQUASH_MERGED_BRANCHES`, `AUTO_PUSH_MAIN_IF_AHEAD`) are the only sanctioned way to skip the prompt, and they're per-repo opt-in.
-- **Don't modify settings, config, or unrelated files.** This command's scope is git, GitHub, beads, and process state only.
+- **Don't modify settings, config, or unrelated files.** This command's scope is git, GitHub, and process state only.
 - **`.agent-policy` only promotes Tier 2 → Tier 1 for the keys it explicitly governs.** Tier 3 surfaces (user judgment) cannot be opted in. Unknown keys are ignored silently.

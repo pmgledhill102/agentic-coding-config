@@ -1,4 +1,4 @@
-Start-of-session sync: bring git, beads, and GitHub-issue state up-to-date and surface anything that needs your attention before you begin work.
+Start-of-session sync: bring git and GitHub-issue state up-to-date and surface anything that needs your attention before you begin work.
 
 This command runs in a single phase. It mirrors `/end-session`'s shape — parallel state-gather, three-tier action model — but inverted: where `/end-session` leaves things tidy at walk-away, `/start-session` brings local state forward to "ready to work" and prints a one-screen session brief.
 
@@ -6,9 +6,9 @@ This command runs in a single phase. It mirrors `/end-session`'s shape — paral
 
 Every step falls into one of three tiers — keep this in mind when adding or editing steps:
 
-- **Tier 1 — auto-act, no prompt**: safe, reversible, expected. Examples: `git fetch --prune`, `git pull --rebase` on the default branch, `bd dolt pull`, read-only surface listings.
-- **Tier 2 — auto-act behind one batched confirmation**: predictable but should be a conscious choice. Example: chaining into `/bd-import-github-issues` when unmigrated GitHub issues exist. Per-repo opt-in to Tier 1 is available via `.agent-policy` (see below) for users who always say "yes" in a given repo.
-- **Tier 3 — surface only, user drives**: needs per-item judgment. Examples: a feature branch trailing `main`, in-progress beads left mid-flight from the last session, red `main` CI. **Never** opt-in via `.agent-policy` — these require human judgment by design.
+- **Tier 1 — auto-act, no prompt**: safe, reversible, expected. Examples: `git fetch --prune`, `git pull --rebase` on the default branch, read-only surface listings.
+- **Tier 2 — auto-act behind one batched confirmation**: predictable but should be a conscious choice. Example: chaining into `/promote-journal-inbox` when journal drafts are pending. Per-repo opt-in to Tier 1 is available via `.agent-policy` (see below) for users who always say "yes" in a given repo.
+- **Tier 3 — surface only, user drives**: needs per-item judgment. Examples: a feature branch trailing `main`, issues left assigned mid-flight from the last session, red `main` CI. **Never** opt-in via `.agent-policy` — these require human judgment by design.
 
 When in doubt, downgrade a tier (Tier 1 → 2, or 2 → 3). Never upgrade silently.
 
@@ -30,8 +30,7 @@ If the exit code is non-zero (or stdout is not `true`), print a single-line warn
 
 | Key | When `=true` | Affects |
 | --- | --- | --- |
-| `AUTO_GITHUB_IMPORT` | Auto-run `/bd-import-github-issues` when `count > 0` — no prompt | Step 8 |
-| `AUTO_JOURNAL_PROMOTE` | Auto-run `/promote-journal-inbox` when filesystem `_incoming/` count >= 1 — no prompt | Step 8.5 |
+| `AUTO_JOURNAL_PROMOTE` | Auto-run `/promote-journal-inbox` when filesystem `_incoming/` count >= 1 — no prompt | Step 6 |
 
 Any value other than `true` is treated as unset. Unknown keys are ignored silently (forward-compatibility).
 
@@ -41,7 +40,6 @@ Any value other than `true` is treated as unset. Unknown keys are ignored silent
 
 ```sh
 # .agent-policy — opt-in automation for /start-session in this repo
-AUTO_GITHUB_IMPORT=true
 AUTO_JOURNAL_PROMOTE=true
 ```
 
@@ -57,7 +55,7 @@ This loads any opt-in keys consulted by Tier 2 steps. The file is optional; if a
 
 ### 1. Gather state (Tier 1 — one tool call)
 
-Run the parallel gather script. It does `git fetch --all --prune --tags` first, resolves the repo's default branch, then fans out all read-only queries (local branch state, `main` CI, beads remote/ready/in-progress, unmigrated GH issues) in parallel. The script compacts each section's output to keep model-visible context cost low: `fetch`'s body is suppressed on success, `main_ci` is parsed in-script to one line per workflow, and the previously-emitted `bd_preflight` section is gone (its `bd preflight` template output was Go-specific and not actionable on most projects).
+Run the parallel gather script. It does `git fetch --all --prune --tags` first, resolves the repo's default branch, then fans out all read-only queries (local branch state, `main` CI, ready/assigned GitHub issues) in parallel. The script compacts each section's output to keep model-visible context cost low: `fetch`'s body is suppressed on success, and `main_ci` is parsed in-script to one line per workflow.
 
 ```sh
 ~/.claude/bin/start-session-gather-state
@@ -68,20 +66,17 @@ Output is a sectioned stream. Each section starts with `===<name> (exit=<N>)===`
 | Section | Drives step(s) | Notes on exit code |
 | --- | --- | --- |
 | `fetch` | 2 (folded in) | Body is empty on success (exit=0). Non-zero = network/auth issue — body contains the error; surface before proceeding. |
-| `local_state` | 3, 9 | Includes branch, dirty/clean, ahead/behind upstream, ahead/behind `origin/<default>`. |
-| `main_ci` | 7 | Content `gh-unavailable` / `jq-unavailable` = silent skip. Otherwise: first line is `workflows=<N>`; subsequent lines are `<workflow-name>=<conclusion-or-status>@<short-sha>` (one per most-recent run per workflow on `<default>`). On `failure` / `cancelled` / `timed_out`, the line ends with a trailing space-separated run URL: `<workflow-name>=<conclusion>@<short-sha> <url>`. Non-zero with other content = real error. |
-| `gh_unmigrated` | 8 | Content `gh-unavailable` or `jq-unavailable` = silent skip. First line is `count=<N>`; remaining lines are `#<n> <title>` per unmigrated issue. |
-| `recent_main_commits` | 7.5 | First line is `count=<N>` (commits that merged into `origin/<default>` since the previous local tip). When non-zero, subsequent lines are `<short-sha> <subject>`, capped at 10. Empty when caught up. |
-| `bd_remote` | 4 | Section absent if no beads workspace. Empty content = no remote configured (single-machine setup). |
-| `bd_ready` | 9 | Section absent if no beads workspace. Empty content = no ready work. Otherwise up to 5 pipe-separated rows: `<id>\|P<n>\|<title>`. Already pre-summarised — use rows directly in the brief without further parsing. |
-| `bd_in_progress` | 9 | Section absent if no beads workspace. Empty content = nothing in flight. Otherwise pipe-separated rows: `<id>\|P<n>\|<title>` (no limit; usually 0-3). Same row shape as `bd_ready`. |
-| `bd_inprogress_delivered` | 5 | Section absent if no beads workspace. Empty content = nothing to auto-close. Each line is `<id>\|<short-sha>\|<subject>` for an open or in_progress bead whose ID was referenced by a merged commit on `<default>` (`Closes <id>` / `Fixes <id>`). Open is included to catch beads that shipped via a `Closes`-trailer commit but were never claimed. |
+| `local_state` | 3, 7 | Includes branch, dirty/clean, ahead/behind upstream, ahead/behind `origin/<default>`. |
+| `main_ci` | 4 | Content `gh-unavailable` / `jq-unavailable` = silent skip. Otherwise: first line is `workflows=<N>`; subsequent lines are `<workflow-name>=<conclusion-or-status>@<short-sha>` (one per most-recent run per workflow on `<default>`). On `failure` / `cancelled` / `timed_out`, the line ends with a trailing space-separated run URL: `<workflow-name>=<conclusion>@<short-sha> <url>`. Non-zero with other content = real error. |
+| `recent_main_commits` | 5 | First line is `count=<N>` (commits that merged into `origin/<default>` since the previous local tip). When non-zero, subsequent lines are `<short-sha> <subject>`, capped at 10. Empty when caught up. |
+| `gh_ready` | 7 | Content `not-github` / `gh-unavailable` / `jq-unavailable` = silent skip. Empty content = no ready work. Otherwise up to 10 pipe-separated rows: `#<n>\|P<pri>\|<title>` (priority `-` when the issue has no `P0`–`P4` label). Ready = open and not directly blocked (`gh issue list --search "is:open -is:blocked"`) — direct blocks only, no transitive query. Already pre-summarised — use rows directly in the brief without further parsing. |
+| `gh_assigned` | 7 | Same skip convention as `gh_ready`. Empty content = nothing in flight. Otherwise pipe-separated rows: `#<n>\|P<pri>\|<title>` for open issues assigned to me (usually 0-3). Same row shape as `gh_ready`. |
 
 Rules for interpreting exit codes:
 
-- `exit=0` with empty content: clean result (no remote configured, no in-progress issues, etc.). Treat as "none".
+- `exit=0` with empty content: clean result (no ready work, nothing assigned, etc.). Treat as "none".
 - `exit=0` with content: normal data — parse it for the relevant step.
-- `exit != 0` with content equal to `gh-unavailable` or `jq-unavailable`: silent skip.
+- `exit != 0` with content equal to `not-github`, `gh-unavailable`, or `jq-unavailable`: silent skip.
 - `exit != 0` with other content: real error — surface it before continuing.
 
 ### 2. Surface fetch result (Tier 1)
@@ -111,41 +106,7 @@ Read `local_state`, including the `upstream_status` line (`alive` / `gone` / `no
 
 Don't switch branches outside of the auto-switch case above.
 
-### 4. Beads Dolt pull (Tier 1)
-
-If there's no beads workspace (`bd_remote` section absent), skip silently.
-
-If the `bd_remote` section is empty (no remote configured — typical for a single-machine project), print one line: `(no Dolt remote — skipping pull)`, and continue.
-
-Otherwise run:
-
-```sh
-bd dolt pull
-```
-
-If it fails (auth, network, or genuine conflict), halt the phase and surface the error verbatim. Do **not** attempt auto-merge or auto-resolve — the user needs to fix this manually before continuing. Mention the v1.81.10 credential-prompt workaround documented in `/bd-modernize` step 5d if the failure looks like it.
-
-### 5. Auto-close delivered in_progress beads (Tier 1)
-
-Read gather section `bd_inprogress_delivered` (absent if no beads workspace; empty if nothing matched). Each line is `<id>|<short-sha>|<subject>` — an open or in_progress bead whose ID was referenced by a merged commit on the default branch with `Closes <id>` or `Fixes <id>` in the message. Open is included to catch beads that shipped via a `Closes`-trailer commit but were never claimed (so they stayed open instead of moving to in_progress).
-
-These are deliveries that never got their bead closed. The PR was already reviewed and merged; closing the bead is bookkeeping, not a judgment call. Auto-close each one — no prompt:
-
-```sh
-bd close <id> --reason="Auto-closed by /start-session: shipped via <short-sha>"
-```
-
-After all auto-closes, run `bd dolt push` once so the closures persist to the remote (otherwise a second machine that pulls afterwards re-detects the same beads as in_progress and re-closes them — harmless but noisy). This is a deliberate carve-out from the general "don't push" guardrail; it's the only push `/start-session` ever issues.
-
-If the section is absent, empty, or nothing matched: skip silently. The session brief shows an `Auto-closed (delivered):` line listing what was closed (omit the line entirely when nothing was closed).
-
-False-positive risk is low: a stray `Closes <bead-id>` reference in a non-closing context would trigger a spurious close. If hit, recovery is `bd reopen <id>` — Tier 1 acceptable in exchange for not having to manually close every shipped bead.
-
-### 6. (removed) — Beads preflight is no longer collected
-
-`bd preflight`'s output is a Go-specific PR-readiness checklist (`go test`, `golangci-lint`, `gofmt`, …) that produces no useful signal on non-Go projects and was largely noise in the brief. If you want to run those checks for a specific repo where they apply, invoke `bd preflight --check` directly outside `/start-session`.
-
-### 7. `main` CI status (Tier 1 — surface)
+### 4. `main` CI status (Tier 1 — surface)
 
 From gather section `main_ci`. The script has already deduplicated to one most-recent run per workflow on `<default>` and emitted compact lines: `<workflow-name>=<conclusion-or-status>@<short-sha>`. Failing runs include the URL on the same line: `<workflow-name>=<conclusion>@<short-sha> <url>`.
 
@@ -155,7 +116,7 @@ From gather section `main_ci`. The script has already deduplicated to one most-r
 
 If the section content is `gh-unavailable` / `jq-unavailable` or the repo has no remote, skip silently and report `n/a` in the brief.
 
-### 7.5. Recent merges to `<default>` (Tier 1 — surface)
+### 5. Recent merges to `<default>` (Tier 1 — surface)
 
 From gather section `recent_main_commits`. The first line is `count=<N>` — commits that merged into `origin/<default>` since the previous local tip (i.e. the activity the user missed since they last opened this repo). When non-zero, subsequent lines are `<short-sha> <subject>` (capped at 10, oldest-first; topmost line is the most recent).
 
@@ -164,23 +125,7 @@ From gather section `recent_main_commits`. The first line is `count=<N>` — com
 
 This is informational only — no action prompts. The section adds a few lines on busy days and zero on quiet ones.
 
-### 8. Unmigrated GitHub Issues (Tier 2 — prompt, or Tier 1 with policy opt-in)
-
-From gather section `gh_unmigrated`. The first line is `count=<N>`; remaining lines are `#<number> <title>` per unmigrated issue.
-
-- **`gh-unavailable` / `jq-unavailable` / no remote**: skip silently.
-- **`count=0`**: silent.
-- **`count > 0`**: print the count and (up to) the first 5 titles, then:
-
-  - **If `AUTO_GITHUB_IMPORT=true` (from `.agent-policy`)**: skip the prompt and invoke `/bd-import-github-issues` directly. Add a `Policy:` line to the session brief noting that the import fired automatically.
-  - **Otherwise (default)**: prompt:
-
-    > `<N>` open GitHub issue(s) haven't been imported into beads yet. Run `/bd-import-github-issues` now? (y/n)
-
-    - **yes** → invoke `/bd-import-github-issues` directly. That command does its own `bd dolt pull` (Step 0) and `bd dolt push` (Step 8); a second pull right after step 4 is a clean no-op, and the push at the end is what we want anyway.
-    - **no / empty / cancel** → carry on. Surface the count in the session brief under "Needs attention" so it's visible at a glance.
-
-### 8.5. Paul-context inbox surface (Tier 2 — prompt, paul-context only; Tier 1 with policy opt-in)
+### 6. Paul-context inbox surface (Tier 2 — prompt, paul-context only; Tier 1 with policy opt-in)
 
 **Only fires when the current working tree is `paul-context`** (`basename "$(git rev-parse --show-toplevel)" = "paul-context"`). Otherwise skip silently. This is a runtime filesystem check, not part of the gather output — `/start-session` runs in many repos and a generic gather section would always be empty for the rest.
 
@@ -203,7 +148,7 @@ Filter the listing to entries matching `^[0-9]{4}-[0-9]{2}-[0-9]{2}-[a-z0-9-]+\.
 
 Note: this surface only counts the **filesystem** half of the inbox. The Issue-side half (sandbox-fallback drafts) isn't enumerated here — surfacing it would require an extra `gh issue list --label journal-draft` call, and the filesystem count is the dominant signal because the local machine is where the user lives. `/promote-journal-inbox` itself drains both inboxes when invoked, so user action is consistent regardless of which path filed the draft.
 
-### 9. Session brief (Tier 1 — final summary)
+### 7. Session brief (Tier 1 — final summary)
 
 Always print, even when everything is clean. This is the user-facing payoff — one screenful, scannable, no surprises. Format:
 
@@ -212,29 +157,23 @@ Always print, even when everything is clean. This is the user-facing payoff — 
 Repo:     <repo>             Branch: <branch> (<clean|dirty>)
 Sync:     <default> <ahead/behind/even>   upstream <ahead/behind/even/gone/n/a>
           [auto-switched <feature> → <default> (upstream gone)]    (only when Step 3 auto-switched)
-Dolt:     <pulled / up-to-date / no remote / FAILED>
 CI:       <green / N failing / N in-progress / n/a>
 
 Policy:                                             (omit when no policy keys fired)
-  AUTO_GITHUB_IMPORT=true → imported <N> issue(s)
   AUTO_JOURNAL_PROMOTE=true → promoted <N> draft(s)
-
-Auto-closed (delivered):                            (omit when none)
-  <id>  via <short-sha>  <commit subject>
 
 Recent merges:                                      (omit when count=0)
   <short-sha>  <commit subject>
   …                                                 (cap at gather's 10)
 
-In progress (you left these mid-flight):
-  <id>  P<pri>  <title>            (or "none")
+In progress (assigned to you):
+  #<n>  P<pri>  <title>            (or "none")
 
 Ready to pick up next:
-  <id>  P<pri>  <title>   est:<n>  (top 5 by priority, then est)
-  …                                 (or "none — backlog empty")
+  #<n>  P<pri>  <title>            (top 5 by priority; or "none — backlog empty")
+  …
 
 Needs attention:
-  • <unmigrated GH issues: N>      (omit when 0 / n/a)
   • <pending journal drafts: N>    (omit when 0 / not paul-context)
   • <main CI red on workflow X>    (omit when green)
   • <feature branch behind main by N>          (omit when on default, even, or auto-switched)
@@ -245,12 +184,11 @@ Needs attention:
 Rules:
 
 - Sections with nothing to say collapse to a single `none` line; "Needs attention" is omitted entirely when empty.
-- "Ready to pick up next" is sourced from gather section `bd_ready`. Each row is already pipe-separated `<id>|P<n>|<title>` and pre-truncated to 5 — split on `|` and emit. `bd ready` already filters to issues whose blockers are all closed and sorts sensibly; preserve the gather order.
-- "In progress" is sourced from gather section `bd_in_progress`. Same `<id>|P<n>|<title>` row shape; no cap (usually 0–3 items). Note: any beads auto-closed in Step 5 won't appear here — they're already closed by the time the brief renders.
-- "Auto-closed (delivered)" is sourced from the IDs Step 5 closed. Omit the entire section when Step 5 closed nothing.
+- "Ready to pick up next" is sourced from gather section `gh_ready`. Each row is already pipe-separated `#<n>|P<pri>|<title>` — split on `|`, sort by priority label (P0 first, `-` last), and emit the top 5. Ready = open and not directly blocked; the filter is direct-blocks-only, so eyeball the blocked icon before claiming work.
+- "In progress" is sourced from gather section `gh_assigned`. Same `#<n>|P<pri>|<title>` row shape; no cap (usually 0–3 items).
 - "Recent merges" is sourced from gather section `recent_main_commits`. Omit the entire section when `count=0`.
-- "Policy" lists each `.agent-policy` key that fired this session (i.e. promoted a Tier 2 prompt to Tier 1 auto-action). Omit the entire section when no keys fired or the file is absent. Don't list keys that were set but had nothing to do (e.g. `AUTO_GITHUB_IMPORT=true` when `count=0`) — only list actual fires.
-- If the repo has no beads workspace, drop both Beads sections silently (the brief still shows git/CI/GH lines).
+- "Policy" lists each `.agent-policy` key that fired this session (i.e. promoted a Tier 2 prompt to Tier 1 auto-action). Omit the entire section when no keys fired or the file is absent. Don't list keys that were set but had nothing to do (e.g. `AUTO_JOURNAL_PROMOTE=true` with an empty inbox) — only list actual fires.
+- If the repo has no GitHub origin (`gh_ready` / `gh_assigned` report `not-github` or are skipped), drop both issue sections silently (the brief still shows git/CI lines).
 - Truncate any title to ~78 columns to keep rows on one line.
 
 ## Guardrails
@@ -258,7 +196,6 @@ Rules:
 - **Pre-flight gate is non-negotiable.** Never proceed when not in a git repo.
 - **Never auto-rebase a feature branch** onto an advanced default branch. Surface the gap and stop. The user picks the strategy.
 - **Never switch branches except when the upstream is gone and the tree is clean.** That single case (PR merged + branch auto-deleted on remote, no local uncommitted work) is auto-handled per Step 3. Otherwise, `/start-session` reports state on whatever branch the user is on.
-- **`bd dolt pull` failures halt the phase.** Don't attempt auto-resolve, don't fall back to JSONL, don't rebuild the DB. Surface and stop.
-- **Don't push anything except the auto-close result in Step 5.** Pushes generally belong to `/end-session` (for git/`main`) and `/bd-import-github-issues` (for beads after import). The single carve-out is Step 5's `bd dolt push` after auto-closing delivered in_progress beads — that push is what makes the auto-close cross-machine durable. `/start-session` is otherwise read-mostly. (Note: if `AUTO_GITHUB_IMPORT=true` fires, `/bd-import-github-issues` runs its own push — that's the import command's contract, not a new carve-out.)
-- **Don't modify settings, config, or unrelated files.** Scope is git, beads, and GitHub-issue surface only.
+- **Don't push anything.** Pushes belong to `/end-session` (for git/`main`). `/start-session` is read-mostly. (Note: if `AUTO_JOURNAL_PROMOTE=true` fires, `/promote-journal-inbox` runs its own commit + push against `paul-context` — that's the promote command's contract, not a carve-out here.)
+- **Don't modify settings, config, or unrelated files.** Scope is git and GitHub-issue surface only.
 - **`.agent-policy` only promotes Tier 2 → Tier 1 for the keys it explicitly governs.** Tier 3 surfaces (user judgment) cannot be opted in. Unknown keys are ignored silently.
