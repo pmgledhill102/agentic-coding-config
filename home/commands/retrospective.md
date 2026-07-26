@@ -124,7 +124,7 @@ Wait for explicit confirmation. Don't proceed on ambiguous input.
    - **Resolve same-project same-day collisions** at write-time: if the target already exists, append `-2`, `-3`, … before `.md` until unique. Filesystem path checks `~/dev/paul-context/_incoming/<filename>`; Issue path checks for an open Issue with the same title (rare in practice — same project, same day, same topic — but the suffix prevents silent merge of two distinct retros).
    - **Pick the inbox path:**
      - **Filesystem inbox** (preferred): if `[ -d ~/dev/paul-context/_incoming ] && [ -w ~/dev/paul-context/_incoming ]`, `Write` the journal markdown to `~/dev/paul-context/_incoming/<filename>`. **No git operations against `paul-context`.**
-     - **GitHub Issue fallback** (sandbox / remote VM / no local clone): stage the journal markdown with the `Write` tool to `/tmp/<filename>` (`Write(/tmp/**)` is auto-allowed), then file as a labeled Issue:
+     - **GitHub Issue fallback** (sandbox / remote VM / no local clone): stage the journal markdown with the `Write` tool to `/tmp/<filename>` (`Edit(/tmp/**)` is auto-allowed, and `Edit` rules cover the `Write` tool), then file as a labeled Issue:
 
        ```sh
        gh issue create --repo pmgledhill102/paul-context \

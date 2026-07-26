@@ -588,26 +588,42 @@ run. Write/Edit access remains gated.
 - `Read(~/.claude/retros.md)`
 - `Read(~/.claude/settings.json)`
 
-### Write permissions (scratch space)
+### File-write permissions (scratch space)
+
+**Use `Edit(path)`, never `Write(path)`.** Path-scoped `Write(...)`
+rules are not consulted by the file permission check at all — only
+`Edit(...)` rules are, and an `Edit` rule covers *every* file-editing
+tool, `Write` included. A `Write(...)` rule is therefore dead config:
+it grants nothing and the CLI prints a warning about it on every
+start. This bit us for months — the two rules below were written as
+`Write(...)`, silently granted nothing, and the resulting prompts were
+misdiagnosed as a `/tmp` symlink problem (see the `/private/tmp` note
+below).
 
 `/tmp` on macOS is per-user, ephemeral, and the standard scratch space —
 nothing durable or shared lives there. The blast radius of allowing
-`Write` is "Claude can scribble in scratch space," which is exactly
+writes is "Claude can scribble in scratch space," which is exactly
 what scratch space is for.
 
 User-level CLAUDE.md forbids heredocs (`cat <<'EOF'`) and ANSI-C
 quoting in bash commands, so any multi-line content for `gh issue
 create --body-file`, `gh pr create --body-file`, etc. has to flow
-through a temp file. Auto-approving `Write(/tmp/**)` removes the
+through a temp file. Auto-approving `Edit(/tmp/**)` removes the
 double-prompt friction (one for the command, one for the temp file)
 that otherwise discourages the structured-body pattern.
 
-- `Write(/tmp/**)` — scratch space for staging long, structured content
+- `Edit(/tmp/**)` — scratch space for staging long, structured content
   (issue bodies, PR bodies, etc.) before passing to a CLI via
   `--body-file` or `$(cat ...)`. Restrict scope further to
-  `Write(/tmp/claude-*)` (with a naming-convention discipline) if the
+  `Edit(/tmp/claude-*)` (with a naming-convention discipline) if the
   broad rule ever feels uncomfortable.
-- `Write(~/dev/paul-context/_incoming/**)` — journal-draft inbox for
+- `Edit(/private/tmp/**)` — the same grant, spelled the way macOS
+  resolves it. `/tmp` is a symlink to `/private/tmp` there, and paths
+  reach the permission check already resolved (the session scratchpad
+  is handed to Claude as `/private/tmp/claude-<uid>/...`), so the
+  `/tmp/**` glob alone can miss. Both spellings are kept: Linux has no
+  such symlink and uses the `/tmp/**` form.
+- `Edit(~/dev/paul-context/_incoming/**)` — journal-draft inbox for
   the cross-repo retrospective skill. Drafts land here and are later
   promoted into `paul-context/journal/` by `/promote-journal-inbox`
   (run from `~/dev/paul-context/`). The directory is `.gitignored` in
@@ -615,7 +631,7 @@ that otherwise discourages the structured-body pattern.
   until promotion — content can't pollute `paul-context`'s git
   history regardless of what gets written. This single user-level
   rule replaces what would otherwise be N per-project
-  `Write(~/dev/paul-context/journal/**)` grants plus git-on-paul-context
+  `Edit(~/dev/paul-context/journal/**)` grants plus git-on-paul-context
   permissions in every project that runs `/end-session`. See
   `paul-context/decisions/2026-05-05-journal-inbox-promotion.md` for
   the full rationale.
