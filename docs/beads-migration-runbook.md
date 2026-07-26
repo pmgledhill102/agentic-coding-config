@@ -21,6 +21,9 @@ independent.
   linking freshly created issues retries briefly on 404.
 - **Dry-run by default**: without `--apply` it prints the full plan and
   writes nothing.
+- **Tears down the beads pre-commit hook**: after verification passes it
+  strips the beads hook from `.pre-commit-config.yaml` (see
+  [Pre-commit hook teardown](#pre-commit-hook-teardown)).
 
 What it migrates: title, description, notes, open/closed state,
 priority (P0–P4 labels), type (`type: *` labels), a `beads-import`
@@ -87,13 +90,59 @@ The run ends with a verification pass (direct reads: state, labels,
 sub-issue links, blocked-by links) and exits non-zero listing any
 mismatches. Nothing is deleted on failure — re-run to converge.
 
+## Pre-commit hook teardown
+
+A migrated repo that keeps its beads pre-commit hook is a trap that
+springs somewhere other than where you set it. With `bd` still on PATH
+and `.beads/` gone the hook exits 0 — a silent no-op on the machine
+that ran the migration. On a fresh clone, a second machine, or CI,
+`bd` is absent, the hook fails, and **every commit is blocked**. Since
+these hooks are written `always_run: true` / `pass_filenames: false`,
+it fires on every commit regardless of what changed.
+
+So after verification passes, `--apply` strips the beads hook from
+`.pre-commit-config.yaml`:
+
+- Hooks are matched on **what they run** — an `entry:` invoking `bd`,
+  or any line referencing `.beads` — not on `id:`, which is
+  inconsistent in the wild (`beads`, `beads-sync` and `bd-sync` have
+  all been observed).
+- If that empties a `- repo:` block, the whole block goes too;
+  pre-commit refuses to parse a `hooks:` list with no entries.
+- Editing is line-based, so every surviving line (comments, ordering,
+  quoting) is byte-identical. Re-running is a no-op.
+- If the config contains *nothing but* beads hooks, it is left alone
+  with a warning — an empty `repos:` list does not parse, so that one
+  needs a human to delete the file.
+
+For a repo migrated before the script did this, run the teardown on its
+own — it is guarded, skipping any repo that still has a live `.beads/`
+directory:
+
+```bash
+~/.claude/bin/bd-migrate-to-github --strip-precommit-hook-only          # dry run
+~/.claude/bin/bd-migrate-to-github --strip-precommit-hook-only --apply
+```
+
+Verify with `bd` off PATH, which is the condition that actually breaks:
+
+```bash
+env -i HOME="$HOME" PATH=/usr/bin:/bin pre-commit run --all-files
+```
+
 ## Post-migration checklist (per repo)
 
 1. Triage `.beads/memories-export.md` into the repo's CLAUDE.md or
    auto-memory, then delete it.
-2. Remove the beads workspace and its git hooks: `rm -rf .beads/`
-   (keep `migration-export.jsonl` and the state file somewhere first if
+2. Remove the beads workspace: `rm -rf .beads/` (keep
+   `migration-export.jsonl` and the state file somewhere first if
    you want an audit copy — e.g. attach them to the migration PR).
+   The `.pre-commit-config.yaml` entry is already gone — the script
+   removes it. If `bd hooks install` was ever run here, also
+   `bd hooks uninstall` **before** deleting `.beads/`, while `bd` still
+   works: those shims live in `.git/hooks/`, which is not version
+   controlled, so they only affect this checkout (and no clone
+   inherits them).
 3. Strip the `BEADS INTEGRATION` blocks from `CLAUDE.md` / `AGENTS.md`
    and replace with a pointer to
    [docs/github-issues-workflow.md](github-issues-workflow.md)

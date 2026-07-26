@@ -12,6 +12,9 @@ repository, preserving:
   - status      : open/closed (+ provenance footer with original timestamps)
   - memories    : `bd remember` records             -> markdown file for triage
 
+It also tears down the beads pre-commit hook, which would otherwise outlive
+the migration and block commits on any machine without `bd` on PATH.
+
 Design constraints (see docs/beads-migration-runbook.md):
 
   - Deterministic: issues are created in (created_at, id) order, so repeated
@@ -33,6 +36,7 @@ import argparse
 import json
 import os
 import random
+import re
 import subprocess
 import sys
 import time
@@ -42,6 +46,7 @@ import urllib.request
 
 API_ROOT = "https://api.github.com"
 API_VERSION = "2022-11-28"
+PRECOMMIT_CONFIG = ".pre-commit-config.yaml"
 
 PRIORITY_LABELS = {
     0: ("P0", "b60205", "Critical"),
@@ -281,6 +286,187 @@ def ensure_labels(gh, needed, dry_run):
         log(f"created label {name}")
 
 
+# --- beads pre-commit hook teardown -----------------------------------------
+#
+# A migrated repo that keeps its beads pre-commit hook is a latent trap: with
+# `bd` still on PATH the hook exits 0 and nobody notices, but on a fresh clone,
+# a second machine or CI `bd` is missing, the hook fails, and every commit is
+# blocked. The hook `id` is not consistent across repos (`beads`, `beads-sync`
+# and `bd-sync` have all been observed), so hooks are identified by what they
+# run, not by name.
+#
+# Editing YAML with a line scanner rather than a parser is deliberate: this
+# script is stdlib-only (no PyYAML), and a round-trip through a parser would
+# reformat the whole config and destroy comments. The scanner only ever deletes
+# whole line ranges, so surviving lines are byte-identical.
+
+BD_COMMAND_RE = re.compile(r"""(?:^|[\s;&|(`"'])bd(?=\s|$)""")
+BLOCK_SCALARS = {"", "|", ">", "|-", ">-", "|+", ">+"}
+
+
+def _indent(line):
+    return len(line) - len(line.lstrip())
+
+
+def _is_item(line):
+    return re.match(r"-(\s|$)", line.strip()) is not None
+
+
+def _value_region(lines, key_index):
+    """Range of lines holding the value of the mapping key at `key_index`.
+
+    Covers both indented children and a block sequence written at the key's
+    own indentation (`hooks:` followed by `- id: ...` in column 0 of the same
+    level is valid YAML and appears in the wild).
+    """
+    indent = _indent(lines[key_index])
+    i = end = key_index + 1
+    while i < len(lines):
+        if lines[i].strip():
+            here = _indent(lines[i])
+            if here < indent or (here == indent and not _is_item(lines[i])):
+                break
+            end = i + 1
+        i += 1
+    return key_index + 1, end
+
+
+def _item_end(lines, start):
+    """Index one past the last line of the list item beginning at `start`."""
+    indent = _indent(lines[start])
+    i = end = start + 1
+    while i < len(lines):
+        if lines[i].strip():
+            if _indent(lines[i]) <= indent:
+                break
+            end = i + 1
+        i += 1
+    return end
+
+
+def _list_items(lines, start, stop):
+    """(begin, end) of each list item directly inside [start, stop)."""
+    items, indent, i = [], None, start
+    while i < stop:
+        if not lines[i].strip() or not _is_item(lines[i]):
+            i += 1
+            continue
+        if indent is None:
+            indent = _indent(lines[i])
+        elif _indent(lines[i]) != indent:  # nested deeper — not our level
+            i += 1
+            continue
+        end = min(_item_end(lines, i), stop)
+        items.append((i, end))
+        i = end
+    return items
+
+
+def _find_key(lines, start, stop, key):
+    pattern = re.compile(r"(?:-\s+)?" + re.escape(key) + r":")
+    for i in range(start, stop):
+        if pattern.match(lines[i].strip()):
+            return i
+    return None
+
+
+def _scalar(lines, index, key):
+    """Value of `key:` at `index`, folding block scalars into one string."""
+    value = re.sub(r"^(?:-\s+)?" + re.escape(key) + r":", "",
+                   lines[index].strip()).strip()
+    if value in BLOCK_SCALARS:
+        _, end = _value_region(lines, index)
+        value = " ".join(l.strip() for l in lines[index + 1:end])
+    return value
+
+
+def _is_beads_hook(lines, start, stop):
+    if any(".beads" in l for l in lines[start:stop]):
+        return True
+    entry = _find_key(lines, start, stop, "entry")
+    return entry is not None and bool(
+        BD_COMMAND_RE.search(_scalar(lines, entry, "entry")))
+
+
+def _hook_id(lines, start, stop):
+    index = _find_key(lines, start, stop, "id")
+    return _scalar(lines, index, "id") if index is not None else "?"
+
+
+def strip_beads_precommit_hook(path, dry_run, migrating=False):
+    """Remove beads hooks from a pre-commit config. Returns True if changed.
+
+    `migrating` suppresses the `.beads/` safety guard: during a migration the
+    workspace is still present (it is the source of the export, and the runbook
+    keeps it until rollback is ruled out), but the repo is demonstrably done
+    with beads. Standalone runs keep the guard so a repo that genuinely still
+    uses beads is never touched.
+    """
+    if not os.path.exists(path):
+        log(f"{path}: not present, no beads hook to remove")
+        return False
+    if not migrating and os.path.isdir(".beads"):
+        log(f"{path}: .beads/ present — repo still uses beads, leaving hooks "
+            f"alone")
+        return False
+
+    with open(path, encoding="utf-8") as f:
+        lines = f.readlines()
+
+    repos_index = next((i for i, l in enumerate(lines)
+                        if l.strip().startswith("repos:")), None)
+    if repos_index is None:
+        log(f"{path}: no `repos:` key found, leaving untouched")
+        return False
+
+    doomed, survivors = [], 0
+    repo_region = _value_region(lines, repos_index)
+    for repo_start, repo_stop in _list_items(lines, *repo_region):
+        hooks_index = _find_key(lines, repo_start, repo_stop, "hooks")
+        if hooks_index is None:
+            survivors += 1
+            continue
+        hooks = _list_items(lines, *_value_region(lines, hooks_index))
+        beads = [h for h in hooks if _is_beads_hook(lines, *h)]
+        if not beads:
+            survivors += 1
+        elif len(beads) == len(hooks):
+            # Last hook in the block: drop the whole `- repo:` entry, or
+            # pre-commit fails to parse the empty `hooks:` list it leaves.
+            doomed.append(((repo_start, repo_stop),
+                           [_hook_id(lines, *h) for h in beads]))
+        else:
+            survivors += 1
+            doomed.extend((h, [_hook_id(lines, *h)]) for h in beads)
+
+    if not doomed:
+        log(f"{path}: no beads hook present (already clean)")
+        return False
+    ids = [i for _, names in doomed for i in names]
+    if not survivors:
+        log(f"warning: {path} contains nothing but beads hooks "
+            f"({', '.join(ids)}) — leaving it in place, since an empty "
+            f"`repos:` list does not parse. Delete the file by hand if the "
+            f"repo has no other hooks.")
+        return False
+
+    if dry_run:
+        log(f"[dry-run] would remove beads pre-commit hook(s) from {path}: "
+            f"{', '.join(ids)}")
+        return True
+
+    keep = [True] * len(lines)
+    for (start, stop), _ in doomed:
+        while stop < len(lines) and not lines[stop].strip():
+            stop += 1  # the blank line separating it from the next entry
+        for i in range(start, stop):
+            keep[i] = False
+    with open(path, "w", encoding="utf-8") as f:
+        f.writelines(l for l, k in zip(lines, keep) if k)
+    log(f"removed beads pre-commit hook(s) from {path}: {', '.join(ids)}")
+    return True
+
+
 def verify(gh, issues, state, parent_child, blocks):
     failures = []
     for issue in issues:
@@ -336,8 +522,20 @@ def main():
                     help="actually create issues (otherwise dry-run)")
     ap.add_argument("--skip-verify", action="store_true",
                     help="skip the post-migration verification pass")
+    ap.add_argument("--precommit-config", default=PRECOMMIT_CONFIG,
+                    help="pre-commit config to strip the beads hook from")
+    ap.add_argument("--strip-precommit-hook-only", action="store_true",
+                    help="only remove the beads pre-commit hook (for repos "
+                         "migrated before the script did this) and exit; "
+                         "skipped if a live .beads/ directory is present")
     args = ap.parse_args()
     dry_run = not args.apply
+
+    if args.strip_precommit_hook_only:
+        strip_beads_precommit_hook(args.precommit_config, dry_run)
+        if dry_run:
+            log("dry run complete; re-run with --apply to write")
+        return
 
     repo = args.repo or gh_output(
         ["repo", "view", "--json", "nameWithOwner", "--jq", ".nameWithOwner"])
@@ -469,22 +667,30 @@ def main():
         log(f"closed #{rec['number']} ({issue['id']})")
 
     if dry_run:
+        strip_beads_precommit_hook(
+            args.precommit_config, dry_run, migrating=True)
         log("dry run complete; re-run with --apply to migrate")
         return
 
     # Phase 6: verify via strongly consistent direct reads (never search).
     if args.skip_verify:
         log("verification skipped (--skip-verify)")
-        return
-    log("verifying via direct reads...")
-    failures = verify(gh, issues, state, parent_child, blocks)
-    if failures:
-        for f in failures:
-            log(f"VERIFY FAIL: {f}")
-        die(f"verification failed for {len(failures)} item(s); state file "
-            f"{args.state} is intact — fix and re-run to resume")
-    log(f"verification passed: {len(issues)} issues, "
-        f"{len(parent_child)} sub-issue links, {len(blocks)} dependencies")
+    else:
+        log("verifying via direct reads...")
+        failures = verify(gh, issues, state, parent_child, blocks)
+        if failures:
+            for f in failures:
+                log(f"VERIFY FAIL: {f}")
+            die(f"verification failed for {len(failures)} item(s); state file "
+                f"{args.state} is intact — fix and re-run to resume")
+        log(f"verification passed: {len(issues)} issues, "
+            f"{len(parent_child)} sub-issue links, {len(blocks)} dependencies")
+
+    # Phase 7: the repo is off beads now, so its beads pre-commit hook must go
+    # — left behind it is a silent no-op here and a blocked commit on any
+    # machine without `bd`. Runs only after verification passes, so a failed
+    # migration leaves the repo exactly as it was.
+    strip_beads_precommit_hook(args.precommit_config, dry_run, migrating=True)
 
 
 if __name__ == "__main__":
