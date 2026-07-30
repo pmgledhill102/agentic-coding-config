@@ -333,6 +333,11 @@
         "hooks": [
           {
             "type": "command",
+            "command": "~/.claude/bin/prepush-guard-claude-hook",
+            "timeout": 30
+          },
+          {
+            "type": "command",
             "command": "~/.claude/bin/precommit-claude-hook",
             "timeout": 120
           }

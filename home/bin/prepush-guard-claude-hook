@@ -1,0 +1,69 @@
+#!/bin/sh
+# prepush-guard-claude-hook — Claude Code PreToolUse(Bash) hook.
+#
+# Blocks `git push` to a branch whose PR has already been merged or closed.
+# The failure this prevents: the user merges the PR via the GitHub UI
+# mid-session (branch auto-deletes), and the next push silently recreates an
+# orphaned remote branch — the only tell is `* [new branch]` in output nobody
+# reads. Recovery costs a cleanup cycle every time (new branch, cherry-pick,
+# delete orphan, new PR). The prose rule in CLAUDE.md ("check the PR is still
+# open before pushing") failed twice in one session; this enforces it.
+#
+# Authority is `gh pr view <branch>`: local state is useless here (the stale
+# remote-tracking ref survives the remote deletion until a fetch --prune).
+# gh prefers an open PR for the branch when one exists, so re-using a branch
+# name after an old PR merged still pushes fine once a new PR is open.
+#
+# Fail-open by design: no gh, no network, no repo, detached HEAD, or any
+# lookup error -> allow the push. The guard exists to stop one specific
+# silent mistake, not to make pushing fragile. Honours --no-verify as the
+# escape hatch, same as precommit-claude-hook.
+#
+# Limitation: checks the CURRENT branch. A push that names a different
+# refspec than the checked-out branch is waved through unexamined.
+
+set -u
+
+# --- Read payload; degrade gracefully without jq. -------------------------
+command -v jq >/dev/null 2>&1 || exit 0
+payload=$(cat)
+cmd=$(printf '%s' "$payload" | jq -r '.tool_input.command // empty')
+cwd=$(printf '%s' "$payload" | jq -r '.cwd // empty')
+
+# --- Fast-exit: fires on EVERY Bash call, so not-a-push must be cheap. ----
+case "$cmd" in
+  *"git push"*) ;;
+  *) exit 0 ;;
+esac
+case "$cmd" in
+  *" --no-verify "*|*" --no-verify") exit 0 ;;      # standard escape hatch
+  *" --delete "*|*" --delete"|*" -d "*) exit 0 ;;   # deleting, not pushing work
+  *" --tags"*) exit 0 ;;                            # tag pushes have no PR
+esac
+
+command -v gh >/dev/null 2>&1 || exit 0
+
+# --- Resolve the branch being pushed (current branch; see limitation). ----
+if [ -n "$cwd" ]; then
+  git() { command git -C "$cwd" "$@"; }
+fi
+branch=$(git symbolic-ref --short -q HEAD) || exit 0   # detached HEAD
+default=$(git symbolic-ref --short -q refs/remotes/origin/HEAD | sed 's|^origin/||')
+[ -n "$default" ] && [ "$branch" = "$default" ] && exit 0
+
+# --- Ask GitHub. Any failure (no PR, offline, auth) -> allow. -------------
+if [ -n "$cwd" ]; then
+  pr=$(cd "$cwd" && gh pr view "$branch" --json state,number,url 2>/dev/null) || exit 0
+else
+  pr=$(gh pr view "$branch" --json state,number,url 2>/dev/null) || exit 0
+fi
+state=$(printf '%s' "$pr" | jq -r '.state // empty')
+case "$state" in
+  MERGED|CLOSED) ;;
+  *) exit 0 ;;
+esac
+
+number=$(printf '%s' "$pr" | jq -r '.number')
+url=$(printf '%s' "$pr" | jq -r '.url')
+printf 'push blocked: PR #%s for branch %s is already %s (%s).\n\nPushing now would silently recreate the deleted remote branch as an orphan.\nStart from fresh main instead:\n  git checkout main && git pull --rebase && git checkout -b <new-branch>\nthen cherry-pick or re-apply the new commits and open a new PR.\n\n(If recreating this branch is genuinely intended, re-run with --no-verify.)\n' "$number" "$branch" "$state" "$url" >&2
+exit 2
