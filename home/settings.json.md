@@ -661,7 +661,32 @@ the user revisits it.
 
 ### PreToolUse (Bash)
 
-1. **pre-commit lint gate** — `~/.claude/bin/precommit-claude-hook`. A single
+1. **PR-state push guard** — `~/.claude/bin/prepush-guard-claude-hook`.
+   Before any `git push` Claude makes, asks GitHub (`gh pr view <branch>`)
+   whether the current branch's PR is already `MERGED`/`CLOSED`, and if so
+   **blocks** with `exit 2` and instructions to start a fresh branch. 30s
+   timeout.
+
+   This enforces mechanically what the CLAUDE.md prose rule ("check the PR is
+   still open before pushing follow-up commits") failed to: the user merges a
+   PR via the GitHub UI mid-session, the branch auto-deletes, and the next
+   push silently recreates it as an orphan — `* [new branch]` in unread output
+   is the only tell, and recovery costs a cleanup cycle. GitHub is the
+   authority because local state is useless here: the stale remote-tracking
+   ref survives the remote deletion until a `fetch --prune`.
+
+   **Fail-open by design** — the guard stops one specific silent mistake
+   without making pushing fragile. It allows the push when: the command isn't
+   a `git push`; `--no-verify` is present (escape hatch, e.g. deliberately
+   recreating a branch); the push is `--delete`/`-d` or `--tags`; `gh` or
+   `jq` is missing; HEAD is detached; the branch is the default branch; the
+   branch has no PR; the PR is open; or the lookup fails for any reason
+   (offline, auth). `gh pr view` prefers an open PR when one exists, so
+   re-using a branch name under a new PR is not a false positive. Limitation:
+   it inspects the **current** branch — a push naming a different refspec is
+   waved through.
+
+2. **pre-commit lint gate** — `~/.claude/bin/precommit-claude-hook`. A single
    script that runs the pre-commit framework against the repo's
    `.pre-commit-config.yaml` on the `git commit` / `git push` commands Claude
    makes via its Bash tool, **blocking** on failure with `exit 2` (the only
