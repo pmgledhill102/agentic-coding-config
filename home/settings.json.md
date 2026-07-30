@@ -661,7 +661,35 @@ the user revisits it.
 
 ### PreToolUse (Bash)
 
-1. **PR-state push guard** — `~/.claude/bin/prepush-guard-claude-hook`.
+1. **pr-checks registration-race rewrite** —
+   `~/.claude/bin/prchecks-wait-claude-hook`. Rewrites
+   `gh pr checks ... --watch` commands (via `hookSpecificOutput.updatedInput`,
+   which replaces the tool's arguments before execution) to run through
+   `~/.claude/bin/gh-pr-checks-wait`. The wrapper polls until GitHub has
+   registered at least one check run (5s interval, ~2 min cap), then execs
+   the real `gh pr checks` with the original arguments. 10s timeout — the
+   hook itself only inspects and rewrites; the waiting happens in the
+   rewritten command.
+
+   Why: check runs register a variable 0-60s+ after `gh pr create`, and
+   `--watch` treats "no checks yet" as terminal ("no checks reported")
+   rather than pending — gh has no native wait-for-registration flag. A
+   deterministic rewrite beats a prose note that gets skipped under
+   momentum, and attaching the wait to the *checking* side (only when
+   `--watch` is present) beats a fixed sleep after `pr create`, which
+   penalises every PR creation and can still lose the race.
+
+   Fail-open/no-op when: the command isn't `gh pr checks ... --watch`,
+   it's already wrapped (never rewrites twice), `jq` is missing, or the
+   wrapper isn't deployed yet (fresh machine before `chezmoi apply`).
+   The wrapper itself gives up early (3 consecutive probe errors that
+   aren't "no checks reported" — bad selector, offline, auth) and always
+   falls through to the real command, so the worst case is gh's own error,
+   never a hang. The companion allow rule
+   `Bash(~/.claude/bin/gh-pr-checks-wait *)` keeps the rewritten command
+   auto-approved, matching the existing `Bash(gh pr checks *)` grant.
+
+2. **PR-state push guard** — `~/.claude/bin/prepush-guard-claude-hook`.
    Before any `git push` Claude makes, asks GitHub (`gh pr view <branch>`)
    whether the current branch's PR is already `MERGED`/`CLOSED`, and if so
    **blocks** with `exit 2` and instructions to start a fresh branch. 30s
@@ -686,7 +714,7 @@ the user revisits it.
    it inspects the **current** branch — a push naming a different refspec is
    waved through.
 
-2. **pre-commit lint gate** — `~/.claude/bin/precommit-claude-hook`. A single
+3. **pre-commit lint gate** — `~/.claude/bin/precommit-claude-hook`. A single
    script that runs the pre-commit framework against the repo's
    `.pre-commit-config.yaml` on the `git commit` / `git push` commands Claude
    makes via its Bash tool, **blocking** on failure with `exit 2` (the only
