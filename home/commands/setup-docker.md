@@ -51,8 +51,8 @@ jobs:
     name: Hadolint
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: hadolint/hadolint-action@v3.1.0
+      - uses: actions/checkout@<full-sha> # <version>
+      - uses: hadolint/hadolint-action@<full-sha> # <version>
         with:
           dockerfile: Dockerfile
 
@@ -60,8 +60,8 @@ jobs:
     name: Trivy
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: aquasecurity/trivy-action@master
+      - uses: actions/checkout@<full-sha> # <version>
+      - uses: aquasecurity/trivy-action@<full-sha> # <version>
         with:
           scan-type: 'fs'
           scanners: 'misconfig'
@@ -88,6 +88,8 @@ Read `.github/dependabot.yml` and add the `docker` ecosystem entry if it isn't a
       - "dependencies"
       - "docker"
     open-pull-requests-limit: 5
+    cooldown:
+      default-days: 7
 ```
 
 ### 6. Verify

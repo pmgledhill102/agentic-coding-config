@@ -47,13 +47,11 @@ repos:
 
 Look up the latest release tag for each repo and use those for the `rev:` values.
 
-After creating/updating the config, run:
-
-```sh
-pre-commit install
-```
+Do **not** run `pre-commit install` — nothing should write to `.git/hooks`. The config file is the source of truth, and it is enforced from two directions: a global Claude Code `PreToolUse` hook runs pre-commit on every `git commit`/`git push` Claude makes, and CI runs `pre-commit run --all-files` on every push. Manual terminal commits are CI-backed. Mention this model in the closing summary so the user knows why no git hook was installed.
 
 If `pre-commit` is not installed, tell the user to install it (`brew install pre-commit`) and stop.
+
+When adding hooks for a tool that is already a project or system dependency (prettier, eslint, golangci-lint, …), prefer a `repo: local` hook invoking the project's own binary over a `pre-commit/mirrors-*` repo — the mirrors pin their own copy of the tool, so the hook and the project can silently run different versions (and several mirrors are archived).
 
 ### 3. cspell (spell checking)
 
@@ -113,12 +111,16 @@ Add a semgrep pre-commit hook to `.pre-commit-config.yaml`:
     rev: <latest tag>
     hooks:
       - id: semgrep
-        args: ['--config', 'auto']
+        args: ["--config", "auto", "--error"]
+        pass_filenames: false
 ```
 
 Look up the latest release tag and use it for the `rev:` value.
 
-The `--config auto` flag uses Semgrep's curated rulesets appropriate for the languages detected in the repo.
+The `--config auto` flag uses Semgrep's curated rulesets appropriate for the languages detected in the repo. The other two lines matter:
+
+- `--error` — semgrep exits 0 on findings by default, so without it the hook always passes and the gate is decorative.
+- `pass_filenames: false` — pre-commit hands hooks explicit filenames, and giving semgrep explicit paths makes it bypass its own default excludes (notably `*_test.go`), reporting findings CI never sees. Scanning the repo instead keeps hook and CI seeing the same thing.
 
 ### 6. .gitignore
 
@@ -155,10 +157,10 @@ Add to `.github/workflows/ci.yml` (or create if needed):
     name: Gitleaks
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@<full-sha> # <version>
         with:
           fetch-depth: 0
-      - uses: gitleaks/gitleaks-action@v2
+      - uses: gitleaks/gitleaks-action@<full-sha> # <version>
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -166,8 +168,8 @@ Add to `.github/workflows/ci.yml` (or create if needed):
     name: Spell Check
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: streetsidesoftware/cspell-action@v6
+      - uses: actions/checkout@<full-sha> # <version>
+      - uses: streetsidesoftware/cspell-action@<full-sha> # <version>
         with:
           files: '**/*.{md,txt,rst,yaml,yml}'
 
@@ -177,11 +179,13 @@ Add to `.github/workflows/ci.yml` (or create if needed):
     container:
       image: semgrep/semgrep
     steps:
-      - uses: actions/checkout@v4
-      - run: semgrep scan --config auto
+      - uses: actions/checkout@<full-sha> # <version>
+      - run: semgrep scan --config auto --error
 ```
 
-Create a separate `.github/workflows/actionlint.yml` with a path filter (or add to existing CI with the same filter):
+(`--error` for the same reason as the hook: without it findings don't fail the job.)
+
+Create a separate `.github/workflows/actionlint.yml` with a path filter (or add to existing CI with the same filter). `rhysd/actionlint` publishes no GitHub Action to pin, so use the official download script rather than `rhysd/actionlint@main` (a mutable branch reference that fails the repo's own semgrep gate):
 
 ```yaml
 name: Actionlint
@@ -196,15 +200,20 @@ jobs:
     name: Actionlint
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: rhysd/actionlint@main
+      - uses: actions/checkout@<full-sha> # <version>
+      - name: Download actionlint
+        run: bash <(curl https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash)
+      - name: Run actionlint
+        run: ./actionlint -color
 ```
 
-Don't duplicate if any of these jobs already exist. Look up latest action versions. All action references should use pinned commit SHAs with a version comment, e.g.:
+Don't duplicate if any of these jobs already exist. Every `uses:` reference must be pinned to a full commit SHA with a version comment — look up the latest release of each action and substitute the real SHA for `<full-sha>`, e.g.:
 
 ```yaml
-- uses: actions/checkout@<full-sha> # v4
+- uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 ```
+
+A floating tag (`@v4`) or branch (`@main`) is a mutable reference — it fails the semgrep gate installed above (`github-actions-mutable-action-tag` is a blocking finding), so samples committed with floating tags fail their own repo's CI.
 
 ### 8. Dependabot auto-merge
 
@@ -223,7 +232,7 @@ jobs:
     runs-on: ubuntu-latest
     if: github.actor == 'dependabot[bot]'
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@<full-sha> # <version>
       - run: gh pr review --approve "$PR_URL"
         env:
           PR_URL: ${{ github.event.pull_request.html_url }}
@@ -251,9 +260,13 @@ updates:
       - "dependencies"
       - "github-actions"
     open-pull-requests-limit: 5
+    cooldown:
+      default-days: 7
 ```
 
 If `.github/dependabot.yml` already exists, read it first and ensure the `github-actions` ecosystem entry is present. Don't duplicate entries.
+
+The `cooldown` block is load-bearing, not a lint nit: this same skill installs auto-merge, so without a cooldown a freshly published malicious or broken version can land on `main` with nobody looking at it. Seven days gives upstream time to yank a bad release first. Every ecosystem entry — here and in the language skills — carries the same block (semgrep's `dependabot-missing-cooldown` rule blocks on entries without one).
 
 > **Note:** Auto-merge requires branch protection or rulesets with required status checks enabled on the default branch. Without this, `--auto` merges immediately without waiting for CI.
 

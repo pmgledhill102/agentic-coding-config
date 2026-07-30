@@ -118,15 +118,15 @@ jobs:
     name: Ruff
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/ruff-action@v3
+      - uses: actions/checkout@<full-sha> # <version>
+      - uses: astral-sh/ruff-action@<full-sha> # <version>
 
   typecheck:
     name: Mypy
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: actions/checkout@<full-sha> # <version>
+      - uses: astral-sh/setup-uv@<full-sha> # <version>
       - run: uv sync
       - run: uv run mypy .
 
@@ -134,8 +134,8 @@ jobs:
     name: Bandit
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: actions/checkout@<full-sha> # <version>
+      - uses: astral-sh/setup-uv@<full-sha> # <version>
       - run: uv tool run bandit -r . -c pyproject.toml
 ```
 
@@ -168,6 +168,8 @@ Read `.github/dependabot.yml` and add the `pip` ecosystem entry if it isn't alre
       - "dependencies"
       - "python"
     open-pull-requests-limit: 5
+    cooldown:
+      default-days: 7
 ```
 
 If `pyproject.toml` is in a subdirectory rather than the repo root, adjust `directory` accordingly.

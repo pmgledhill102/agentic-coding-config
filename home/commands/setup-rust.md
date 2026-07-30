@@ -114,7 +114,7 @@ jobs:
     name: Rustfmt
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@<full-sha> # <version>
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt
@@ -124,7 +124,7 @@ jobs:
     name: Clippy
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@<full-sha> # <version>
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
@@ -134,8 +134,8 @@ jobs:
     name: Security Audit
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: rustsec/audit-check@v2
+      - uses: actions/checkout@<full-sha> # <version>
+      - uses: rustsec/audit-check@<full-sha> # <version>
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
 
@@ -143,8 +143,8 @@ jobs:
     name: Cargo Deny
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: EmbarkStudios/cargo-deny-action@v2
+      - uses: actions/checkout@<full-sha> # <version>
+      - uses: EmbarkStudios/cargo-deny-action@<full-sha> # <version>
 ```
 
 Don't duplicate if Rust lint jobs already exist. Look up latest action versions.
@@ -166,6 +166,8 @@ Read `.github/dependabot.yml` and add the `cargo` ecosystem entry if it isn't al
       - "dependencies"
       - "rust"
     open-pull-requests-limit: 5
+    cooldown:
+      default-days: 7
 ```
 
 ### 8. Verify

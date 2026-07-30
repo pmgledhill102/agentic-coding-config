@@ -47,15 +47,25 @@ Append these repos to the existing `.pre-commit-config.yaml`:
     rev: <latest tag>
     hooks:
       - id: markdownlint-cli2
+```
 
-  - repo: https://github.com/pre-commit/mirrors-prettier
-    rev: <latest tag>
+Look up the latest release tag and use it for the `rev:` value.
+
+For the prettier hook, do **not** use `pre-commit/mirrors-prettier` — it is archived and no longer receives releases. Use a `repo: local` hook running the project's own binary. If the project has a `package.json`, add prettier as a devDependency (`npm install -D prettier`) and use:
+
+```yaml
+  - repo: local
     hooks:
       - id: prettier
+        name: prettier
+        entry: npx --no-install prettier --write
+        language: system
         types_or: [markdown]
 ```
 
-Look up the latest release tag for each repo and use those for the `rev:` values.
+(`--no-install` matters: without it, a missing `node_modules` makes npx silently download some other version instead of failing.)
+
+If the project has no `package.json` (a docs-only repo), either install prettier globally (`brew install prettier`) and use `entry: prettier --write`, or skip the prettier hook — markdownlint-cli2 already covers lint-level formatting.
 
 ### 4. GitHub Actions workflow
 
@@ -69,8 +79,8 @@ Create or update the CI workflow to include a markdown lint job that only runs w
       github.event_name == 'push' ||
       (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository)
     steps:
-      - uses: actions/checkout@v4
-      - uses: DavidAnson/markdownlint-cli2-action@v19
+      - uses: actions/checkout@<full-sha> # <version>
+      - uses: DavidAnson/markdownlint-cli2-action@<full-sha> # <version>
 ```
 
 Add a path filter on the workflow trigger so this job only runs when relevant files change:
