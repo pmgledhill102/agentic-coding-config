@@ -37,8 +37,10 @@ If wiki or projects are currently enabled, note this in the summary but still di
 Set the default squash merge commit message to use the PR title:
 
 ```sh
-gh repo edit --squash-merge-commit-message pr-title
+gh repo edit --enable-squash-merge --squash-merge-commit-message pr-title
 ```
+
+`--enable-squash-merge` must be in the **same invocation** even though step 2 already enabled it: `gh` gates the message flag on the enable flag being present in the same call. Without it, `gh repo edit` prints its help text, exits 0, and applies nothing — the output looks like documentation, not an error, so check that it actually applied.
 
 ### 4. Secret scanning (public repos only)
 
@@ -52,7 +54,12 @@ If the repository is **private**, skip this step and note: "Secret scanning requ
 
 ### 5. Branch protection
 
-Auto-detect CI status check names by reading workflow files in `.github/workflows/`. Look for jobs triggered by `pull_request` events and extract their `name:` values — these are the status check contexts GitHub uses.
+Determine the CI status check names to require. Prefer deriving them from an **actual completed run** — `gh pr checks <n>` on a recent PR, or `gh api repos/{owner}/{repo}/commits/{sha}/check-runs --jq '.check_runs[].name'` — rather than reading the workflow YAML: the rendered check name can differ from the job key, and a wrong string here blocks every PR (see below). Fall back to reading `name:` values from `pull_request`-triggered jobs in `.github/workflows/` only when no run exists yet.
+
+Two hazards to warn the user about while doing this:
+
+- **Required checks are a rename trap.** Branch protection stores check names as opaque strings. Rename or remove a CI job and the old name is required forever, never reports, and every PR is blocked with no failing check to point at — nothing warns you. Whenever a CI job is renamed, removed, or a language port swaps one check for another, the protection contexts must be updated in the same change.
+- **Path-filtered jobs cannot be required checks.** A job behind a `paths:` filter never reports on PRs it skips, so PRs touching other files block forever. `/setup-common` and the language skills deliberately suggest path filters — those jobs are ineligible; only require checks that run on every PR.
 
 Apply branch protection to the default branch using the GitHub API. The JSON payload should contain:
 
@@ -121,3 +128,4 @@ After applying changes, verify the configuration took effect:
 - Branch protection PUT replaces the entire config. If a repo has custom protection rules (e.g., required reviewers from a team), review the current config before overwriting.
 - Some branch protection features require GitHub Pro on private repos. If the API returns a 403, explain this to the user.
 - The `enforce_admins` setting is the most important for agent safety — without it, admin-level tokens bypass all other branch protection rules.
+- Required status check names are stored as opaque strings — remind the user that renaming a CI job later silently orphans the requirement and blocks all PRs until the protection is updated.
