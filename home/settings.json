@@ -284,6 +284,7 @@
       "Bash(yarn outdated *)",
       "Bash(yarn run *)",
       "Bash(yarn test *)",
+      "Bash(~/.claude/bin/gh-pr-checks-wait *)",
       "mcp__github__add_comment_to_pending_review",
       "mcp__github__add_issue_comment",
       "mcp__github__add_reply_to_pull_request_comment",
@@ -331,6 +332,11 @@
       {
         "matcher": "Bash",
         "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/bin/prchecks-wait-claude-hook",
+            "timeout": 10
+          },
           {
             "type": "command",
             "command": "~/.claude/bin/prepush-guard-claude-hook",
