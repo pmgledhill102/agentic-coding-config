@@ -68,12 +68,84 @@ Create `cspell.json` in the project root (if it doesn't already exist). If one e
     "*.lock",
     ".git"
   ],
-  "words": [],
+  "words": [
+    "actionlint",
+    "aquasecurity",
+    "bandit",
+    "brakeman",
+    "bridgecrewio",
+    "checkov",
+    "chezmoi",
+    "chezmoiexternal",
+    "cleanups",
+    "clippy",
+    "coreutils",
+    "cspell",
+    "dependabot",
+    "dotnet",
+    "editorconfig",
+    "errcheck",
+    "eslint",
+    "footgun",
+    "frontmatter",
+    "gitleaks",
+    "godoc",
+    "gofmt",
+    "gofumpt",
+    "goimports",
+    "golangci",
+    "gomod",
+    "gosec",
+    "gotchas",
+    "govet",
+    "govulncheck",
+    "hadolint",
+    "handoff",
+    "hashicorp",
+    "ineffassign",
+    "jsdoc",
+    "linters",
+    "lockfiles",
+    "markdownlint",
+    "mkdocs",
+    "mypy",
+    "nuget",
+    "phpdoc",
+    "phpstan",
+    "pipx",
+    "pkill",
+    "pytest",
+    "pyupgrade",
+    "rhysd",
+    "rubocop",
+    "ruff",
+    "rustdoc",
+    "rustfmt",
+    "rustsec",
+    "semgrep",
+    "shellcheck",
+    "shfmt",
+    "shivammathur",
+    "siloed",
+    "speedup",
+    "staticcheck",
+    "streetsidesoftware",
+    "subdirs",
+    "temurin",
+    "tflint",
+    "tradeoffs",
+    "trivy",
+    "tseslint",
+    "typecheck",
+    "worktree"
+  ],
   "dictionaries": ["en_GB", "softwareTerms", "companies", "misc"]
 }
 ```
 
 The `files` pattern limits cspell to prose-heavy file types — markdown, plain text, reStructuredText, and YAML. This avoids noise from code identifiers.
+
+The seeded `words` list is deliberate, not decoration: it covers the names of every tool these setup skills install and the config identifiers their own templates write (the YAML samples above are spell-checked too, since `.yml` matches the `files` pattern), plus recurring dev jargon the base dictionaries miss. Without the seed, the very first `pre-commit run --all-files` flags dozens of words the skill itself just wrote. Do **not** seed user- or project-specific proper nouns (personal handles, repo names) — leave those for the consumer to add as they surface — and never add a word that is actually a typo.
 
 Add a cspell pre-commit hook to `.pre-commit-config.yaml`:
 
@@ -156,6 +228,9 @@ Add to `.github/workflows/ci.yml` (or create if needed):
   gitleaks:
     name: Gitleaks
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
     steps:
       - uses: actions/checkout@<full-sha> # <version>
         with:
@@ -184,6 +259,8 @@ Add to `.github/workflows/ci.yml` (or create if needed):
 ```
 
 (`--error` for the same reason as the hook: without it findings don't fail the job.)
+
+The gitleaks job's `permissions:` block is required: the default `GITHUB_TOKEN` no longer grants `pull-requests: read`, and `gitleaks-action` needs it in PR context to fetch the PR's commit list — without it, the first PR run fails with `403 Resource not accessible by integration`. Job-level rather than workflow-level keeps it least-privilege; cspell and semgrep don't need it.
 
 Create a separate `.github/workflows/actionlint.yml` with a path filter (or add to existing CI with the same filter). `rhysd/actionlint` publishes no GitHub Action to pin, so use the official download script rather than `rhysd/actionlint@main` (a mutable branch reference that fails the repo's own semgrep gate):
 
@@ -273,6 +350,17 @@ The `cooldown` block is load-bearing, not a lint nit: this same skill installs a
 ### 9. Verify
 
 Run `pre-commit run --all-files` to confirm everything works. Fix any issues that come up.
+
+### 10. Closing summary
+
+End the closing summary with this reminder (verbatim or close to it):
+
+```text
+Local baseline applied. Run /setup-repo next to apply the GitHub-side
+settings (branch protection, squash-merge rules, secret scanning, labels).
+```
+
+The two commands are a pair that is easy to half-apply: this one writes local files, `/setup-repo` configures the remote (different preconditions, different blast radius — the split is deliberate). Naming what `/setup-repo` adds is the load-bearing part of the reminder; skip it only if `/setup-repo` was already run this session.
 
 ## Important
 
