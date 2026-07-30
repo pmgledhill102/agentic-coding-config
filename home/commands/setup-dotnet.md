@@ -107,8 +107,8 @@ jobs:
     name: Build & Lint
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/checkout@<full-sha> # <version>
+      - uses: actions/setup-dotnet@<full-sha> # <version>
         with:
           dotnet-version: '8.0.x'
       - run: dotnet restore
@@ -119,8 +119,8 @@ jobs:
     name: Dependency Audit
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/checkout@<full-sha> # <version>
+      - uses: actions/setup-dotnet@<full-sha> # <version>
         with:
           dotnet-version: '8.0.x'
       - run: dotnet tool install --global dotnet-outdated-tool
@@ -146,6 +146,8 @@ Read `.github/dependabot.yml` and add the `nuget` ecosystem entry if it isn't al
       - "dependencies"
       - "dotnet"
     open-pull-requests-limit: 5
+    cooldown:
+      default-days: 7
 ```
 
 ### 7. Verify

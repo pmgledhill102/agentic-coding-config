@@ -78,8 +78,8 @@ jobs:
     name: RuboCop
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: ruby/setup-ruby@v1
+      - uses: actions/checkout@<full-sha> # <version>
+      - uses: ruby/setup-ruby@<full-sha> # <version>
         with:
           bundler-cache: true
       - run: bundle exec rubocop
@@ -88,8 +88,8 @@ jobs:
     name: Brakeman
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: ruby/setup-ruby@v1
+      - uses: actions/checkout@<full-sha> # <version>
+      - uses: ruby/setup-ruby@<full-sha> # <version>
         with:
           bundler-cache: true
       - run: gem install brakeman
@@ -99,8 +99,8 @@ jobs:
     name: Bundler Audit
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: ruby/setup-ruby@v1
+      - uses: actions/checkout@<full-sha> # <version>
+      - uses: ruby/setup-ruby@<full-sha> # <version>
         with:
           bundler-cache: true
       - run: gem install bundler-audit
@@ -128,6 +128,8 @@ Read `.github/dependabot.yml` and add the `bundler` ecosystem entry if it isn't 
       - "dependencies"
       - "ruby"
     open-pull-requests-limit: 5
+    cooldown:
+      default-days: 7
 ```
 
 ### 6. Verify

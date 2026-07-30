@@ -4,33 +4,39 @@ Set up Go linting, formatting, and security scanning for this project. Assumes `
 
 ### 1. golangci-lint
 
-Create `.golangci.yml` in the project root (if it doesn't already exist). If one exists, review and suggest additions.
+Create `.golangci.yml` in the project root (if it doesn't already exist). If one exists, review and suggest additions — and if it's in the v1 schema (top-level `linters-settings`, no `version` key), migrate it: golangci-lint v2 rejects v1 configs outright.
 
 ```yaml
+# golangci-lint v2 schema. The v1 layout (top-level linters-settings, gosimple
+# as its own linter) is rejected outright by v2.
+version: "2"
+
 linters:
   enable:
     - errcheck
     - govet
     - staticcheck
     - unused
-    - gosimple
     - ineffassign
-    - typecheck
-    - goimports
     - revive
     - misspell
     - gosec
+  settings:
+    revive:
+      rules:
+        - name: exported
+          severity: warning
 
-linters-settings:
-  goimports:
-    local-prefixes: # Leave empty — user should set to their module path
-  revive:
-    rules:
-      - name: exported
-        severity: warning
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  settings:
+    goimports:
+      local-prefixes:
+        - <module path>  # set to the module path from go.mod
 
 issues:
-  exclude-use-default: false
   max-issues-per-linter: 0
   max-same-issues: 0
 
@@ -38,7 +44,14 @@ run:
   timeout: 5m
 ```
 
-Tell the user to set `local-prefixes` under `goimports` to their Go module path.
+Replace `<module path>` with the module path from `go.mod`. v2 schema gotchas, in case you are adapting an existing config:
+
+- `gosimple` was merged into `staticcheck` and `typecheck` was never a real enableable linter — neither may appear in `enable:`.
+- Formatting tools (`gofmt`, `goimports`, `gofumpt`) live in the top-level `formatters:` block, not `linters:`.
+- A settings key that is present but empty parses as `null` and fails `golangci-lint config verify` — even though `golangci-lint run` tolerates it. Omit the key entirely rather than leaving it blank. (`run` is generally more permissive than `config verify`, and CI runs `config verify` first — so a config can pass locally and still fail CI.)
+- v1's `issues.exclude-use-default` is gone; exclusions are configured under `linters.exclusions`.
+
+After writing the config, run `golangci-lint config verify` to confirm it parses — not just `golangci-lint run`.
 
 ### 2. .gitignore
 
@@ -64,15 +77,15 @@ Append these repos to the existing `.pre-commit-config.yaml`:
   - repo: https://github.com/golangci/golangci-lint
     rev: <latest tag>
     hooks:
+      - id: golangci-lint-config-verify
       - id: golangci-lint
-
-  - repo: https://github.com/tekwizely/pre-commit-golang
-    rev: <latest tag>
-    hooks:
-      - id: go-fumpt
+      - id: golangci-lint-fmt
 ```
 
-Look up the latest release tag for each repo and use those for the `rev:` values.
+Look up the latest release tag and use it for the `rev:` value. All three hooks come from the one binary, so hook and CI can never run different versions:
+
+- `golangci-lint-config-verify` catches the run/verify strictness gap locally instead of in CI (it only fires when `.golangci.yml` changes).
+- `golangci-lint-fmt` runs the `formatters:` block (`gofmt`/`goimports`), replacing any separate formatting hook — do not add `tekwizely/pre-commit-golang` alongside it.
 
 ### 4. GitHub Actions workflow
 
@@ -91,18 +104,18 @@ jobs:
     name: Go Lint
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@<full-sha> # <version>
+      - uses: actions/setup-go@<full-sha> # <version>
         with:
           go-version-file: go.mod
-      - uses: golangci/golangci-lint-action@v6
+      - uses: golangci/golangci-lint-action@<full-sha> # <version>
 
   govulncheck:
     name: Govulncheck
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@<full-sha> # <version>
+      - uses: actions/setup-go@<full-sha> # <version>
         with:
           go-version-file: go.mod
       - name: Install govulncheck
@@ -134,6 +147,8 @@ Read `.github/dependabot.yml` and add the `gomod` ecosystem entry if it isn't al
       - "dependencies"
       - "go"
     open-pull-requests-limit: 5
+    cooldown:
+      default-days: 7
 ```
 
 ### 7. Verify

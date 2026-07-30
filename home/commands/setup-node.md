@@ -67,25 +67,24 @@ coverage/
 
 ### 4. Add pre-commit hooks
 
-Append these repos to the existing `.pre-commit-config.yaml`:
+Append this repo to the existing `.pre-commit-config.yaml`. Use `repo: local` hooks running the project's own binaries — not the `pre-commit/mirrors-*` repos: `mirrors-prettier` is archived and no longer receives releases, and both mirrors pin their own copy of the tool, so the hook and `package.json` can silently run different versions.
 
 ```yaml
-  - repo: https://github.com/pre-commit/mirrors-prettier
-    rev: <latest tag>
+  - repo: local
     hooks:
       - id: prettier
-
-  - repo: https://github.com/pre-commit/mirrors-eslint
-    rev: <latest tag>
-    hooks:
+        name: prettier
+        entry: npx --no-install prettier --write
+        language: system
+        types_or: [javascript, jsx, json, css, markdown]
       - id: eslint
+        name: eslint
+        entry: npx --no-install eslint
+        language: system
         types: [javascript]
-        additional_dependencies:
-          - eslint
-          - '@eslint/js'
 ```
 
-Look up the latest release tag for each repo and use those for the `rev:` values.
+`--no-install` matters: without it, a missing `node_modules` makes npx silently download some other version instead of failing. Both tools must be devDependencies — `npm install -D prettier eslint @eslint/js` if they aren't already.
 
 ### 5. GitHub Actions workflow
 
@@ -104,8 +103,8 @@ jobs:
     name: Lint
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@<full-sha> # <version>
+      - uses: actions/setup-node@<full-sha> # <version>
         with:
           node-version-file: '.node-version'
           cache: 'npm'
@@ -117,8 +116,8 @@ jobs:
     name: npm Audit
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@<full-sha> # <version>
+      - uses: actions/setup-node@<full-sha> # <version>
         with:
           node-version-file: '.node-version'
       - run: npm audit --audit-level=high
@@ -143,6 +142,8 @@ Read `.github/dependabot.yml` and add the `npm` ecosystem entry if it isn't alre
       - "dependencies"
       - "javascript"
     open-pull-requests-limit: 5
+    cooldown:
+      default-days: 7
 ```
 
 ### 7. Verify

@@ -93,8 +93,8 @@ jobs:
     name: PHP-CS-Fixer
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: shivammathur/setup-php@v2
+      - uses: actions/checkout@<full-sha> # <version>
+      - uses: shivammathur/setup-php@<full-sha> # <version>
         with:
           php-version: '8.3'
       - run: composer install --no-progress
@@ -104,8 +104,8 @@ jobs:
     name: PHPStan
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: shivammathur/setup-php@v2
+      - uses: actions/checkout@<full-sha> # <version>
+      - uses: shivammathur/setup-php@<full-sha> # <version>
         with:
           php-version: '8.3'
       - run: composer install --no-progress
@@ -115,8 +115,8 @@ jobs:
     name: Composer Audit
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: shivammathur/setup-php@v2
+      - uses: actions/checkout@<full-sha> # <version>
+      - uses: shivammathur/setup-php@<full-sha> # <version>
         with:
           php-version: '8.3'
       - run: composer audit
@@ -141,6 +141,8 @@ Read `.github/dependabot.yml` and add the `composer` ecosystem entry if it isn't
       - "dependencies"
       - "php"
     open-pull-requests-limit: 5
+    cooldown:
+      default-days: 7
 ```
 
 ### 7. Verify

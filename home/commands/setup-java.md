@@ -128,8 +128,8 @@ jobs:
     name: Spotless & Lint
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
+      - uses: actions/checkout@<full-sha> # <version>
+      - uses: actions/setup-java@<full-sha> # <version>
         with:
           distribution: 'temurin'
           java-version: '21'
@@ -140,12 +140,12 @@ jobs:
     name: OWASP Dependency Check
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
+      - uses: actions/checkout@<full-sha> # <version>
+      - uses: actions/setup-java@<full-sha> # <version>
         with:
           distribution: 'temurin'
           java-version: '21'
-      - uses: dependency-check/Dependency-Check_Action@main
+      - uses: dependency-check/Dependency-Check_Action@<full-sha> # <version>
         with:
           project: '${{ github.repository }}'
           path: '.'
@@ -171,6 +171,8 @@ Read `.github/dependabot.yml` and add the `maven` ecosystem entry if it isn't al
       - "dependencies"
       - "java"
     open-pull-requests-limit: 5
+    cooldown:
+      default-days: 7
 ```
 
 If the project uses Gradle instead of Maven, use `gradle` as the `package-ecosystem` value.

@@ -69,8 +69,8 @@ jobs:
     name: ShellCheck
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: ludeeus/action-shellcheck@master
+      - uses: actions/checkout@<full-sha> # <version>
+      - uses: ludeeus/action-shellcheck@<full-sha> # <version>
         with:
           scandir: '.'
 ```

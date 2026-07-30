@@ -73,8 +73,8 @@ jobs:
     name: Terraform Lint
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: hashicorp/setup-terraform@v3
+      - uses: actions/checkout@<full-sha> # <version>
+      - uses: hashicorp/setup-terraform@<full-sha> # <version>
       - run: terraform fmt -check -recursive
       - run: terraform init -backend=false
       - run: terraform validate
@@ -83,8 +83,8 @@ jobs:
     name: TFLint
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: terraform-linters/setup-tflint@v4
+      - uses: actions/checkout@<full-sha> # <version>
+      - uses: terraform-linters/setup-tflint@<full-sha> # <version>
       - run: tflint --init
       - run: tflint --recursive
 
@@ -92,12 +92,12 @@ jobs:
     name: Security Scan
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: aquasecurity/trivy-action@v0.35.0
+      - uses: actions/checkout@<full-sha> # <version>
+      - uses: aquasecurity/trivy-action@<full-sha> # <version>
         with:
           scan-type: config
           scan-ref: .
-      - uses: bridgecrewio/checkov-action@v12
+      - uses: bridgecrewio/checkov-action@<full-sha> # <version>
         with:
           directory: .
           framework: terraform
@@ -122,6 +122,8 @@ Read `.github/dependabot.yml` and add the `terraform` ecosystem entry if it isn'
       - "dependencies"
       - "terraform"
     open-pull-requests-limit: 5
+    cooldown:
+      default-days: 7
 ```
 
 ### 6. Verify
