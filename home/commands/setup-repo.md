@@ -2,6 +2,17 @@ Configure GitHub repository settings and branch protection for this project. Thi
 
 > **Note:** This command uses `gh repo edit` and `gh api` to modify remote GitHub settings. Each call will prompt for approval.
 
+## Modes
+
+| Invocation | What runs |
+| --- | --- |
+| `/setup-repo` | The full baseline — steps 1–8 below |
+| `/setup-repo --labels-only` | **Step 7 only** (work-tracking labels), then a short confirmation. Skips repo settings, merge strategy, secret scanning, branch protection and verification entirely |
+
+`--labels-only` exists for **infra and secondary repos** that will never get the full treatment — a Terraform-only sibling repo, a fork used as a mirror — but that still need the `P0`–`P4` / `type: *` label set so cross-repo Issues filed against them can follow the convention in `agentic-coding-config` `docs/github-issues-workflow.md`. Without it such repos carry only GitHub's defaults and `gh issue create --label "type: task,P2"` fails.
+
+Step 7's established-taxonomy guard applies **unchanged** in this mode: a repo with a purposeful labelling scheme of its own is still left alone.
+
 ## What to configure
 
 ### 1. Detect current state
@@ -92,6 +103,8 @@ Warning: Default branch is 'master'. Consider renaming to 'main':
 
 ### 7. Work-tracking labels
 
+*This is the step `--labels-only` runs on its own (see Modes above).*
+
 **Guard: skip this step in repos with an established label taxonomy.** Run
 `gh label list` first — if the repo already has a purposeful labelling scheme
 (e.g. `lifeos`, whose `kind:`/`effort:`/`area:`/`list:` labels are a format
@@ -116,7 +129,9 @@ gh label create "type: bug" --color 1d76db --force
 
 ### 8. Verify
 
-After applying changes, verify the configuration took effect:
+In `--labels-only` mode, verify with `gh label list` alone — confirm the nine labels exist — and stop. Do not touch repo settings or branch protection.
+
+After a full run, verify the configuration took effect:
 
 - Run `gh repo view --json deleteBranchOnMerge,squashMergeAllowed,mergeCommitAllowed,rebaseMergeAllowed` and confirm values match
 - Run `gh api repos/{owner}/{repo}/branches/{default_branch}/protection` and confirm the protection rules are in place
