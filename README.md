@@ -159,6 +159,38 @@ the project-level `CLAUDE.md` and `AGENTS.md`) stays in the
 repo and never lands at `~/.claude/`. No `.chezmoiignore` needed for these
 — the archive filter handles it cleanly.
 
+### Deleting a file here does not delete it on machines
+
+chezmoi only **adds and updates** target files. Delete
+`home/commands/foo.md` and `~/.claude/commands/foo.md` survives on every
+machine that ever applied a version containing it — and Claude Code goes
+on listing `/foo` as an available slash command. This bit us with the
+retired `bd-*` commands ([#125][issue-125]).
+
+Two things follow, both non-obvious:
+
+- **A `run_onchange_` script in `home/` will not work.** Archive
+  externals are extracted to the target path verbatim; their filenames
+  are *not* parsed for chezmoi attribute prefixes. That's why `exact`,
+  `executable`, `private` and `readonly` exist as *fields on the
+  external declaration* — they add the attribute the filename can't
+  carry. A file named `home/run_onchange_cleanup.sh` deploys as a
+  literal `~/.claude/run_onchange_cleanup.sh` and never executes.
+- **The fix belongs in `dotfiles`, not here.** Setting `exact = true` on
+  an archive external makes chezmoi remove target entries not present in
+  the archive. It must be scoped to the directories this repo wholly
+  owns — declare `.claude/commands` and `.claude/bin` as their own
+  externals. `exact = true` on `.claude` itself would delete Claude
+  Code's own runtime state: `projects/`, `todos/`, `plugins/`,
+  `history.jsonl`, `settings.local.json`.
+
+Until that lands, `/end-session` step 11 detects the drift (`chezmoi
+managed` minus the actual contents of `~/.claude/commands/` and
+`~/.claude/bin/`) and prints a `rm` line to paste. It's per-machine and
+manual, but it does catch every retired file, not just a hard-coded list.
+
+[issue-125]: https://github.com/pmgledhill102/agentic-coding-config/issues/125
+
 ## Slash commands
 
 Each `/setup-*` command contains:

@@ -228,6 +228,8 @@ Suggested: rm ~/.claude/commands/old-thing.md ~/.claude/bin/legacy-script
 
 Don't `rm` automatically — the user might be testing an unstaged file, or these may belong to another tool. The check is "fast" (one `chezmoi managed` + two `find`s) so it runs unconditionally per session.
 
+Note this check is a *detector*, not the fix, and it is per-machine: clearing the list here does nothing for the same stale file on any other workstation. The permanent fix is `exact = true` on `.claude/commands` and `.claude/bin` as separately-declared archive externals in `dotfiles`, which makes `chezmoi apply` prune them everywhere. Do **not** propose a `run_onchange_` script in `agentic-coding-config`'s `home/` as an alternative — archive externals aren't source state, so the filename prefix is never interpreted and the script would just deploy as an inert file (see that repo's README, "Deleting a file here does not delete it on machines").
+
 ### 12. Other worktrees (Tier 3 — surface)
 
 From gather section `worktrees`. If more than one entry, list non-primary worktrees with their branch. If any have uncommitted work, flag with `*`. Don't remove anything.
