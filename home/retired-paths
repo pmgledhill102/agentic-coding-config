@@ -1,0 +1,31 @@
+# Files retired from this repo's home/ that must also be removed from
+# ~/.claude/ on every machine.
+#
+# WHY THIS FILE EXISTS: chezmoi only adds and updates target files. It never
+# removes a target whose source was deleted. So deleting home/commands/foo.md
+# leaves ~/.claude/commands/foo.md in place on every machine that ever applied
+# a version containing it — and Claude Code goes on offering /foo as a slash
+# command. See the README, "Deleting a file here does not delete it on
+# machines".
+#
+# HOW IT IS CONSUMED: ~/.claude/bin/claude-prune-retired reads this file and
+# removes each listed path. dotfiles invokes that script after each
+# `chezmoi apply` (pmgledhill102/dotfiles#371).
+#
+# FORMAT: one path per line, relative to ~/.claude/. Blank lines and lines
+# starting with # are ignored. Absolute paths and paths containing .. are
+# refused by both the pruner and CI.
+#
+# TO RETIRE A FILE: delete it from home/ and add its ~/.claude/-relative path
+# here, in the same PR. CI fails if an entry here still exists in home/, so a
+# premature or mistyped entry can't ship.
+#
+# Entries are permanent. Removing a line once the file is gone everywhere is
+# not worth the risk — a machine that hasn't been applied to in a year still
+# needs it. Group by retirement with a dated comment.
+
+# 2026-07-18 (d7a3f6d) — beads tracker retired in favour of GitHub Issues (#123)
+commands/bd-enable-server-mode.md
+commands/bd-import-github-issues.md
+commands/bd-modernize.md
+bin/bd-push-safe

@@ -228,7 +228,9 @@ Suggested: rm ~/.claude/commands/old-thing.md ~/.claude/bin/legacy-script
 
 Don't `rm` automatically — the user might be testing an unstaged file, or these may belong to another tool. The check is "fast" (one `chezmoi managed` + two `find`s) so it runs unconditionally per session.
 
-Note this check is a *detector*, not the fix, and it is per-machine: clearing the list here does nothing for the same stale file on any other workstation. The permanent fix is `exact = true` on `.claude/commands` and `.claude/bin` as separately-declared archive externals in `dotfiles`, which makes `chezmoi apply` prune them everywhere. Do **not** propose a `run_onchange_` script in `agentic-coding-config`'s `home/` as an alternative — archive externals aren't source state, so the filename prefix is never interpreted and the script would just deploy as an inert file (see that repo's README, "Deleting a file here does not delete it on machines").
+Note this check is a *detector*, not the fix, and it is per-machine: clearing the list here does nothing for the same stale file on any other workstation. The fix is `~/.claude/bin/claude-prune-retired`, which deletes the paths listed in `~/.claude/retired-paths` and is invoked by `dotfiles` after each `chezmoi apply`. So when a stale file turns up here **and** it was retired from `agentic-coding-config`, the durable fix is to add its path to that repo's `home/retired-paths` — not just to `rm` it locally. Files this check surfaces that were *never* managed (left by another tool, or hand-written) don't belong in the list; `rm` those or leave them.
+
+Do **not** propose a `run_onchange_` script in `agentic-coding-config`'s `home/` as an alternative — archive externals aren't source state, so the filename prefix is never interpreted and the script would just deploy as an inert file (see that repo's README, "Deleting a file here does not delete it on machines").
 
 ### 12. Other worktrees (Tier 3 — surface)
 
