@@ -78,12 +78,23 @@ For each finding, decide what kind of artifact it should produce:
 | **Cross-repo Issue** | Action whose subject is a *different* personal repo from cwd | `gh issue create --repo pmgledhill102/<target> --title=... --body=...` — picked up by `/start-session` there. **Body MUST include** the journal cross-reference |
 | **paul-context Issue** | Cross-cutting or no-clear-home findings | `gh issue create --repo pmgledhill102/paul-context --title=... --body=...`. **Body MUST include** the journal cross-reference |
 | **Memory write** | Durable lesson that should auto-load on future sessions | `Write` to `~/.claude/projects/<project>/memory/<slug>.md` with frontmatter, then `Edit` `MEMORY.md` index |
-| **Settings change** | Permission to add/move, hook to register, env var to set | Recommend invoking `/update-config` (the harness skill); or, if simple, propose the exact edit |
+| **Settings change** | Permission to add/move, hook to register, env var to set | File an Issue against `pmgledhill102/agentic-coding-config` describing the change and why — same routing as any other a-c-c finding. **Never edit a `settings.json` directly** (see 3b) |
 | **Observation only** | Something noted but not actionable ("everything went smoothly") | No artifact; mention in the journal's Observations section |
 
 ### 3a. No cd-shortcut
 
 **The cross-repo path is `gh issue create --repo`. Always.** Even when the target repo is checked out at a known path locally, do NOT cd into it to file the issue from there. Retros run from a remote Claude sandbox don't have target repos cloned — the slash command must be portable, and `gh issue create --repo` works identically from a sandbox or a local laptop.
+
+### 3b. Never edit settings.json — file an a-c-c Issue
+
+Permissions, hooks, env vars and everything else in `~/.claude/settings.json` are **managed centrally** by `pmgledhill102/agentic-coding-config` and applied to each machine by chezmoi. A retro's job is to *route* a settings finding, not to apply it:
+
+- **Do not edit `~/.claude/settings.json`.** chezmoi overwrites it on the next apply and the change is silently lost.
+- **Do not "helpfully" redirect the change into the current project's `.claude/settings.json` or `.claude/settings.local.json` instead.** A globally-useful permission parked in one project repo only works in that repo, is invisible to the a-c-c inbox, and diverges from the managed set. This substitution is the specific failure this section exists to prevent.
+- **Do not invoke `/update-config`** for managed settings — that skill edits settings files in place, which is exactly the wrong outcome here. (It remains the right tool when the user is deliberately configuring a project-local harness setting, unrelated to a retro finding.)
+- **Do** file an Issue against `pmgledhill102/agentic-coding-config` with the exact rule (e.g. `Bash(rg --json *)`), the friction observed this session, and whether it's read-only. Same body requirements as any other cross-repo Issue, including the journal cross-reference.
+
+**The one exception**: a setting that is genuinely specific to the *current* repo and belongs to it permanently — a project-scoped hook, or a permission for a tool only this repo uses. That still goes in the repo's **checked-in** `.claude/settings.json` via the normal branch/PR flow, never as an untracked local edit. If the rule would be useful in any other repo, it isn't this case — file the a-c-c Issue.
 
 ### 4. Routing heuristics for "which repo?"
 
@@ -106,7 +117,7 @@ Proposed retrospective output:
 2  memory      feedback                             chezmoi-externals-git-repo-vs-archive      —
 3  issue       <current repo>                       Fix pre-commit + terraform fmt hook race   P3 task
 4  issue       pmgledhill102/dotfiles               Document chezmoi-update lag for externals  —
-5  settings    /update-config                       Allow `Bash(rg --json *)` (read-only)      —
+5  settings    pmgledhill102/agentic-coding-config  Allow `Bash(rg --json *)` (read-only)      —
 6  observation —                                    Session was clean overall                  —
 
 Reply 'yes' to create all, override per-item ('3: priority=2, type=bug'),
@@ -139,7 +150,7 @@ Wait for explicit confirmation. Don't proceed on ambiguous input.
 2. **memory**: Write the memory file with proper frontmatter (`name`, `description`, `type` of `user|feedback|project|reference`), then Edit `MEMORY.md` to add a one-line index entry. Follow the conventions in the parent CLAUDE.md auto-memory section.
 3. **issue** (same-repo): `gh issue create --title="..." --body-file=... --label "type: <type>,P<n>"` — run from the **current cwd** against the current repo. Body **MUST** include `From retro: paul-context/journal/<file>.md` near the top. Capture the issue number for the summary.
 4. **issue** (cross-repo): `gh issue create --repo pmgledhill102/<repo> --title="..." --body="..."` — filed from wherever the retro runs; never `cd` into the target repo (see step 3a). Body **MUST** include `From retro: paul-context/journal/<file>.md`. Capture the URL.
-5. **settings**: invoke `/update-config` for non-trivial changes; for a single `allowedTools` addition, propose the exact diff and apply if confirmed.
+5. **settings**: file it as an Issue against `pmgledhill102/agentic-coding-config` — `gh issue create --repo pmgledhill102/agentic-coding-config --title="..." --body-file=...` — exactly as for any other cross-repo finding. Include the precise rule string, the friction it removes, and whether the command is read-only. **Do not apply the change to any `settings.json`** (see 3b); a single-line permission addition is still an Issue, not an edit.
 
 If any single create fails, surface the error and continue with the rest. Don't roll back successful artifacts on partial failure.
 
@@ -185,7 +196,7 @@ Retrospective complete.
   Issues created (here):      3 — #41, #42, #43
   Issues raised cross-repo:   2 — github.com/.../issues/14, github.com/.../issues/15
   Memories saved:             1 — feedback_xyz.md
-  Settings changes:           1 (use /update-config to apply)
+  Settings changes:           1 — filed as agentic-coding-config#<n> (not applied locally)
 
 Next /start-session in the cross-repo'd repos will surface the new Issues as ready work.
 ```
@@ -214,5 +225,7 @@ This command used to append a markdown entry to `~/.claude/retros.md` (the origi
 - **Different layers**: agentic-coding-config is *what I configure*; the journal is *how I reflected on using it*. Reflections live with personal context, not tool config.
 - **Cross-repo actions land in the right tracker**: an action surfaced during a `dotfiles` retro that affects `agentic-coding-config` becomes an Issue *there*, with a backlink to the journal entry in `paul-context`.
 - **paul-context has no branch protection**: `/promote-journal-inbox` commits + pushes to `main` directly. No PR overhead per retro.
+
+A 2026-08 revision (§3b) made settings findings route as `agentic-coding-config` Issues only. The previous wording — "invoke `/update-config`; or, if simple, propose the exact edit" — invited applying a globally-managed permission as a local `settings.json` edit, which chezmoi then overwrites; in one session it was nearly redirected into a project's `.claude/settings.json` instead, where it would have been invisible to the a-c-c inbox.
 
 A 2026-07 revision retired the `bd` tracker entirely: same-repo findings now file as GitHub Issues in the current repo, matching the cross-repo path. See `agentic-coding-config` `docs/github-issues-workflow.md` for the work-tracking conventions, and `paul-context/decisions/2026-05-03-personal-infra-public-private-split.md` for the wider three-repo layout this fits into.
