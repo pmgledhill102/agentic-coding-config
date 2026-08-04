@@ -77,3 +77,11 @@ done
 `/setup-repo` is the natural home for this — tracked in
 [#49](https://github.com/pmgledhill102/agentic-coding-config/issues/49)
 follow-ups.
+
+**Label-less infra repos**: a secondary repo that will never get the
+full `/setup-repo` baseline (a Terraform-only sibling, a mirror) ends up
+with GitHub's default labels, so cross-repo Issues filed against it
+can't use the convention above — `--label "type: task,P2"` just fails.
+Run `/setup-repo --labels-only` there: it applies step 7 alone,
+including the established-taxonomy guard, and skips branch protection
+and repo settings.

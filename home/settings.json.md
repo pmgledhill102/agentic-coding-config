@@ -65,11 +65,12 @@ See `docs/end-session-design.md` for the full rationale.
 - `Bash(podman push *)`
 - `Bash(podman stop *)`
 
-### GCloud (read-only operations only)
+### GCloud (read-only operations, plus noted exceptions)
 
 Enumerate specific subcommands rather than using wildcards in the middle
 of commands. `gcloud storage` is restricted to `cat` and `ls` — no `cp`,
-`rm`, or `mv`.
+`rm`, or `mv`. Anything that isn't read-only carries its rationale under
+its own heading — currently just `gcloud builds` (see below).
 
 #### Artifacts
 
@@ -87,9 +88,18 @@ of commands. `gcloud storage` is restricted to `cat` and `ls` — no `cp`,
 
 #### Builds
 
-- `Bash(gcloud builds describe *)`
-- `Bash(gcloud builds list *)`
-- `Bash(gcloud builds log *)`
+**The one deliberate non-read-only rule in this section.** The wildcard
+covers `gcloud builds submit`, which stages source, runs a build, and
+pushes an image — it burns CPU time and money, but it is not
+destructive: it creates new artifacts rather than mutating or deleting
+existing ones, and a bad build fails without touching what is already
+deployed. The read-only inspection calls (`log`, `describe`, `list`)
+were the observed friction, but splitting them out while `submit` still
+prompts leaves the prompts in place for the calls that actually recur
+inside committed build scripts. Approving the whole subcommand is the
+simpler rule.
+
+- `Bash(gcloud builds *)`
 
 #### Compute
 
