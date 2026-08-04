@@ -48,6 +48,48 @@ jobs:
       - name: Run actionlint
         run: ./actionlint -color
 
+  retired-paths:
+    name: retired-paths validity
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Entries must be safe and actually retired
+        run: |
+          set -eu
+          list=home/retired-paths
+          if [ ! -f "$list" ]; then
+            echo "$list not present — nothing to validate."
+            exit 0
+          fi
+          rc=0
+          while IFS= read -r line || [ -n "$line" ]; do
+            path=$(printf '%s' "$line" | sed 's/[[:space:]]*$//')
+            case "$path" in
+              '' | '#'*) continue ;;
+            esac
+            # Must not escape ~/.claude/ — the pruner refuses these too, but
+            # failing here means a bad entry never reaches a machine.
+            case "$path" in
+              /* | *..*)
+                echo "::error file=$list::unsafe entry (absolute or ..): $path"
+                rc=1
+                continue
+                ;;
+            esac
+            # The whole point is that the file is GONE from home/. An entry
+            # that still exists would have the pruner delete a live file on
+            # every apply, and chezmoi restore it on the next one.
+            if [ -e "home/$path" ]; then
+              echo "::error file=$list::still present in home/ — retire the file first, or drop this entry: $path"
+              rc=1
+            fi
+          done < "$list"
+          if [ "$rc" -eq 0 ]; then
+            echo "All retired-paths entries are safe and refer to removed files."
+          fi
+          exit "$rc"
+
   settings-sync:
     name: settings.json ↔ settings.json.md sync
     if: github.event_name == 'pull_request'

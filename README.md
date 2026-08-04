@@ -176,18 +176,40 @@ Two things follow, both non-obvious:
   external declaration* — they add the attribute the filename can't
   carry. A file named `home/run_onchange_cleanup.sh` deploys as a
   literal `~/.claude/run_onchange_cleanup.sh` and never executes.
-- **The fix belongs in `dotfiles`, not here.** Setting `exact = true` on
-  an archive external makes chezmoi remove target entries not present in
-  the archive. It must be scoped to the directories this repo wholly
-  owns — declare `.claude/commands` and `.claude/bin` as their own
-  externals. `exact = true` on `.claude` itself would delete Claude
-  Code's own runtime state: `projects/`, `todos/`, `plugins/`,
-  `history.jsonl`, `settings.local.json`.
+- **The mechanism is an explicit retired-paths list**, not `exact = true`.
+  Setting `exact` on an archive external makes chezmoi delete any target
+  entry not present in the archive — which would also delete files added
+  by hand on one machine that nobody remembers. (And `exact` on
+  `.claude` itself would delete Claude Code's own runtime state:
+  `projects/`, `todos/`, `plugins/`, `history.jsonl`,
+  `settings.local.json`.) A list is more tiresome to maintain, but its
+  blast radius is exactly what's written down.
 
-Until that lands, `/end-session` step 11 detects the drift (`chezmoi
-managed` minus the actual contents of `~/.claude/commands/` and
-`~/.claude/bin/`) and prints a `rm` line to paste. It's per-machine and
-manual, but it does catch every retired file, not just a hard-coded list.
+### Retiring a file
+
+Two files here do the work, so a retirement is a **single-repo change**:
+
+| File | Role |
+| --- | --- |
+| `home/retired-paths` | The list. One `~/.claude/`-relative path per line |
+| `home/bin/claude-prune-retired` | Reads the list, removes each path. Idempotent, refuses absolute paths and `..` |
+
+So: **delete the file from `home/`, add its path to `home/retired-paths`,
+same PR.** CI fails if an entry still exists in `home/`, so a premature
+or mistyped entry can't ship. `dotfiles` invokes
+`~/.claude/bin/claude-prune-retired` after each `chezmoi apply`
+([dotfiles#371][dotfiles-371]) — that's the only wiring it needs, and it
+never has to change again.
+
+Entries are permanent: a machine that hasn't been applied to in a year
+still needs them.
+
+`/end-session` step 11 remains the backstop. It compares `chezmoi
+managed` against the real contents of `~/.claude/commands/` and
+`~/.claude/bin/`, so it catches drift the list doesn't know about — a
+file retired without a list entry, or one left by another tool.
+
+[dotfiles-371]: https://github.com/pmgledhill102/dotfiles/issues/371
 
 [issue-125]: https://github.com/pmgledhill102/agentic-coding-config/issues/125
 
