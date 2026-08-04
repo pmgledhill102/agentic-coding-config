@@ -19,7 +19,14 @@
 
 - **`~/.claude/` is chezmoi-managed from `pmgledhill102/agentic-coding-config`.** Do not edit these files directly — chezmoi will overwrite on the next apply and the change is lost. This includes `~/.claude/CLAUDE.md` itself, `~/.claude/settings.json`, slash commands under `~/.claude/commands/`, hooks, scripts under `~/.claude/bin/`, everything sourced from the `home/` directory of that repo.
 - **To request a change, open a GitHub issue against `pmgledhill102/agentic-coding-config`** (auto-approved via `gh issue create --repo pmgledhill102/*` — keep `--repo` as the first flag for the allow rule to match). Describe what should change and why; add acceptance criteria if useful. The user works the GH-issue inbox directly in a-c-c sessions, where the chezmoi source actually lives.
-- **Do not reach across repos to make the edit yourself.** Cross-repo file edits (e.g. `cd ~/dev/agentic-coding-config && edit home/...` from a session in another project) bypass the issue queue, skip the review/PR flow, and pollute the current session's context with unrelated work. Leave a message; don't reach across.
+- The same applies in reverse — see Cross-Repo Work below. An `agentic-coding-config` session doesn't get to edit `dotfiles` either.
+
+## Cross-Repo Work
+
+- **Never edit files in a repo other than the one this session is working in.** Any direction, any repo pair: a project session editing `agentic-coding-config`, an `agentic-coding-config` session editing `dotfiles`, a `dotfiles` session editing `paul-context`. Cross-repo edits bypass the issue queue, skip that repo's review/PR flow, and pollute the current session's context with unrelated work. This holds even when the other repo is already cloned and writable, and even when the change is one line
+- **File a detailed issue in the target repo instead.** This is encouraged, not a consolation prize — it's the sanctioned route. "Detailed" means implementable without rediscovering anything: exact file paths, the full snippet to add, the rationale, every gotcha already ruled out, and acceptance criteria. Write it so the fix is a mechanical edit for whoever picks it up
+- **Reading another repo is fine, and verifying beats assuming.** Cloning a repo read-only to check the real state of a file before writing the issue is good practice — a-c-c's README carried a copy of dotfiles' `.chezmoiexternal.toml.tmpl`, and the issue quoted the live file instead
+- **Say what you filed.** Report the issue number back in the session summary so the cross-repo thread isn't lost
 
 ## Work Tracking
 
