@@ -1,6 +1,6 @@
 # ADR-0014: Portable agent-config architecture (skills-first, provider-neutral core)
 
-- **Status**: Proposed
+- **Status**: Accepted (2026-08-09, ratified via PR #143)
 - **Date**: 2026-08-09
 - **Tags**: claude-code, codex, opencode, skills, plugins, architecture
 - **Scope**: user (applies to all personal repos and agent surfaces)

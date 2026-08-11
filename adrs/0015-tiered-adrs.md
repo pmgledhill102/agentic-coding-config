@@ -1,6 +1,6 @@
 # ADR-0015: Tiered ADRs — personal, user-level, and repo-level decision records
 
-- **Status**: Proposed
+- **Status**: Accepted (2026-08-09, ratified via PR #143)
 - **Date**: 2026-08-09
 - **Tags**: workflow, adr, documentation
 - **Scope**: user (applies to all personal repos)
