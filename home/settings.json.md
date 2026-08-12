@@ -44,6 +44,21 @@ prompt.
 
 See `docs/end-session-design.md` for the full rationale.
 
+### GCP credential broker client
+
+- `Bash(~/.claude/bin/gcp-credentials status)`
+- `Bash(~/.claude/bin/gcp-credentials release)`
+
+Exact commands, not a prefix — the deliberate omissions are the point.
+`status` only reports local state and `release` only undoes local state, so
+both are safe to run unattended. `request` is left prompting because it posts
+an approval card to Discord and pings a human, and `revoke` because it ends a
+grant the human granted; neither should happen without the user seeing it go
+by. `refresh` is started by `request` and is not meant to be invoked directly.
+
+See `home/commands/gcp-credentials.md` for the flow, and ADR 021 in
+`pmgledhill102/gcp-org-management` for the design.
+
 ### draw.io (CLI export, read-only)
 
 - `Bash(/Applications/draw.io.app/Contents/MacOS/draw.io *)`
