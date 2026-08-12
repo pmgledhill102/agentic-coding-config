@@ -32,8 +32,8 @@ Apply all settings in a single `gh repo edit` call:
 ```sh
 gh repo edit \
   --delete-branch-on-merge \
+  --enable-merge-commit \
   --enable-squash-merge \
-  --enable-merge-commit=false \
   --enable-rebase-merge=false \
   --enable-auto-merge \
   --allow-update-branch \
@@ -41,17 +41,24 @@ gh repo edit \
   --enable-projects=false
 ```
 
+**Why both merge-commit and squash, and never rebase.** Merge-commit is the default (see the Git Workflow section of `~/.claude/CLAUDE.md`): squash replaces a branch's commits with a new SHA, so anything stacked on it re-applies work `main` already has. Rebase-merge shares that defect and offers no cleanup in return, so it is disabled outright rather than left as a tempting third button. Squash stays enabled for the case it is actually good at — a branch carrying WIP or fixup commits.
+
+GitHub has no "default merge method" field; the only levers are these three booleans, so leaving rebase enabled is what lets it drift back into use.
+
 If wiki or projects are currently enabled, note this in the summary but still disable them. Most hobby projects don't use these features.
 
-### 3. Squash merge commit message format
+### 3. Merge commit message formats
 
-Set the default squash merge commit message to use the PR title:
+Set both message formats, so whichever method a PR uses produces a useful commit subject:
 
 ```sh
 gh repo edit --enable-squash-merge --squash-merge-commit-message pr-title
+gh api -X PATCH repos/{owner}/{repo} -f merge_commit_title=PR_TITLE -f merge_commit_message=PR_BODY
 ```
 
-`--enable-squash-merge` must be in the **same invocation** even though step 2 already enabled it: `gh` gates the message flag on the enable flag being present in the same call. Without it, `gh repo edit` prints its help text, exits 0, and applies nothing — the output looks like documentation, not an error, so check that it actually applied.
+`--enable-squash-merge` must be in the **same invocation** as `--squash-merge-commit-message` even though step 2 already enabled it: `gh` gates the message flag on the enable flag being present in the same call. Without it, `gh repo edit` prints its help text, exits 0, and applies nothing — the output looks like documentation, not an error, so check that it actually applied.
+
+The merge-commit format needs the API directly: `gh repo edit` has **no** `--merge-commit-title`/`--merge-commit-message` flags, only the squash pair. The API also accepts just three title/message combinations — `PR_TITLE`+`PR_BODY`, `PR_TITLE`+`BLANK`, and the default `MERGE_MESSAGE`+`PR_TITLE`. Anything else returns a 422 naming the valid set. `PR_TITLE`+`PR_BODY` is the one that matches what squash does with `pr-title`, so `main`'s log reads the same whichever method a PR used.
 
 ### 4. Secret scanning (public repos only)
 
@@ -79,7 +86,7 @@ Apply branch protection to the default branch using the GitHub API. The JSON pay
 - `required_pull_request_reviews`: `null` (solo developer — cannot require approvals from others)
 - `enforce_admins`: `true` (critical — prevents admin-level tokens and coding agents from bypassing rules)
 - `restrictions`: `null` (not applicable for personal repos)
-- `required_linear_history`: `true` (complements squash-only strategy)
+- `required_linear_history`: `false` — **do not set this true.** Linear history blocks merge commits on the protected branch outright, and merge-commit is the default method (step 2). A repo with both applied cannot merge a PR at all by the sanctioned route, and the failure appears at merge time on an approved, green PR — long after the setting that caused it. It reads like a tidy-up worth restoring; it isn't
 - `allow_force_pushes`: `false`
 - `allow_deletions`: `false`
 
@@ -133,8 +140,8 @@ In `--labels-only` mode, verify with `gh label list` alone — confirm the nine 
 
 After a full run, verify the configuration took effect:
 
-- Run `gh repo view --json deleteBranchOnMerge,squashMergeAllowed,mergeCommitAllowed,rebaseMergeAllowed` and confirm values match
-- Run `gh api repos/{owner}/{repo}/branches/{default_branch}/protection` and confirm the protection rules are in place
+- Run `gh repo view --json deleteBranchOnMerge,squashMergeAllowed,mergeCommitAllowed,rebaseMergeAllowed` and confirm values match — expect `mergeCommitAllowed` and `squashMergeAllowed` true, `rebaseMergeAllowed` false
+- Run `gh api repos/{owner}/{repo}/branches/{default_branch}/protection` and confirm the protection rules are in place, and specifically that `required_linear_history.enabled` is `false` — if it is true, merge commits are blocked and step 5 did not apply as intended
 - Display a final summary showing all applied settings
 
 ## Important
