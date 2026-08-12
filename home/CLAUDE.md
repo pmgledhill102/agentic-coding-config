@@ -9,7 +9,8 @@
 ## Git Workflow
 
 - Always create feature branches for changes -- never commit directly to main
-- Create PRs with `mcp__github__create_pull_request` and merge via `mcp__github__merge_pull_request` (method: "squash", delete_branch: true)
+- Create PRs with `mcp__github__create_pull_request` and merge via `mcp__github__merge_pull_request` (`delete_branch: true`)
+- **Merge method: `merge` by default, `squash` only to clean up a messy branch, never `rebase`.** Squash replaces a branch's commits with a new SHA, so anything built on that branch still carries the originals and re-applies work `main` already has — conflicts resolved against a change that already landed. Rebase-merge has the same defect for the same reason. A merge commit puts the branch's actual commits in `main`, so a dependent branch rebases to a no-op. Agentic PRs arrive as one or two already-written commits, so squash's benefit — collapsing WIP noise — is usually nothing, while its cost is paid every time. Reach for `squash` when the branch genuinely has fixup/WIP commits or several that aren't individually meaningful. The known trade-off: `git bisect` can descend into a commit that never passed CI on its own — use `git bisect --first-parent`, and `git log --first-parent` for the PR-level view
 - Watch the CI checks and ensure they pass
 - Don't merge your own PRs - let them be reviewed by someone else
 - Before pushing follow-up commits to a PR branch, always check the PR is still open via `mcp__github__pull_request_read` (method: "get"). The user often reviews and merges PRs via the GitHub UI while work continues — if already merged, create a new branch and PR instead

@@ -320,6 +320,8 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 ```
 
+`--squash` here is deliberate and is the one place it stays. The global default is merge-commit (see the Git Workflow section of `~/.claude/CLAUDE.md`), because squash's SHA rewrite punishes stacked branches — but a Dependabot PR is a single-commit version bump that nothing is ever stacked on, and one commit per bump keeps `main` readable. Don't "fix" this to match the default.
+
 Also ensure `.github/dependabot.yml` exists with the base structure. If it doesn't exist, create it:
 
 ```yaml
