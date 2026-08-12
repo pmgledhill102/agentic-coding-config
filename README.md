@@ -243,6 +243,21 @@ required only when their manifest is detected (e.g. `pip-audit` only if
 project uses Beads, otherwise as a markdown report at
 `docs/reviews/repo-review-YYYY-MM-DD.md`.
 
+**GCP credentials:**
+
+```text
+/gcp-credentials  # request human-approved, short-lived GCP access for a session
+```
+
+Drives `home/bin/gcp-credentials`, the client half of the credential broker
+(ADR 021 in [`gcp-org-management`][gcp-org-management]). One Discord approval
+creates a grant of 1–7 days; inside it the helper silently re-mints 1-hour
+tokens **straight to disk**, so no credential ever reaches tool output, the
+transcript, or the model's context. Needs a request key and broker URL
+configured once per machine — see the command doc.
+
+[gcp-org-management]: https://github.com/pmgledhill102/gcp-org-management
+
 **Day-to-day coding:**
 Claude Code edits files → hooks auto-run → Claude sees failures → fixes
 them. No context spent on rules — tooling output *is* the context.
