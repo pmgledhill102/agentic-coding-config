@@ -5,7 +5,10 @@
 # everything of substance stays here, versioned, instead of being pasted into a
 # vendor configuration field (ADR-0016, principle 5):
 #
-#   curl -sSL https://raw.githubusercontent.com/pmgledhill102/agentic-coding-config/<REF>/cloud/bootstrap.sh | sh -s -- <REF>
+#   curl -sSL https://raw.githubusercontent.com/pmgledhill102/agentic-coding-config/<REF>/cloud/bootstrap.sh | sh -s -- <REF> [--with-gcloud]
+#
+# --with-gcloud installs the Google Cloud SDK as well. Opt-in, so that the one
+# line an environment carries declares what kind of environment it is.
 #
 # Pass the same <REF> twice on purpose: the first fetches this script, the
 # second is what it fetches everything else from, so a run cannot straddle two
@@ -22,6 +25,8 @@
 set -eu
 
 REF="${1:-main}"
+WITH_GCLOUD=0
+[ "${2:-}" = "--with-gcloud" ] && WITH_GCLOUD=1
 RAW="https://raw.githubusercontent.com/pmgledhill102/agentic-coding-config/${REF}"
 
 log() { echo "[bootstrap] $*"; }
@@ -33,6 +38,57 @@ TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT INT TERM
 
 log "installing from ${REF}"
+
+# --- OS packages --------------------------------------------------------------
+#
+# These belong here rather than in the environment's setup script. That script
+# is a vendor configuration field, editable only by hand, unversioned and
+# unreviewed; ADR-0016 principle 5 says it should hold one pinned line and
+# nothing else. The environment decides *whether* a toolchain is installed by
+# choosing to call this at all — and, for gcloud, by passing --with-gcloud. What
+# gets installed is versioned here with everything else.
+#
+# curl and ca-certificates are listed for completeness rather than necessity:
+# this script arrived over TLS, so both already existed. openssl genuinely is
+# absent from the sandbox image and is routine for inspecting a certificate or
+# a JWT mid-task.
+
+if command -v apt-get > /dev/null 2>&1 && [ "$(id -u)" = "0" ]; then
+    apt-get update -qq || true
+    apt-get install -y -qq curl ca-certificates openssl || true
+    update-ca-certificates || true
+    log "packages: curl, ca-certificates, openssl"
+else
+    log "packages: skipped (no apt-get, or not root)"
+fi
+
+# --- gcloud, on request -------------------------------------------------------
+#
+# Opt-in, because a repo with no GCP work should not pay a 96 MB download, and
+# because an environment naming --with-gcloud in its one line is declaring what
+# kind of environment it is. That is the capability-profile model ADR-0016
+# describes, made visible in the place the choice is actually made.
+#
+# It must land BEFORE the first `gcp-credentials request`: the helper wires up a
+# gcloud configuration only if gcloud is on PATH at that moment. Installed
+# afterwards, the token file ends up with nothing pointing at it, and correcting
+# that costs a second human approval.
+
+if [ "$WITH_GCLOUD" -eq 1 ] && ! command -v gcloud > /dev/null 2>&1; then
+    curl -sSL -o "$TMP/gcloud.tar.gz" \
+        https://dl.google.com/dl/cloudsdk/channels/rapid/downloads/google-cloud-cli-linux-x86_64.tar.gz ||
+        die "could not download the gcloud SDK — is dl.google.com on the allowlist?"
+    tar -xzf "$TMP/gcloud.tar.gz" -C /opt || die "could not unpack the gcloud SDK"
+    # --path-update false, then symlink: a PATH line appended to a shell profile
+    # is not reliably sourced by the non-interactive shells tool calls run in.
+    /opt/google-cloud-sdk/install.sh --quiet --usage-reporting false \
+        --path-update false --command-completion false > /dev/null || true
+    ln -sf /opt/google-cloud-sdk/bin/gcloud /usr/local/bin/gcloud || true
+    ln -sf /opt/google-cloud-sdk/bin/gsutil /usr/local/bin/gsutil || true
+    log "gcloud  -> $(gcloud --version 2> /dev/null | head -1 || echo 'installed')"
+elif [ "$WITH_GCLOUD" -eq 1 ]; then
+    log "gcloud  : already present, left alone"
+fi
 
 # --- the helper --------------------------------------------------------------
 #
