@@ -87,6 +87,21 @@ them as two turns, with your message carrying the phrase in between.
 If the session scrolls or you lose track, `status` reports the outstanding
 request and its phrase.
 
+### Waiting on a human, then waiting on GCP
+
+`wait` distinguishes two waits, and it is worth relaying which one you are in.
+Before the decision it reports waiting for approval — that is the one a nudge in
+Discord can help with. After approval it may report:
+
+```text
+  approved — waiting for the agent identity to become usable (GCP propagation, usually under a minute)
+```
+
+Nothing is wrong there and nobody needs chasing. The broker refuses to hand over
+a grant it cannot actually mint a token for, so it waits for the identity to
+propagate rather than issuing something that would fail on first use. It
+resolves on its own, without a second approval. Say so if asked, and wait.
+
 ## Reading the outcome
 
 | Exit | Meaning | What to do |
@@ -97,7 +112,12 @@ request and its phrase.
 | 4 | Timed out / expired | Nobody answered, which the broker treats as a deny. Ask the user before retrying. |
 | 5 | Rate limited | Wait. Do not loop. |
 | 6 | Not configured | No request key or no broker URL — see [Setup](#setup-not-per-session). |
+| 7 | Approved, but the identity never became usable | **Not a deny** — nobody refused. Report the reason the helper printed. Requesting again is legitimate; if it recurs, say so, because the sandbox's agent identity needs attention. |
 | 1 | Broker unreachable or mint failed | Report it. Do not proceed as if credentials exist. |
+
+Exit 7 is worth distinguishing from exit 3 in what you tell the user. A deny is a
+decision and asking again without checking is rude; a failure is a fault, and
+retrying is the reasonable response.
 
 Never carry on without credentials after a non-zero exit. Silently falling back
 to whatever identity happens to be lying around is the exact failure the broker
