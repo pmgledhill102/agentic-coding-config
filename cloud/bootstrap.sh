@@ -57,6 +57,17 @@ head -1 "$TMP/gcp-credentials" | grep -q '^#!' ||
 install -m 0755 "$TMP/gcp-credentials" "$BIN_DIR/gcp-credentials"
 log "helper  -> $BIN_DIR/gcp-credentials"
 
+# The skill still spells its invocations ~/.claude/bin/gcp-credentials, because
+# that is where chezmoi puts the helper on a laptop. Nothing here creates that
+# path, so an agent following the documented command would hit "no such file"
+# next to a perfectly good helper on PATH — or worse, find a stale vendored copy
+# there and run that instead. Symlink until the skill stops naming a path at
+# all, which is the real fix and is the corollary in ADR-0016 principle 3:
+# delivery assumptions do not belong in portable text.
+mkdir -p "$HOME/.claude/bin"
+ln -sf "$BIN_DIR/gcp-credentials" "$HOME/.claude/bin/gcp-credentials"
+log "compat  -> $HOME/.claude/bin/gcp-credentials -> $BIN_DIR/gcp-credentials"
+
 # --- the skill, in both shapes -----------------------------------------------
 #
 # Placed under the container's own ~/.claude. Whether Claude Code reads a
