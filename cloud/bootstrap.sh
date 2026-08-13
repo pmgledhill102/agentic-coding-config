@@ -75,7 +75,80 @@ if [ "$WITH_GCLOUD" -eq 1 ] && ! command -v gcloud > /dev/null 2>&1; then
     # is not reliably sourced by the non-interactive shells tool calls run in.
     /opt/google-cloud-sdk/install.sh --quiet --usage-reporting false \
         --path-update false --command-completion false > /dev/null || true
-    ln -sf /opt/google-cloud-sdk/bin/gcloud /usr/local/bin/gcloud || true
+    # A wrapper rather than a symlink, because the sandbox image presets
+    # CLOUDSDK_AUTH_ACCESS_TOKEN and that variable outranks the
+    # auth/access_token_file the broker configures. Every call then fails
+    # ACCESS_TOKEN_TYPE_UNSUPPORTED while the helper, `status` and the token file
+    # all report healthy — confirmed in two independent fresh sandboxes.
+    #
+    # The documented workaround is `env -u CLOUDSDK_AUTH_ACCESS_TOKEN` on every
+    # invocation, which fails the moment anyone forgets, and fails silently by
+    # picking the wrong identity rather than erroring. Better to make the right
+    # thing the default.
+    #
+    # Narrow on purpose: it drops the variable only when a broker token actually
+    # exists. With no grant installed, the preset token is whatever the sandbox
+    # intended and is left alone.
+    cat > /usr/local/bin/gcloud << 'WRAPPER'
+#!/bin/sh
+# Installed by agentic-coding-config cloud/bootstrap.sh.
+#
+# Two jobs, both because gcloud otherwise gets the wrong credential:
+#
+#   1. Prefer a broker-issued token over the sandbox image's preset
+#      CLOUDSDK_AUTH_ACCESS_TOKEN, which outranks auth/access_token_file.
+#   2. Re-mint a stale token before the call, rather than relying on a
+#      background loop that this environment reaps.
+#
+# The second replaces a daemon with a check. Detached refresh loops die here --
+# twice in one session, once across an idle gap and once during active work --
+# and when they do the grant stays valid for days while the token quietly ages
+# out. Checking an mtime at the point of use has nothing to keep alive and
+# nothing to reap, and it covers gcloud called from inside a script, which a
+# session hook never sees.
+CB_HOME="${CREDENTIAL_BROKER_HOME:-$HOME/.config/claude/credential-broker}"
+CB_TOKEN="$CB_HOME/access_token"
+
+# The threshold is really a floor on how much token life a call can start with:
+# a token renewed at age T has 3600 - T seconds left, so T is chosen from how
+# long a single invocation might run.
+#
+# 1800 against a 3600s token guarantees 30 minutes in hand. Observed scripts
+# here run 10-25 minutes, which 2700 would have failed -- it leaves as little as
+# 15. The extra renewals cost one HTTP call each and are not worth optimising.
+#
+# A script that calls gcloud repeatedly is covered for any duration, because
+# every invocation re-checks and renews when stale. What this cannot save is a
+# *single* call that blocks longer than the remaining life: Apigee provisioning
+# at 70-80 minutes will still expire mid-flight and need re-running. That is
+# accepted rather than solved, and it is why the floor matters more than the
+# ceiling.
+CB_MAX_AGE="${CREDENTIAL_BROKER_MAX_TOKEN_AGE:-1800}"
+
+# CB_NO_RENEW stops a renew that shells out to gcloud from recursing. It does
+# not today, but a wrapper that can loop forever is not worth the risk.
+if [ -f "$CB_TOKEN" ] && [ -z "${CB_NO_RENEW:-}" ]; then
+    cb_now=$(date +%s)
+    cb_mtime=$(stat -c %Y "$CB_TOKEN" 2> /dev/null || stat -f %m "$CB_TOKEN" 2> /dev/null || echo "$cb_now")
+    if [ $((cb_now - cb_mtime)) -ge "$CB_MAX_AGE" ]; then
+        cb_helper=$(command -v gcp-credentials 2> /dev/null || echo "$HOME/.claude/bin/gcp-credentials")
+        if [ -x "$cb_helper" ]; then
+            # Quiet on success: this runs before an unrelated command and must
+            # not pollute output a script may be parsing. Failure is worth a
+            # line, but is not fatal here -- gcloud reports its own auth error
+            # better than a wrapper can guess at one.
+            CB_NO_RENEW=1 "$cb_helper" renew > /dev/null 2>&1 ||
+                echo "gcloud: broker token is stale and renew failed; run 'gcp-credentials status'" >&2
+        fi
+    fi
+fi
+
+if [ -n "${CLOUDSDK_AUTH_ACCESS_TOKEN:-}" ] && [ -f "$CB_TOKEN" ]; then
+    exec env -u CLOUDSDK_AUTH_ACCESS_TOKEN /opt/google-cloud-sdk/bin/gcloud "$@"
+fi
+exec /opt/google-cloud-sdk/bin/gcloud "$@"
+WRAPPER
+    chmod 0755 /usr/local/bin/gcloud || true
     ln -sf /opt/google-cloud-sdk/bin/gsutil /usr/local/bin/gsutil || true
     log "gcloud  -> $(gcloud --version 2> /dev/null | head -1 || echo 'installed')"
 elif [ "$WITH_GCLOUD" -eq 1 ]; then
