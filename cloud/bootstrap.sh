@@ -92,8 +92,46 @@ if [ "$WITH_GCLOUD" -eq 1 ] && ! command -v gcloud > /dev/null 2>&1; then
     cat > /usr/local/bin/gcloud << 'WRAPPER'
 #!/bin/sh
 # Installed by agentic-coding-config cloud/bootstrap.sh.
-# Prefers a broker-issued credential over the sandbox's preset access token.
-CB_TOKEN="${CREDENTIAL_BROKER_HOME:-$HOME/.config/claude/credential-broker}/access_token"
+#
+# Two jobs, both because gcloud otherwise gets the wrong credential:
+#
+#   1. Prefer a broker-issued token over the sandbox image's preset
+#      CLOUDSDK_AUTH_ACCESS_TOKEN, which outranks auth/access_token_file.
+#   2. Re-mint a stale token before the call, rather than relying on a
+#      background loop that this environment reaps.
+#
+# The second replaces a daemon with a check. Detached refresh loops die here --
+# twice in one session, once across an idle gap and once during active work --
+# and when they do the grant stays valid for days while the token quietly ages
+# out. Checking an mtime at the point of use has nothing to keep alive and
+# nothing to reap, and it covers gcloud called from inside a script, which a
+# session hook never sees.
+CB_HOME="${CREDENTIAL_BROKER_HOME:-$HOME/.config/claude/credential-broker}"
+CB_TOKEN="$CB_HOME/access_token"
+
+# 2700s against a 3600s token, matching the refresh loop's cadence: renew with
+# a quarter of the lifetime still in hand, so a long-running call started just
+# under the threshold does not outlive its credential.
+CB_MAX_AGE=2700
+
+# CB_NO_RENEW stops a renew that shells out to gcloud from recursing. It does
+# not today, but a wrapper that can loop forever is not worth the risk.
+if [ -f "$CB_TOKEN" ] && [ -z "${CB_NO_RENEW:-}" ]; then
+    cb_now=$(date +%s)
+    cb_mtime=$(stat -c %Y "$CB_TOKEN" 2> /dev/null || stat -f %m "$CB_TOKEN" 2> /dev/null || echo "$cb_now")
+    if [ $((cb_now - cb_mtime)) -ge "$CB_MAX_AGE" ]; then
+        cb_helper=$(command -v gcp-credentials 2> /dev/null || echo "$HOME/.claude/bin/gcp-credentials")
+        if [ -x "$cb_helper" ]; then
+            # Quiet on success: this runs before an unrelated command and must
+            # not pollute output a script may be parsing. Failure is worth a
+            # line, but is not fatal here -- gcloud reports its own auth error
+            # better than a wrapper can guess at one.
+            CB_NO_RENEW=1 "$cb_helper" renew > /dev/null 2>&1 ||
+                echo "gcloud: broker token is stale and renew failed; run 'gcp-credentials status'" >&2
+        fi
+    fi
+fi
+
 if [ -n "${CLOUDSDK_AUTH_ACCESS_TOKEN:-}" ] && [ -f "$CB_TOKEN" ]; then
     exec env -u CLOUDSDK_AUTH_ACCESS_TOKEN /opt/google-cloud-sdk/bin/gcloud "$@"
 fi
