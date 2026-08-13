@@ -109,10 +109,21 @@ if [ "$WITH_GCLOUD" -eq 1 ] && ! command -v gcloud > /dev/null 2>&1; then
 CB_HOME="${CREDENTIAL_BROKER_HOME:-$HOME/.config/claude/credential-broker}"
 CB_TOKEN="$CB_HOME/access_token"
 
-# 2700s against a 3600s token, matching the refresh loop's cadence: renew with
-# a quarter of the lifetime still in hand, so a long-running call started just
-# under the threshold does not outlive its credential.
-CB_MAX_AGE=2700
+# The threshold is really a floor on how much token life a call can start with:
+# a token renewed at age T has 3600 - T seconds left, so T is chosen from how
+# long a single invocation might run.
+#
+# 1800 against a 3600s token guarantees 30 minutes in hand. Observed scripts
+# here run 10-25 minutes, which 2700 would have failed -- it leaves as little as
+# 15. The extra renewals cost one HTTP call each and are not worth optimising.
+#
+# A script that calls gcloud repeatedly is covered for any duration, because
+# every invocation re-checks and renews when stale. What this cannot save is a
+# *single* call that blocks longer than the remaining life: Apigee provisioning
+# at 70-80 minutes will still expire mid-flight and need re-running. That is
+# accepted rather than solved, and it is why the floor matters more than the
+# ceiling.
+CB_MAX_AGE="${CREDENTIAL_BROKER_MAX_TOKEN_AGE:-1800}"
 
 # CB_NO_RENEW stops a renew that shells out to gcloud from recursing. It does
 # not today, but a wrapper that can loop forever is not worth the risk.
