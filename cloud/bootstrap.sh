@@ -75,7 +75,31 @@ if [ "$WITH_GCLOUD" -eq 1 ] && ! command -v gcloud > /dev/null 2>&1; then
     # is not reliably sourced by the non-interactive shells tool calls run in.
     /opt/google-cloud-sdk/install.sh --quiet --usage-reporting false \
         --path-update false --command-completion false > /dev/null || true
-    ln -sf /opt/google-cloud-sdk/bin/gcloud /usr/local/bin/gcloud || true
+    # A wrapper rather than a symlink, because the sandbox image presets
+    # CLOUDSDK_AUTH_ACCESS_TOKEN and that variable outranks the
+    # auth/access_token_file the broker configures. Every call then fails
+    # ACCESS_TOKEN_TYPE_UNSUPPORTED while the helper, `status` and the token file
+    # all report healthy — confirmed in two independent fresh sandboxes.
+    #
+    # The documented workaround is `env -u CLOUDSDK_AUTH_ACCESS_TOKEN` on every
+    # invocation, which fails the moment anyone forgets, and fails silently by
+    # picking the wrong identity rather than erroring. Better to make the right
+    # thing the default.
+    #
+    # Narrow on purpose: it drops the variable only when a broker token actually
+    # exists. With no grant installed, the preset token is whatever the sandbox
+    # intended and is left alone.
+    cat > /usr/local/bin/gcloud << 'WRAPPER'
+#!/bin/sh
+# Installed by agentic-coding-config cloud/bootstrap.sh.
+# Prefers a broker-issued credential over the sandbox's preset access token.
+CB_TOKEN="${CREDENTIAL_BROKER_HOME:-$HOME/.config/claude/credential-broker}/access_token"
+if [ -n "${CLOUDSDK_AUTH_ACCESS_TOKEN:-}" ] && [ -f "$CB_TOKEN" ]; then
+    exec env -u CLOUDSDK_AUTH_ACCESS_TOKEN /opt/google-cloud-sdk/bin/gcloud "$@"
+fi
+exec /opt/google-cloud-sdk/bin/gcloud "$@"
+WRAPPER
+    chmod 0755 /usr/local/bin/gcloud || true
     ln -sf /opt/google-cloud-sdk/bin/gsutil /usr/local/bin/gsutil || true
     log "gcloud  -> $(gcloud --version 2> /dev/null | head -1 || echo 'installed')"
 elif [ "$WITH_GCLOUD" -eq 1 ]; then
