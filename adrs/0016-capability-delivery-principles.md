@@ -57,7 +57,7 @@ missing:
 
 | Concern | Lives in | Reaches cloud via |
 | ------- | -------- | ----------------- |
-| Toolchain, OS packages, network allowlist | Cloud environment config | Setup script + allowed domains |
+| Toolchain, OS packages, network allowlist | Cloud environment config | Setup script + allowed domains, deferring to a versioned script |
 | Credentials and broker endpoints | Cloud environment config | Environment variables |
 | Portable skills and policy | This repo, delivered as content | Plugin, or setup-script placement |
 | Repo conventions, permissions, build commands | The repo's own `.claude/` | Part of the clone |
@@ -65,6 +65,14 @@ missing:
 A repo pointed at a `gcp-enabled` environment gains GCP access with
 **zero files committed**. That is the correct outcome, and ADR-0014's
 route could not express it.
+
+Note the column headings carefully: they say which surface **owns** a
+concern, not which surface holds its **implementation**. The first draft
+of this ADR was read — by its own author — as licence to put `apt-get`
+lines in a setup script, which principle 5 then forbids two sections
+later. The environment *triggers* a toolchain install by choosing to
+call the bootstrap, and by what it passes; what gets installed stays
+versioned here with everything else.
 
 ### 2. Provider-specific coupling belongs on provider-specific surfaces
 
