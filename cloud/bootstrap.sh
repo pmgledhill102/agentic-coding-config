@@ -39,28 +39,20 @@ trap 'rm -rf "$TMP"' EXIT INT TERM
 
 log "installing from ${REF}"
 
-# --- OS packages --------------------------------------------------------------
+# There is deliberately no apt step here.
 #
-# These belong here rather than in the environment's setup script. That script
-# is a vendor configuration field, editable only by hand, unversioned and
-# unreviewed; ADR-0016 principle 5 says it should hold one pinned line and
-# nothing else. The environment decides *whether* a toolchain is installed by
-# choosing to call this at all — and, for gcloud, by passing --with-gcloud. What
-# gets installed is versioned here with everything else.
+# An earlier draft installed curl, ca-certificates and openssl defensively, on
+# the reasoning that the documented list of pre-installed tools does not mention
+# curl. That list summarises rather than enumerates, and the sandbox image
+# carries curl 8.5.0 against OpenSSL 3.0.13 — verified, not inferred. A working
+# TLS fetch of this script proves ca-certificates too, since it could not have
+# arrived otherwise.
 #
-# curl and ca-certificates are listed for completeness rather than necessity:
-# this script arrived over TLS, so both already existed. openssl genuinely is
-# absent from the sandbox image and is routine for inspecting a certificate or
-# a JWT mid-task.
-
-if command -v apt-get > /dev/null 2>&1 && [ "$(id -u)" = "0" ]; then
-    apt-get update -qq || true
-    apt-get install -y -qq curl ca-certificates openssl || true
-    update-ca-certificates || true
-    log "packages: curl, ca-certificates, openssl"
-else
-    log "packages: skipped (no apt-get, or not root)"
-fi
+# openssl was speculative convenience: nothing here uses it. Installing packages
+# on a guess costs an apt-get update on every cache rebuild, needs the Ubuntu
+# archives reachable, and bakes an assumption into a snapshot where nobody will
+# revisit it. A task that genuinely needs a package can install it, having
+# established that it is missing.
 
 # --- gcloud, on request -------------------------------------------------------
 #
