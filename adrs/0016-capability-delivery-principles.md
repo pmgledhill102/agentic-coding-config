@@ -248,14 +248,23 @@ are all `POST`. Setup-script `export`s do not survive into the agent
 phase either, so variables belong in the environment's own settings. All
 of it is recorded in [`cloud/README.md`](../cloud/README.md).
 
-### Still unverified
+### The symlinked layout, also confirmed
 
-Whether Claude Code follows a **symlinked** skill directory. The Claude
-result above was obtained with a real directory; the canonical layout now
-places the file at `~/.agents/skills` with `~/.claude/skills` pointing at
-it. If Claude stops listing the skill, that is why, and the fallback is a
-real copy in both locations. This does not affect the principles: it is
-an implementation detail of one delivery mechanism.
+The first Claude result was obtained with a real directory, which left
+open whether Claude Code would follow a **symlink** — the layout the
+canonical form depends on, with the file at `~/.agents/skills` and
+`~/.claude/skills` pointing at it.
+
+It does. A sandbox on 2026-08-13 reported `~/.agents/skills/gcp-credentials`
+as a real directory and `~/.claude/skills/gcp-credentials` as a symlink to
+it, with the skill listed and invocable as `/gcp-credentials`. Both paths
+were created when the container came up, so this was the current bootstrap
+and not a cached older one.
+
+That matters beyond the implementation detail: one file can serve every
+provider that scans a user-level skills directory, with each vendor path
+a link rather than a copy. Adding a provider costs a symlink. Nothing can
+drift, because there is only ever one file.
 
 ## Alternatives considered
 
