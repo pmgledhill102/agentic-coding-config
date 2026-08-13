@@ -27,7 +27,7 @@ jobs:
           globs: "**/*.md"
 
   shellcheck:
-    name: ShellCheck (home/bin/)
+    name: ShellCheck (home/bin/, cloud/)
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     steps:
@@ -36,6 +36,12 @@ jobs:
         uses: ludeeus/action-shellcheck@00b27aa7cb85167568cb48a3838b75f4265f2bca # master
         with:
           scandir: './home/bin'
+      # cloud/ is fetched over the network and piped to a shell in every
+      # sandbox, so it is the code most in need of linting, not the least.
+      - name: Run ShellCheck (cloud/)
+        uses: ludeeus/action-shellcheck@00b27aa7cb85167568cb48a3838b75f4265f2bca # master
+        with:
+          scandir: './cloud'
 
   actionlint:
     name: Action Lint
