@@ -1,8 +1,8 @@
 # ADR-0016: Where capability lives — environment, repo, or content
 
-- **Status**: Proposed (2026-08-13)
+- **Status**: Accepted (2026-08-13), validated on Claude Code and Codex
 - **Date**: 2026-08-13
-- **Tags**: architecture, cloud, plugins, portability, claude-code
+- **Tags**: architecture, cloud, plugins, portability, claude-code, codex
 - **Scope**: user (applies to all personal repos and agent surfaces)
 
 ## Context
@@ -36,10 +36,45 @@ re-litigating the last one.
 
 ## Decision
 
-Adopt five principles, applied in order, when deciding where any piece of
+Adopt six principles, applied in order, when deciding where any piece of
 agent-enabling configuration belongs.
 
-### 1. Classify before choosing a mechanism
+### 1. Adding a capability changes nothing in the repo
+
+Working in a coding agent on one of these repos should come with cloud
+capabilities, and **acquiring them must be invisible to the repo**. No
+committed file records that sessions here can reach Google Cloud, and
+none is edited to give them that reach.
+
+This is the claim the other four serve. Three reasons it is more than
+tidiness:
+
+- **Capability is per-session, not per-project.** One sandbox has GCP
+  access, a collaborator's does not, a laptop has it by another route.
+  A repo asserting "sessions here have GCP" states something true for
+  some people, some of the time.
+- **It is a runtime property in a design-time artefact.** The repo
+  outlives the capability and nothing updates it when the environment
+  changes, so it goes stale in silence — the same failure as a vendored
+  copy, one level up.
+- **It is the precondition for working across providers.** An
+  `extraKnownMarketplaces` block is Claude-only; committed to a repo a
+  Codex session also reads, it is dead weight that makes the repo *look*
+  vendor-specific when it is not. Capability supplied by the environment
+  is the only form every provider can express, because each supplies it
+  its own way and the repo never learns which.
+
+**A repo may declare a need; it must not implement the capability.** A
+line in `AGENTS.md` saying tasks here need GCP access via the broker is
+prose — portable, vendor-neutral, and it does not break when the
+mechanism changes. What must not appear is anything that *provides* the
+access: marketplace declarations, a vendored helper, credentials, paths.
+
+Declaring the need is also the answer to the obvious objection, that an
+invisible capability is undiscoverable. The requirement stays visible.
+Only its implementation moves.
+
+### 2. Classify before choosing a mechanism
 
 Every requirement is either an **environment capability** or **project
 configuration**:
@@ -66,15 +101,24 @@ A repo pointed at a `gcp-enabled` environment gains GCP access with
 **zero files committed**. That is the correct outcome, and ADR-0014's
 route could not express it.
 
+Concretely, per surface:
+
+| Surface | Capability arrives via | Repo footprint |
+| ------- | ---------------------- | -------------- |
+| Claude Code cloud sandbox | setup script → `cloud/bootstrap.sh` → `~/.claude/skills` | none |
+| Codex cloud sandbox | setup script → `cloud/bootstrap.sh` → `~/.agents/skills` | none |
+| Local terminal (macOS) | chezmoi → `~/.claude`, plus the refresh daemon | none |
+| Self-hosted sandbox | superseded by the vendors' own | n/a |
+
 Note the column headings carefully: they say which surface **owns** a
 concern, not which surface holds its **implementation**. The first draft
 of this ADR was read — by its own author — as licence to put `apt-get`
-lines in a setup script, which principle 5 then forbids two sections
+lines in a setup script, which principle 6 then forbids two sections
 later. The environment *triggers* a toolchain install by choosing to
 call the bootstrap, and by what it passes; what gets installed stays
 versioned here with everything else.
 
-### 2. Provider-specific coupling belongs on provider-specific surfaces
+### 3. Provider-specific coupling belongs on provider-specific surfaces
 
 Prefer the surface that is *already* provider-specific, and prefer one
 outside version control where a choice exists.
@@ -89,7 +133,7 @@ This does not forbid the plugin route. It scopes it: use it for **project
 configuration**, where per-repo declaration is the point, and not for
 **environment capability**, where it is a tax.
 
-### 3. Portable content, provider-specific delivery
+### 4. Portable content, provider-specific delivery
 
 The portability commitment in ADR-0014 is about *content* — SKILL.md
 bodies, AGENTS.md policy. Delivery is free to be provider-specific,
@@ -105,7 +149,7 @@ hardcoded `~/.claude/bin/...` paths in the broker skill are exactly this
 failure — a delivery assumption written into portable text, which then
 broke on a surface where the assumption did not hold.
 
-### 4. Repo footprint proportional to what is genuinely project-specific
+### 5. Repo footprint proportional to what is genuinely project-specific
 
 A repository should not have to carry a vendor's plumbing to be usable.
 Every committed line of agent config is a line a human reviews, a line
@@ -114,7 +158,7 @@ that drifts, and a line that must be repeated across N repos.
 When a mechanism requires per-repo files, that cost is justified only if
 the thing being configured is genuinely per-repo.
 
-### 5. Defer substance to a pinned, versioned single source
+### 6. Defer substance to a pinned, versioned single source
 
 Where a provider surface must hold something, it holds **one line** that
 defers to versioned content in this repo:
@@ -174,25 +218,50 @@ single-tenant container. It would not be acceptable on a durable host.
   if a version bump is forgotten. The pin makes this visible but does
   not prevent it.
 
-### Open question, blocking principle 3
+### Questions this was held open for, now answered
 
-Whether Claude Code reads `~/.claude/skills/` when the **setup script
-creates it inside the container** is unverified. The documentation states
-that user-scope config does not reach cloud sessions, but that refers to
-*the developer's machine* not transferring — a `~/.claude/` that exists
-in the container is a different question. Principle 3's zero-footprint
-skill delivery depends on the answer. It is cheap to test in a live
-sandbox and should be settled before this ADR is ratified.
+Ratification waited on whether a `~/.claude` **created inside a
+container** is read at all — the documentation says user-scope config
+does not reach cloud sessions, but it means the developer's laptop does
+not transfer, which is a different claim. Both halves are now settled by
+running it:
 
-If the answer is no, principle 3 still holds in spirit but its delivery
-falls back to the plugin route for skills specifically, and the
-zero-footprint claim weakens to "toolchain and credentials only".
+- **Claude Code, 2026-08-13.** A sandbox session listed the skill from a
+  container-created `~/.claude/skills` and invoked it **unprompted**, via
+  the Skill tool, on finding `gcloud auth list` empty. Discovery works
+  without being told the skill exists.
+- **Codex, 2026-08-13.** The same bootstrap, unchanged, installed into
+  `~/.agents/skills` and Codex listed `gcp-credentials` among its custom
+  skills. The helper ran on `codex-universal` with no modification —
+  POSIX `sh`, `curl` and `jq` are all present — and reached the broker
+  through Codex's proxy.
+
+Two vendors, one mechanism, nothing committed to the repo being worked
+on. That is principle 1 demonstrated rather than asserted, and it is why
+this ADR is Accepted rather than Proposed.
+
+Codex needs configuration Claude does not, which belongs in the
+environment and not here: agent-phase internet is **off by default** and
+must be enabled, and the optional restriction to `GET`/`HEAD`/`OPTIONS`
+blocks the broker outright, since `/request`, `/exchange` and `/revoke`
+are all `POST`. Setup-script `export`s do not survive into the agent
+phase either, so variables belong in the environment's own settings. All
+of it is recorded in [`cloud/README.md`](../cloud/README.md).
+
+### Still unverified
+
+Whether Claude Code follows a **symlinked** skill directory. The Claude
+result above was obtained with a real directory; the canonical layout now
+places the file at `~/.agents/skills` with `~/.claude/skills` pointing at
+it. If Claude stops listing the skill, that is why, and the fallback is a
+real copy in both locations. This does not affect the principles: it is
+an implementation detail of one delivery mechanism.
 
 ## Alternatives considered
 
 **Commit plugin enablement to every repo (ADR-0014 point 3 applied
 universally).** Rejected as the general answer for the reasons in
-principles 2 and 4: vendor JSON in multi-provider repos, repeated N
+principles 3 and 5: vendor JSON in multi-provider repos, repeated N
 times, for capabilities that are not per-repo. Retained for project
 configuration, where per-repo declaration is the intent.
 
@@ -217,7 +286,7 @@ state, and it has produced one re-derivation per surface, with the
   ADR classifies the use of
 - [ADR-0015](0015-tiered-adrs.md) — tier conventions; this is a user-tier
   decision
-- #48 — plugin distribution, to be re-read against principle 1
+- #48 — plugin distribution, to be re-read against principle 2
 - #150, #152, #153, #154, #155 — findings from the 2026-08-12 sandbox run
   that motivated this
 - gcp-org-management#269 — the validation exercise that surfaced it
