@@ -58,14 +58,34 @@ The command prints a block like this:
 ==================================================================
 ```
 
-Relay the phrase to the user **verbatim, in your own reply, as the first thing
-you say** — do not leave it buried in tool output. Say what they are approving:
+`request` returns as soon as it has the phrase. It does **not** wait for the
+decision, and that is deliberate: relay the phrase in your own reply, then
+collect the answer separately.
+
+Relay it **verbatim, as the first thing you say** — not buried in tool output.
+Say what they are approving:
 
 > Requesting GCP credentials for `pmgledhill-apix-sbx` (sandbox tier, 24h).
 > **Verification phrase: `mint-copper-falcon`** — approve the Discord card only
 > if it shows exactly that.
 
-Then let the command keep polling. It exits by itself on a decision.
+### Then collect the decision
+
+```sh
+~/.claude/bin/gcp-credentials wait
+```
+
+This blocks until the human answers, then installs the token and starts refresh.
+
+**Never collapse these two steps into one.** `request --wait` exists for a human
+at an interactive terminal and is wrong for you: a blocked command cannot
+produce a reply, so the phrase would sit unread in the output of something still
+running while the human is asked to match it against nothing. The phrase is only
+a session binding if it reaches the person *before* they answer the card. Run
+them as two turns, with your message carrying the phrase in between.
+
+If the session scrolls or you lose track, `status` reports the outstanding
+request and its phrase.
 
 ## Reading the outcome
 
@@ -120,6 +140,36 @@ feed it from the file in the same command and never echo it:
 ```sh
 GOOGLE_OAUTH_ACCESS_TOKEN="$(cat ~/.config/claude/credential-broker/access_token)" terraform plan
 ```
+
+## An authentication failure? Run `renew` first, then think
+
+**Before diagnosing any GCP authentication error, run:**
+
+```sh
+~/.claude/bin/gcp-credentials renew
+```
+
+If it succeeds, the problem is solved and there was nothing to diagnose. It
+costs one HTTP call, needs no human, and is a no-op you can afford to be wrong
+about.
+
+The reason is that the background refresh loop is **not reliable in a sandbox**.
+Detached processes are reaped there — observed twice in one session, once across
+an idle gap and once inside a twenty-minute window of active work. When that
+happens the grant stays valid for days while the token quietly ages out, so the
+first symptom is an authentication error that looks like a broker fault, an IAM
+problem, or a revoked grant, and is none of them.
+
+Applies to `Request had invalid authentication credentials`, a bare 401 or 403
+from a Google API, and `Unable to read file [...access_token]`. The last one
+means the token was *removed*, not rejected — a grant that ended, or a `release`
+— and `renew` will tell you which by failing with an exit code that says so.
+
+Escalate only if `renew` itself fails:
+
+- exit 4 — the grant is genuinely over; request a new one
+- exit 2 — no grant on this machine at all; request one
+- exit 1 — the broker is unreachable, which is a real fault worth reporting
 
 ## After a container restart or a resumed session
 
