@@ -166,6 +166,29 @@ into a session:
 Exit 6 names both locations. If a machine is missing them, that is a setup task
 for the human — say so and stop; do not attempt to work around it.
 
+### Cloud sandboxes also need the broker on the network allowlist
+
+A cloud sandbox reaches only allowlisted domains. The **Trusted** default list
+covers `*.googleapis.com`, so GCP API calls work once a token is installed — but
+it does **not** cover the broker's own host, which is a `*.run.app` address. Add
+it under **Custom** network access, with the default list still included:
+
+```text
+credential-broker-<hash>-nw.a.run.app
+```
+
+Without it the request fails at the network layer, which reads as the broker
+being down rather than as an environment that was never allowed to call it.
+
+`gcloud` is not pre-installed in a cloud sandbox (`jq` and `git` are). If a task
+needs it, `dl.google.com` — the SDK download host — also has to be allowlisted;
+neither `cloud.google.com` nor `gcloud.google.com`, both of which are on the
+default list, serve the tarball. Install it from the **environment's setup
+script** rather than mid-session, because `gcp-credentials request` only wires
+up a gcloud configuration if gcloud exists at the moment it runs. Installed
+afterwards, gcloud is left pointing at nothing and the fix costs a second human
+approval.
+
 ## Approval hygiene, for the human
 
 Worth restating when relaying a phrase, because it is the only real defence:
