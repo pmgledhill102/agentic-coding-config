@@ -116,30 +116,34 @@ mkdir -p "$HOME/.claude/bin"
 ln -sf "$BIN_DIR/gcp-credentials" "$HOME/.claude/bin/gcp-credentials"
 log "compat  -> $HOME/.claude/bin/gcp-credentials -> $BIN_DIR/gcp-credentials"
 
-# --- the skill, in both shapes -----------------------------------------------
+# --- the skill: one file, vendor paths as adapters ----------------------------
 #
-# Placed under the container's own ~/.claude. Whether Claude Code reads a
-# ~/.claude it did not create is the open question behind ADR-0016 principle 3:
-# the documentation says user-scope config does not reach cloud sessions, but it
-# means the developer's laptop does not transfer, which is a different claim
-# from a directory that exists in the VM. Both shapes go down so one run answers
-# both — commands/ is the current format, skills/ the direction of ADR-0014.
+# The canonical copy goes to ~/.agents/skills, the vendor-neutral Agent Skills
+# location that Codex, OpenCode and Gemini CLI scan natively. Claude Code does
+# not read it — its documentation names only ~/.claude/skills and
+# .claude/skills — so ~/.claude/skills gets a symlink pointing at the real
+# thing.
 #
-# Either way the content is provider-neutral; only the placement knows about
-# Claude. That is the principle being tested, not a shortcut around it.
+# That direction is deliberate. Copying into each vendor's directory would work
+# and would reintroduce the one failure this repo keeps meeting: two copies of
+# the same content, diverging quietly. A symlink cannot drift, and a fourth
+# provider costs another link rather than another copy. It is also ADR-0016
+# principle 3 in the filesystem — the portable path holds the content, the
+# vendor path is a thin adapter — rather than a paragraph asserting it.
+#
+# That a container-created ~/.claude/skills is read at all is no longer an open
+# question: a sandbox session on 2026-08-13 discovered this skill there and
+# invoked it unprompted. What a symlinked skill directory does is the part still
+# worth watching; if Claude stops listing the skill, that is why.
 
 curl -sSfL "$RAW/home/commands/gcp-credentials.md" -o "$TMP/gcp-credentials.md" ||
     die "could not fetch the skill from $REF"
-
-mkdir -p "$HOME/.claude/commands"
-cp "$TMP/gcp-credentials.md" "$HOME/.claude/commands/gcp-credentials.md"
-log "command -> $HOME/.claude/commands/gcp-credentials.md"
 
 # SKILL.md wants frontmatter the command format does not carry. The first line
 # of the command file is its description by convention, so lift it — single
 # quoted, with any internal quote doubled, because that description contains a
 # colon and would otherwise be read as a YAML mapping.
-SKILL_DIR="$HOME/.claude/skills/gcp-credentials"
+SKILL_DIR="$HOME/.agents/skills/gcp-credentials"
 mkdir -p "$SKILL_DIR"
 DESC=$(head -1 "$TMP/gcp-credentials.md" | sed "s/'/''/g")
 {
@@ -150,7 +154,21 @@ DESC=$(head -1 "$TMP/gcp-credentials.md" | sed "s/'/''/g")
     echo ""
     tail -n +2 "$TMP/gcp-credentials.md"
 } > "$SKILL_DIR/SKILL.md"
-log "skill   -> $SKILL_DIR/SKILL.md"
+log "skill   -> $SKILL_DIR/SKILL.md (canonical)"
+
+# An earlier run left a real directory here, and `ln -s` onto one links *inside*
+# it rather than replacing it. Remove first; the path is fixed and ours.
+rm -rf "$HOME/.claude/skills/gcp-credentials"
+mkdir -p "$HOME/.claude/skills"
+ln -sfn "$SKILL_DIR" "$HOME/.claude/skills/gcp-credentials"
+log "adapter -> $HOME/.claude/skills/gcp-credentials"
+
+# Claude merged custom commands into skills: a commands/*.md and a
+# skills/*/SKILL.md both register the same /name and behave the same way. So an
+# earlier run's commands copy is now a second, Claude-only registration of a
+# skill that already works from the neutral path. Remove it rather than leave
+# two sources for one command.
+rm -f "$HOME/.claude/commands/gcp-credentials.md"
 
 # --- report -------------------------------------------------------------------
 #
