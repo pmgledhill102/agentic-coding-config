@@ -121,6 +121,38 @@ feed it from the file in the same command and never echo it:
 GOOGLE_OAUTH_ACCESS_TOKEN="$(cat ~/.config/claude/credential-broker/access_token)" terraform plan
 ```
 
+## After a container restart or a resumed session
+
+**Check this before anything else in a resumed cloud session.** Sandboxes
+restart container processes across an idle gap: the filesystem survives — your
+installed tools, the token file, the log — but the background refresh loop does
+not. Nothing restarts it, so the token ages out and dies while the grant is
+still perfectly valid.
+
+Symptoms, in the order you meet them:
+
+- `gcloud` fails with `Request had invalid authentication credentials`
+- `~/.claude/bin/gcp-credentials status` shows a live grant, `token : present`
+  (but stale), and `refresh : not running`
+- the refresh log's last entry is hours old
+
+The fix needs **no human approval** — the grant is what a human approved, and it
+has not expired:
+
+```sh
+~/.claude/bin/gcp-credentials refresh --background
+```
+
+That mints a token immediately and resumes the loop.
+
+**Do not run `request` for this.** It pings a human for an approval that is not
+needed, spending the one genuinely scarce resource in this design to fix a local
+process problem. Requesting again is for an expired *grant*, not a dead loop —
+`status` tells you which you have.
+
+`renew` mints once and exits, without touching the loop, when that is all you
+want.
+
 ## Grant expired
 
 The grant, not the token, is what runs out. Symptoms:
