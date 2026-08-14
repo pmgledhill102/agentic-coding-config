@@ -182,6 +182,33 @@ Report only what the helper printed:
 configuration, which is activated. `~/.claude/bin/gcp-credentials release`
 restores the configuration that was active before.
 
+### If the project was just created: early 403s are propagation
+
+When the sandbox was built by this very approval, the helper says so and warns
+that API enablement and IAM bindings are still propagating. **A 403 or 404 on
+your first calls is propagation, not misconfiguration.** Wait ~60 seconds and
+retry once before diagnosing anything — and do **not** modify IAM or org policy
+to work around it. You hold `roles/owner`; "fixing" a propagation delay by
+granting things is how a sandbox's permissions end up unrecognisable.
+
+### The grant may be shorter than you asked for
+
+A grant is clamped to the sandbox's own expiry — a 24h grant against a sandbox
+that is deleted in 12h becomes a 12h grant, and the approval card said so. If
+the helper reports a shorter expiry than requested, that is why; it is not an
+error. A sandbox expiring within the hour is refused at request time with a
+pointer at `/sandbox extend` — relay that to the user rather than retrying.
+
+### Someone else may be working in the same project
+
+Sandboxes are shared per repo. If the helper prints a `WARNING` about other
+active grants — or `status` shows a `sharing :` line — another session holds a
+live grant on the same project, under the same identity, at `roles/owner`.
+Nothing prevents you overwriting each other's work. **Tell the user before any
+destructive operation** (`terraform destroy`, deleting resources, rewriting
+state): they may be running the other session themselves and know what it is
+doing.
+
 ## Things never to do
 
 - **Never print, `cat`, `grep`, `head` or otherwise read the token file.** The
