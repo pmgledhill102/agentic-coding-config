@@ -153,11 +153,19 @@ channel by the service that built it.
 | 5 | Rate limited | Wait. Do not loop. |
 | 6 | Not configured | No request key or no broker URL — see [Setup](#setup-not-per-session). |
 | 7 | Approved, but the identity never became usable | **Not a deny** — nobody refused. Report the reason the helper printed. Requesting again is legitimate; if it recurs, say so, because the sandbox's agent identity needs attention. |
+| 8 | This helper is too old for the broker | Relay the remedy the helper printed and **stop**. Retrying cannot help — nothing is wrong with the request, the client simply cannot speak the current contract. |
 | 1 | Broker unreachable or mint failed | Report it. Do not proceed as if credentials exist. |
 
 Exit 7 is worth distinguishing from exit 3 in what you tell the user. A deny is a
 decision and asking again without checking is rude; a failure is a fault, and
 retrying is the reasonable response.
+
+Exit 8 is neither. Nothing is wrong with the request and nobody decided
+anything — this helper predates a change to the broker's contract and cannot
+speak it. The broker refuses **before** posting a card, so no approval was spent
+and none will be until the helper is updated. Relay the remedy it printed
+(`chezmoi apply` locally, or bump `Rev:` in the cloud setup script) and stop;
+retrying is the one thing that certainly will not help.
 
 Never carry on without credentials after a non-zero exit. Silently falling back
 to whatever identity happens to be lying around is the exact failure the broker
