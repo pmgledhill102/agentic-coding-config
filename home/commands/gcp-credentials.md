@@ -26,6 +26,12 @@ three-word phrase as the session — that match is what binds an approval to
 *this* session rather than to whichever request happened to arrive first. Design
 and trust model: ADR 021 in `pmgledhill102/gcp-org-management`.
 
+If the repo has no sandbox project yet, the same approval **also creates one**,
+so the card may be authorising a project and its monthly spend as well as the
+access. The build takes two to three minutes, during which the helper reports
+`provisioning` — see [Waiting on a human, then waiting on
+GCP](#waiting-on-a-human-then-waiting-on-gcp). Design: ADR 022.
+
 ## Requesting
 
 ```sh
@@ -35,6 +41,27 @@ and trust model: ADR 021 in `pmgledhill102/gcp-org-management`.
 The project is resolved from the repo's `origin` remote, so nothing needs
 configuring per project. Override with `--project <id>` if the broker cannot
 resolve it, or `--repo <remote>` when working outside a checkout.
+
+### Never ask the user which project to use
+
+**The flow supplies the project. You do not choose it, and you must not ask the
+user to.** On success the helper prints it, `gcloud` is already pointed at it,
+and `status` reports it at any time.
+
+This matters because repo scripts often carry a default project ID in a
+`shared/env.sh` or similar, and it is tempting to ask which one to target. Asking
+is wrong twice over: it interrupts the human for something already decided, and
+their answer can send the work to a project the grant does not cover — the token
+is scoped to one project, so a "helpful" override just produces permission
+errors that look like a broken grant.
+
+If the repo has no sandbox yet, the broker does not fail: approving the card
+**creates one**, and the project it creates is the one to use. Wait for the
+helper to report it rather than filling the gap with a guess or a question.
+
+So: read the project from the helper's output, pass it to whatever needs it, and
+say which project you are working in. Ask the user only if the helper exits
+non-zero and the table below says to.
 
 Useful options: `--ttl 72h` (1–7 days, default 24h), `--timeout 900`,
 `--no-gcloud` if you only want the token file.
@@ -101,6 +128,19 @@ Nothing is wrong there and nobody needs chasing. The broker refuses to hand over
 a grant it cannot actually mint a token for, so it waits for the identity to
 propagate rather than issuing something that would fail on first use. It
 resolves on its own, without a second approval. Say so if asked, and wait.
+
+When the repo had no sandbox, there is a longer wait first, while the project is
+built:
+
+```text
+  approved — creating the sandbox project (this takes two to three minutes)
+```
+
+Also normal, also nobody to chase. **Do not fill the time by asking the user
+which project to target** — that is what this wait is deciding. Tell them the
+sandbox is being created and roughly how long it takes, and wait. If it never
+appears the helper exits non-zero and the reason is posted to the operations
+channel by the service that built it.
 
 ## Reading the outcome
 
