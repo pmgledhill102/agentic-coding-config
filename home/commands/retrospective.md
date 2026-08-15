@@ -101,7 +101,7 @@ Permissions, hooks, env vars and everything else in `~/.claude/settings.json` ar
 When a finding clearly mentions a target, route there. Otherwise apply this default split:
 
 - **Brewfile / package lists / shell config / OS bootstrap / chezmoi machinery** → `dotfiles`
-- **Slash commands / hooks / `~/.claude/settings.json` / MCP server config / `home/CLAUDE.md`** → `agentic-coding-config`
+- **Slash commands / hooks / `~/.claude/settings.json` / MCP server config / the policy files (`home/AGENTS.md` portable, `home/CLAUDE.md` Claude-specific, `home/local-machine.md` workstation-only)** → `agentic-coding-config`
 - **Engineering principles / personal direction / repo registry / archive list / decisions** → `paul-context`
 - **Genuinely unsorted / "I had a thought"** → `paul-context` (default fallback)
 

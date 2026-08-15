@@ -123,6 +123,44 @@ For each ADR file (`*.md` in the detected ADR directory):
 
 4. Output a table: ADR file → status → finding → suggested action ("update", "supersede", "delete", "no action").
 
+### Phase A2 — Tier fit
+
+Per [ADR-0015](https://github.com/pmgledhill102/agentic-coding-config/blob/main/adrs/0015-tiered-adrs.md),
+every ADR declares a tier with a `Scope:` header line — `personal`, `user` or
+`repo` — and placement is meant to follow scope rather than convenience. This
+check is the backstop for that; it is a review prompt, not enforcement.
+
+For each ADR, additionally:
+
+1. **Missing scope.** No `Scope:` line → flag it, and suggest one from the
+   authoring test below. Don't guess silently; the point of the header is
+   that the blast radius is stated rather than inferred.
+
+2. **Outgrown its tier.** Apply the authoring test — *would this decision
+   still bind if this repo were archived?* If yes and it is `Scope: repo`,
+   flag it for promotion to the user tier
+   (`agentic-coding-config/adrs/`), leaving a stub behind that links to
+   the new home. Signals worth searching for:
+   - the ADR's own text generalises beyond this repo ("every repo", "all my
+     projects", "across the estate")
+   - another repo is known to depend on the decision, or the ADR is
+     referenced by URL from outside this repo
+
+3. **Undeclared deviation.** A repo-tier ADR that contradicts a user-tier
+   decision must say so — naming the ADR it deviates from and why. A repo ADR
+   that quietly reverses a user-tier decision without referencing it is the
+   failure mode the tier model exists to prevent, so flag it as a finding in
+   its own right rather than as a style nit. The user-tier set is listed at
+   <https://github.com/pmgledhill102/agentic-coding-config/tree/main/adrs>
+   and is readable from a sandbox with no local clones.
+
+Suggested actions for this phase: "add Scope:", "promote to user tier +
+stub", "declare the deviation", "no action".
+
+Note that promotion is a **cross-repo** change: per the cross-repo rule, do
+not edit the other repo. File an issue against `agentic-coding-config`
+containing the ADR's full text and the reason for promotion.
+
 ## Phase B — Dependency currency
 
 Run the per-language scanners. Each scanner is invoked once. **Run synchronously** — do not background. Aggregate the JSON or text output into a structured findings list.
@@ -291,6 +329,7 @@ Print to chat. Use the structure:
 
 ADRs (<N> found)
   - <file>  <STATUS>  <one-line reason>
+  Tier fit: <N> missing Scope:, <N> outgrown their tier, <N> undeclared deviations
 
 Dependencies
   Outdated: <N> (major: <a>, minor: <b>, patch: <c>)

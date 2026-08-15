@@ -66,6 +66,27 @@ non-zero and the table below says to.
 Useful options: `--ttl 72h` (1–7 days, default 24h), `--timeout 900`,
 `--no-gcloud` if you only want the token file.
 
+### If a grant is already live, `request` refuses
+
+`request` checks for an unexpired grant on disk before it opens anything, and
+exits 2 rather than asking a human to approve access they have already approved:
+
+```text
+gcp-credentials: a live grant already exists for example-project-sbx, valid for
+another 19h 40m (until 2026-08-16T11:33Z). ... Run 'gcp-credentials renew' to
+mint a token now, or 'gcp-credentials refresh --background' if the refresh loop
+has died; 'gcp-credentials status' shows which. Pass --force to request a new
+approval anyway.
+```
+
+This is not an error to work around. Do what it says — `renew` and
+`refresh --background` need no human and take one HTTP call. `--force` exists
+for the case where the existing grant is genuinely the wrong one (wrong project,
+wrong tier, too little time left for the work); spending an approval to get back
+something you already hold is not that case.
+
+Nothing was sent to the broker when you see this, so no approval was consumed.
+
 Write a **specific purpose**. It is the only thing the human has to judge the
 request by, and it is rendered on the card as untrusted, agent-written text.
 "deploy the Apigee bootstrap module to the sandbox" is approvable;
@@ -92,7 +113,7 @@ collect the answer separately.
 Relay it **verbatim, as the first thing you say** — not buried in tool output.
 Say what they are approving:
 
-> Requesting GCP credentials for `pmgledhill-apix-sbx` (sandbox tier, 24h).
+> Requesting GCP credentials for `example-project-sbx` (sandbox tier, 24h).
 > **Verification phrase: `mint-copper-falcon`** — approve the Discord card only
 > if it shows exactly that.
 
@@ -147,13 +168,13 @@ channel by the service that built it.
 | Exit | Meaning | What to do |
 | --- | --- | --- |
 | 0 | Installed | Carry on. Say which project and when the grant expires. |
-| 2 | Usage error | Fix the arguments. |
+| 2 | Usage error, **or a live grant already exists** | Fix the arguments. If it names a live grant, use `renew` / `refresh --background` instead — see [above](#if-a-grant-is-already-live-request-refuses). |
 | 3 | **Denied** or revoked | Stop. A human said no. Do not re-request without asking them why. |
 | 4 | Timed out / expired | Nobody answered, which the broker treats as a deny. Ask the user before retrying. |
 | 5 | Rate limited | Wait. Do not loop. |
 | 6 | Not configured | No request key or no broker URL — see [Setup](#setup-not-per-session). |
 | 7 | Approved, but the identity never became usable | **Not a deny** — nobody refused. Report the reason the helper printed. Requesting again is legitimate; if it recurs, say so, because the sandbox's agent identity needs attention. |
-| 8 | This helper is too old for the broker | Relay the remedy the helper printed and **stop**. Retrying cannot help — nothing is wrong with the request, the client simply cannot speak the current contract. |
+| 8 | This helper is too old for the broker | Relay the remedy below and **stop**. Retrying cannot help — nothing is wrong with the request, the client simply cannot speak the current contract. Locally the fix is `chezmoi apply --refresh-externals`, **not** a plain `chezmoi apply`. |
 | 1 | Broker unreachable or mint failed | Report it. Do not proceed as if credentials exist. |
 
 Exit 7 is worth distinguishing from exit 3 in what you tell the user. A deny is a
@@ -163,9 +184,26 @@ retrying is the reasonable response.
 Exit 8 is neither. Nothing is wrong with the request and nobody decided
 anything — this helper predates a change to the broker's contract and cannot
 speak it. The broker refuses **before** posting a card, so no approval was spent
-and none will be until the helper is updated. Relay the remedy it printed
-(`chezmoi apply` locally, or bump `Rev:` in the cloud setup script) and stop;
+and none will be until the helper is updated. Relay the remedy and stop;
 retrying is the one thing that certainly will not help.
+
+The remedy differs by surface, and the local one is easy to get wrong:
+
+| Surface | Remedy |
+| --- | --- |
+| Local machine | `chezmoi apply --refresh-externals` (or `chezmoi update --refresh-externals`) |
+| Cloud sandbox | Bump `Rev:` in the environment's setup script, then start a fresh session |
+
+**A plain `chezmoi apply` does not fetch a newer helper.** `~/.claude/` is
+delivered as a chezmoi *archive external* with a `refreshPeriod` of 168h, so
+inside that week-long window chezmoi reuses the cached archive and re-applies the
+same stale helper — the exit-8 message repeats verbatim, from the one instruction
+whose whole purpose was to end it. `--refresh-externals` is what forces the
+re-download. The same caveat applies to `dotup` when the period has not elapsed.
+
+If the hint the broker printed says plain `chezmoi apply`, prefer the command
+above: the broker composes that string, and correcting it there is tracked
+separately.
 
 Never carry on without credentials after a non-zero exit. Silently falling back
 to whatever identity happens to be lying around is the exact failure the broker
@@ -175,7 +213,7 @@ exists to prevent.
 
 Report only what the helper printed:
 
-> Credentials installed for `pmgledhill-apix-sbx`, grant expires 2026-08-13T11:33Z.
+> Credentials installed for `example-project-sbx`, grant expires 2026-08-13T11:33Z.
 > Background refresh is running.
 
 `gcloud` is pointed at the token through a dedicated `agent-broker`
@@ -266,6 +304,51 @@ Escalate only if `renew` itself fails:
 - exit 2 — no grant on this machine at all; request one
 - exit 1 — the broker is unreachable, which is a real fault worth reporting
 
+### `ACCESS_TOKEN_TYPE_UNSUPPORTED` — the one `renew` cannot fix
+
+This error reads like a broker fault or an IAM problem and is neither. It means
+**an environment variable is outranking the token file**, so gcloud never looks
+at what the helper installed.
+
+gcloud resolves every property in the order environment variable →
+configuration → default. `CLOUDSDK_AUTH_ACCESS_TOKEN` is both higher precedence
+*and* a different property (`auth/access_token`) than the
+`auth/access_token_file` the helper sets, so a preset value wins over everything
+the helper does — silently. It was preset in a sandbox image, and cost most of a
+debugging session because every diagnostic said healthy.
+
+`status` now says so directly:
+
+```text
+gcloud  : OVERRIDDEN by CLOUDSDK_AUTH_ACCESS_TOKEN — gcloud ignores the broker token; calls will fail
+          unset it, or run gcloud through a wrapper that does. The grant is fine.
+```
+
+The variables that do this:
+
+| Variable | Overrides |
+| --- | --- |
+| `CLOUDSDK_AUTH_ACCESS_TOKEN` | `auth/access_token_file` — the observed case |
+| `CLOUDSDK_AUTH_ACCESS_TOKEN_FILE` | the same property the helper sets |
+| `CLOUDSDK_CORE_PROJECT` | the project the helper sets — calls go elsewhere |
+| `GOOGLE_APPLICATION_CREDENTIALS` | client libraries and Terraform, not gcloud |
+| `GOOGLE_OAUTH_ACCESS_TOKEN` | client libraries and Terraform, not gcloud |
+
+**The remedy is `unset`, not `renew` and not `request`.** The grant is valid and
+the token file is correct; this is gcloud plumbing. `renew` will cheerfully
+succeed and change nothing, and `request` spends a human approval on a problem
+no approval can solve.
+
+```sh
+unset CLOUDSDK_AUTH_ACCESS_TOKEN
+```
+
+If the variable is preset by the environment image rather than by something in
+the session, it will come back in the next session: say so, so it gets reported
+to whoever owns the image. A general-purpose dev container presetting
+`CLOUDSDK_AUTH_ACCESS_TOKEN` hijacks gcloud auth for anything that brings its
+own credentials.
+
 ## After a container restart or a resumed session
 
 **Check this before anything else in a resumed cloud session.** Sandboxes
@@ -277,9 +360,19 @@ still perfectly valid.
 Symptoms, in the order you meet them:
 
 - `gcloud` fails with `Request had invalid authentication credentials`
-- `~/.claude/bin/gcp-credentials status` shows a live grant, `token : present`
-  (but stale), and `refresh : not running`
-- the refresh log's last entry is hours old
+- `~/.claude/bin/gcp-credentials status` shows a live grant, `refresh : not
+  running`, and a token flagged stale:
+
+  ```text
+  token   : present at ~/.config/claude/credential-broker/access_token (minted 2h 11m ago — STALE, past its 3600s lifetime)
+            nothing has minted since, so the refresh loop is probably dead:
+            'gcp-credentials refresh --background' mints now and restarts it
+  ```
+
+`status` derives that age from the token file's mtime, so it is reporting when a
+token was last successfully minted — not merely that a file exists. A `STALE`
+line is the answer on its own; there is no need to read the refresh log to
+confirm it, and no reason to go looking at IAM.
 
 The fix needs **no human approval** — the grant is what a human approved, and it
 has not expired:

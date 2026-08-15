@@ -27,7 +27,7 @@ jobs:
           globs: "**/*.md"
 
   shellcheck:
-    name: ShellCheck (home/bin/, cloud/)
+    name: ShellCheck (home/bin/, cloud/, tests/)
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     steps:
@@ -42,17 +42,69 @@ jobs:
         uses: ludeeus/action-shellcheck@00b27aa7cb85167568cb48a3838b75f4265f2bca # master
         with:
           scandir: './cloud'
+      - name: Run ShellCheck (tests/)
+        uses: ludeeus/action-shellcheck@00b27aa7cb85167568cb48a3838b75f4265f2bca # master
+        with:
+          scandir: './tests'
+
+  credential-helper:
+    name: gcp-credentials behaviour
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      # The helper ships to every cloud sandbox via the bootstrap fetch and to
+      # every laptop via chezmoi, so a regression here has no staging tier.
+      - name: Run the credential-helper tests
+        run: sh tests/gcp-credentials-test.sh
 
   actionlint:
     name: Action Lint
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
+    # Pinned release + checksum, rather than piping an install script from a
+    # mutable `main` ref into bash. ADR-0016 principle 6 forbids exactly that
+    # pattern for this repo's own bootstrap, on the grounds that a mutable ref
+    # hands a third party reach into the environment; CI is not an exception.
+    # The upstream download script performs no verification of its own.
+    #
+    # Bump VERSION and SHA256 together. The checksum is the publisher's, from
+    # actionlint_<version>_checksums.txt in the same release.
+    env:
+      ACTIONLINT_VERSION: 1.7.12
+      ACTIONLINT_SHA256: 8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-      - name: Download actionlint
-        run: bash <(curl https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash)
+      - name: Download and verify actionlint
+        run: |
+          set -euo pipefail
+          file="actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
+          curl -fsSL -o "$file" \
+            "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/${file}"
+          echo "${ACTIONLINT_SHA256}  ${file}" | sha256sum --check --strict -
+          tar -xzf "$file" actionlint
       - name: Run actionlint
         run: ./actionlint -color
+
+  gitleaks:
+    name: Gitleaks
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    # The default GITHUB_TOKEN no longer grants pull-requests: read, and
+    # gitleaks-action needs it in PR context to fetch the PR's commit list —
+    # without it the first PR run fails 403. Job-level to stay least-privilege.
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      # Full history: a secret is only interesting if it was ever committed,
+      # and a shallow clone cannot see that.
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e # v3.0.0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   retired-paths:
     name: retired-paths validity
