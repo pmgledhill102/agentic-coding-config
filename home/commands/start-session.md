@@ -12,16 +12,6 @@ Every step falls into one of three tiers — keep this in mind when adding or ed
 
 When in doubt, downgrade a tier (Tier 1 → 2, or 2 → 3). Never upgrade silently.
 
-## Pre-flight
-
-This command **requires a git-backed repository**. Run the bare command below and branch on its exit code — don't paste a compound `||` / `&&` form, which won't match any single allow rule and will trigger a permission prompt.
-
-```sh
-git rev-parse --is-inside-work-tree
-```
-
-If the exit code is non-zero (or stdout is not `true`), print a single-line warning (`` `/start-session` requires a git-backed repo — nothing to sync, stopping. ``) and stop.
-
 ## Surface
 
 This command runs on a workstation and in a cloud sandbox, and some steps only
@@ -59,7 +49,7 @@ and "could not check".
 
 Any value other than `true` is treated as unset. Unknown keys are ignored silently (forward-compatibility).
 
-**Trust model:** the file is sourced as POSIX shell, so a hostile commit could place arbitrary commands in it. Treat `.agent-policy` the same as `.envrc` / `.editorconfig` — only commit it on repos you control, and only opt into automation you actually want. The file lives at the repo root (not under `.claude/`, which is reserved for the harness's own config).
+**Trust model:** the file is **parsed, never sourced** — the gather reads well-formed `KEY=VALUE` lines and ignores everything else, so a hostile commit cannot get code out of it. What it *can* still do is turn on an automation you did not intend, so treat `.agent-policy` the same as `.editorconfig`: only commit it on repos you control, and only opt into automation you actually want. The file lives at the repo root (not under `.claude/`, which is reserved for the harness's own config).
 
 **Example `.agent-policy`:**
 
@@ -70,13 +60,10 @@ AUTO_JOURNAL_PROMOTE=true
 
 ## Phase 1 — Sync
 
-If `.agent-policy` exists at the repo root, source it once before proceeding:
-
-```sh
-[ -f .agent-policy ] && . ./.agent-policy
-```
-
-This loads any opt-in keys consulted by Tier 2 steps. The file is optional; if absent, every Tier 2 step prompts as today.
+Everything starts with one script call. The pre-flight check and the
+`.agent-policy` read are both inside it, so this command makes **no standalone
+Bash calls before the gather** — which is the point: a compound `[ -f … ] && . …`
+matches no single allow rule and prompted on every run.
 
 ### 1. Gather state (Tier 1 — one tool call)
 
@@ -90,6 +77,8 @@ Output is a sectioned stream. Each section starts with `===<name> (exit=<N>)===`
 
 | Section | Drives step(s) | Notes on exit code |
 | --- | --- | --- |
+| `not_a_git_repo` | pre-flight | Only present when the gather ran outside a git repo, in which case it is the **only** section and the script exits 1. Print the line it contains and stop; every other step assumes a repo. |
+| `policy` | 6 | Recognised `.agent-policy` keys as `KEY=VALUE`, one per line. Empty (or absent file) = all defaults. Unknown keys are dropped by the gather, matching the forward-compatibility rule. |
 | `fetch` | 2 (folded in) | Body is empty on success (exit=0). Non-zero = network/auth issue — body contains the error; surface before proceeding. |
 | `local_state` | 3, 7 | Includes branch, dirty/clean, ahead/behind upstream, ahead/behind `origin/<default>`. |
 | `main_ci` | 4 | Content `gh-unavailable` / `jq-unavailable` = silent skip. Otherwise: first line is `workflows=<N>`; subsequent lines are `<workflow-name>=<conclusion-or-status>@<short-sha>` (one per most-recent run per workflow on `<default>`). On `failure` / `cancelled` / `timed_out`, the line ends with a trailing space-separated run URL: `<workflow-name>=<conclusion>@<short-sha> <url>`. Non-zero with other content = real error. |
@@ -197,7 +186,7 @@ Filter the listing to entries matching `^[0-9]{4}-[0-9]{2}-[0-9]{2}-[a-z0-9-]+\.
 - **0 matches**: skip silently.
 - **>= 1 match**: print the count and (up to first 5) filenames, then:
 
-  - **If `AUTO_JOURNAL_PROMOTE=true` (from `.agent-policy`)**: skip the prompt and invoke `/promote-journal-inbox` directly. Add a `Policy:` line to the session brief noting that the promote fired automatically.
+  - **If the gather's `policy` section contains `AUTO_JOURNAL_PROMOTE=true`**: skip the prompt and invoke `/promote-journal-inbox` directly. Read it from that section, not from shell state — shell variables do not survive between tool calls, so nothing sourced earlier would still be set. Add a `Policy:` line to the session brief noting that the promote fired automatically.
   - **Otherwise (default)**: prompt:
 
     > `<N>` journal draft(s) pending in `_incoming/`. Run `/promote-journal-inbox` now? (y/n)

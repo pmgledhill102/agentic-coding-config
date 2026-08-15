@@ -20,8 +20,58 @@ set -uo pipefail
 
 progress() { printf '[gather] %s\n' "$*" >&2; }
 
+# --- Phase 0: pre-flight ------------------------------------------------
+# Folded in from /start-session, which used to run this as its own Bash call.
+# Everything below assumes a git repo, so this has to come before the fetch.
+if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    printf '===not_a_git_repo (exit=1)===\n'
+    printf '/start-session requires a git-backed repo — nothing to sync.\n\n'
+    exit 1
+fi
+
 TMP=$(mktemp -d -t start-session-gather.XXXXXX)
 trap 'rm -rf "$TMP"' EXIT
+
+# --- Phase 0b: repo-level policy ----------------------------------------
+# Also folded in, and deliberately *parsed* rather than sourced.
+#
+# `/start-session` used to run `[ -f .agent-policy ] && . ./.agent-policy`,
+# which was wrong twice over. The compound form matches no single allow rule,
+# so it prompted on every run — the very pattern that command's own pre-flight
+# section warns against. And sourcing achieves nothing here anyway: shell state
+# does not survive between tool calls, so a variable set in one call is gone by
+# the next. The model needs these values in its context, not in a dead shell.
+#
+# Parsing also removes the arbitrary-code-execution surface that sourcing a
+# committed file carries, which the trust-model note previously had to caveat.
+POLICY_KEYS="AUTO_JOURNAL_PROMOTE"
+read_policy() {
+    [ -f .agent-policy ] || return 0
+    # Only well-formed KEY=VALUE lines, only recognised keys. Unknown keys are
+    # ignored rather than reported, matching the forward-compatibility rule.
+    while IFS= read -r line || [ -n "$line" ]; do
+        case "$line" in
+            '#'* | '') continue ;;
+        esac
+        case "$line" in
+            *=*) ;;
+            *) continue ;;
+        esac
+        rp_key=${line%%=*}
+        rp_val=${line#*=}
+        # Strip surrounding whitespace and any quoting the file may carry.
+        rp_key=$(printf '%s' "$rp_key" | tr -d '[:space:]')
+        rp_val=$(printf '%s' "$rp_val" | tr -d '[:space:]' | tr -d '"'"'"'"')
+        for rp_known in $POLICY_KEYS; do
+            if [ "$rp_key" = "$rp_known" ]; then
+                printf '%s=%s\n' "$rp_key" "$rp_val"
+                break
+            fi
+        done
+    done < .agent-policy
+}
+read_policy > "$TMP/policy.out" 2>&1
+echo $? > "$TMP/policy.exit"
 
 # --- Phase 1: git fetch (blocks remote-aware sections below) ---
 # Capture local default-branch SHA *before* fetch so we can later compute the
@@ -246,6 +296,6 @@ if [ "$FETCH_EXIT" -ne 0 ]; then
 fi
 printf '\n'
 
-for s in local_state main_ci recent_main_commits gh_ready gh_assigned claude_drift; do
+for s in policy local_state main_ci recent_main_commits gh_ready gh_assigned claude_drift; do
     [ -f "$TMP/$s.exit" ] && emit "$s"
 done
