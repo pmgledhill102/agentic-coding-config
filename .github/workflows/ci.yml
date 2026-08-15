@@ -58,6 +58,18 @@ jobs:
       - name: Run the credential-helper tests
         run: sh tests/gcp-credentials-test.sh
 
+  plugin-manifests:
+    name: plugin manifests
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # A broken catalog fails at install time, in someone else's session, on a
+      # repo that merely enabled the plugin — a long way from the change that
+      # broke it.
+      - name: Marketplace and plugin manifests must be valid
+        run: python3 tests/plugin-manifests.py
+
   actionlint:
     name: Action Lint
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository

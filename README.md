@@ -9,13 +9,68 @@ depends on where the session is running:
 | Channel | Surface | Mechanism |
 | --- | --- | --- |
 | [chezmoi external][chezmoi-externals] | local machines | `home/` mounts at `~/.claude/`, via [dotfiles][dotfiles] |
-| network fetch | cloud sandboxes | `cloud/bootstrap.sh`, run by the environment's setup script |
+| **plugin** | cloud sessions | this repo is a plugin marketplace; project repos enable it in `.claude/settings.json` |
+| network fetch | cloud sandboxes (credentials) | `cloud/bootstrap.sh`, run by the environment's setup script |
 
-The second exists because a cloud sandbox starts empty and never sees your
-machine's user-level config. See [`cloud/README.md`](cloud/README.md) for
-the per-environment setup and
-[ADR-0016](adrs/0016-capability-delivery-principles.md) for why the substance
-lives in a fetched script rather than in the setup script itself.
+The second and third exist because a cloud session starts empty and reads
+**only the project repo's `.claude/`** — nothing from `~/.claude/` is
+transferred. See [`cloud/README.md`](cloud/README.md) for the per-environment
+setup and [ADR-0016](adrs/0016-capability-delivery-principles.md) for why the
+credential substance lives in a fetched script rather than in the setup script.
+
+## The plugin channel
+
+`home/` doubles as the plugin root: it already had `commands/`, `skills/` and
+`bin/` in exactly the layout a plugin expects, so no tree is duplicated or
+generated. Two manifests make it a marketplace:
+
+| File | Role |
+| --- | --- |
+| `.claude-plugin/marketplace.json` (repo root) | the catalog; repo-meta, never deploys |
+| `home/.claude-plugin/plugin.json` | the plugin manifest, at the plugin root |
+
+A project repo opts in by committing to its own `.claude/settings.json` —
+`/setup-common` stamps this:
+
+```json
+{
+  "extraKnownMarketplaces": {
+    "agentic-config": {
+      "source": { "source": "github", "repo": "pmgledhill102/agentic-coding-config" }
+    }
+  },
+  "enabledPlugins": { "agentic-config@agentic-config": true }
+}
+```
+
+Note `enabledPlugins` is an **object** keyed `<plugin>@<marketplace>`, not an
+array.
+
+### What each channel can and cannot carry
+
+| Content | chezmoi | plugin |
+| --- | :-: | :-: |
+| `commands/`, `skills/` | yes | yes |
+| `bin/` helpers | yes, at `~/.claude/bin/` | yes, added to the Bash tool's `PATH` |
+| Policy prose (`AGENTS.md`, `CLAUDE.md`) | yes | **no** |
+| Permission allowlist (`settings.json`) | yes | **no** |
+| Hooks | yes, via `settings.json` | not yet — see below |
+
+Two limits are structural rather than temporary:
+
+- **Policy prose can't ride a plugin.** A plugin's own `settings.json` supports
+  only a couple of keys. Process rules reach a cloud session through the
+  project repo's own `CLAUDE.md`/`AGENTS.md`, not through this.
+- **Permissions travel only in repo `.claude/settings.json`**, which is the one
+  place a cloud session reads them from.
+
+**Hooks are not in the plugin yet.** They live in `home/settings.json` and
+reference `~/.claude/bin/` paths that don't exist in a sandbox. Porting them
+means a `home/hooks/hooks.json` plus a per-hook surface audit — several are
+workstation-only by nature — so it is deliberately separate work.
+
+Locally, nothing changes: chezmoi delivers the same content directly, and the
+plugin manifests simply ride along inert.
 
 [chezmoi-externals]: https://www.chezmoi.io/reference/special-files-and-directories/chezmoiexternal-format/
 [dotfiles]: https://github.com/pmgledhill102/dotfiles
@@ -68,10 +123,13 @@ restructure that introduced `home/` is on top of that history.
 ├── adrs/                      # repo-meta: architecture decisions
 ├── docs/                      # repo-meta: workflow docs and runbooks
 ├── .github/, .pre-commit-config.yaml, .markdownlint.yaml, .gitignore
+├── .claude-plugin/            # repo-meta: marketplace.json (the plugin catalog)
+├── tests/                     # repo-meta: behavioural tests for home/bin/
 ├── cloud/                     # ← fetched over the network into cloud sandboxes
 │   ├── bootstrap.sh           #   installs the helper + skill into a container
 │   └── README.md              #   per-environment setup (script, domains, vars)
-└── home/                      # ← THIS subdirectory mounts at ~/.claude/
+└── home/                      # ← mounts at ~/.claude/ AND is the plugin root
+    ├── .claude-plugin/        #   plugin.json — the plugin manifest
     ├── AGENTS.md              → ~/.claude/AGENTS.md  (portable policy core — every provider)
     ├── CLAUDE.md              → ~/.claude/CLAUDE.md  (Claude adapter; imports the other two)
     ├── local-machine.md       → ~/.claude/local-machine.md  (workstation-only guidance)

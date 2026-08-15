@@ -349,11 +349,59 @@ The `cooldown` block is load-bearing, not a lint nit: this same skill installs a
 
 > **Note:** Auto-merge requires branch protection or rulesets with required status checks enabled on the default branch. Without this, `--auto` merges immediately without waiting for CI.
 
-### 9. Verify
+### 9. Agent plugin (Claude Code only)
+
+**Provider-specific step — skip it on any client that is not Claude Code.**
+Everything else in this skill is provider-neutral; this one configures Claude
+Code's plugin system by name. The equivalent for another client is whatever
+mechanism it uses to load shared skills into a session that cannot see the
+user's machine; there is no portable spelling of it yet.
+
+Stamp the marketplace and plugin declaration into the project's
+`.claude/settings.json`, creating the file if absent and **merging** if present:
+
+```json
+{
+  "extraKnownMarketplaces": {
+    "agentic-config": {
+      "source": {
+        "source": "github",
+        "repo": "pmgledhill102/agentic-coding-config"
+      }
+    }
+  },
+  "enabledPlugins": {
+    "agentic-config@agentic-config": true
+  }
+}
+```
+
+Note `enabledPlugins` is an **object** keyed `<plugin>@<marketplace>`, not an
+array of names.
+
+**This is the only route by which a cloud session gets any of this.** Cloud
+sessions read the project repo's `.claude/` and nothing from `~/.claude/`, so a
+repo without these two keys runs bare: no setup skills, no session commands, no
+credential helper. Locally the same content already arrives via chezmoi, so
+stamping a repo changes nothing there — it is purely what makes the cloud
+surface match.
+
+Commit the file; it is meant to be shared, not gitignored. If the repo already
+has `.claude/settings.json`, add these keys alongside whatever is there rather
+than replacing it.
+
+Permission allowlists are a separate matter: a plugin cannot carry them (a
+plugin's `settings.json` supports only a couple of keys), and repo
+`.claude/settings.json` is the **only** place a cloud session reads permissions
+from. Stamping a core allowlist there is a reasonable follow-on, deliberately
+not done automatically here — permissions are the one thing worth deciding per
+repo rather than by template.
+
+### 10. Verify
 
 Run `pre-commit run --all-files` to confirm everything works. Fix any issues that come up.
 
-### 10. Closing summary
+### 11. Closing summary
 
 End the closing summary with this reminder (verbatim or close to it):
 
