@@ -315,9 +315,19 @@ still perfectly valid.
 Symptoms, in the order you meet them:
 
 - `gcloud` fails with `Request had invalid authentication credentials`
-- `~/.claude/bin/gcp-credentials status` shows a live grant, `token : present`
-  (but stale), and `refresh : not running`
-- the refresh log's last entry is hours old
+- `~/.claude/bin/gcp-credentials status` shows a live grant, `refresh : not
+  running`, and a token flagged stale:
+
+  ```text
+  token   : present at ~/.config/claude/credential-broker/access_token (minted 2h 11m ago — STALE, past its 3600s lifetime)
+            nothing has minted since, so the refresh loop is probably dead:
+            'gcp-credentials refresh --background' mints now and restarts it
+  ```
+
+`status` derives that age from the token file's mtime, so it is reporting when a
+token was last successfully minted — not merely that a file exists. A `STALE`
+line is the answer on its own; there is no need to read the refresh log to
+confirm it, and no reason to go looking at IAM.
 
 The fix needs **no human approval** — the grant is what a human approved, and it
 has not expired:
