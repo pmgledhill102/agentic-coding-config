@@ -1,0 +1,21 @@
+version: 2
+updates:
+  # The workflow actions here are SHA-pinned, which is correct and also means
+  # nothing will ever bump them without this file. /setup-common installs this
+  # in every repo it touches; this one had been missing it.
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    commit-message:
+      prefix: "ci(deps)"
+      include: "scope"
+    labels:
+      - "dependencies"
+      - "github-actions"
+    open-pull-requests-limit: 5
+    # Load-bearing, not a lint nit: a cooldown gives upstream time to yank a
+    # bad or malicious release before it can land here.
+    cooldown:
+      default-days: 7
