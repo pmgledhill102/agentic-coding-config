@@ -33,6 +33,31 @@ belongs here, and the adapter should reference it rather than restate it.
   - Some repos (e.g. `lifeos`) declare their own label taxonomy in their repo CLAUDE.md — that wins over the defaults above
   - **Use issue listing or direct reads for anything time-sensitive — never issue search**: the search API is eventually consistent, so a just-created issue can be invisible to it for seconds to minutes. Deduplicate against a full list including closed issues, not search
 
+## Decision records (ADR tiers)
+
+Decisions are recorded at three tiers, per
+[ADR-0015](https://github.com/pmgledhill102/agentic-coding-config/blob/main/adrs/0015-tiered-adrs.md).
+Every ADR declares which with a `Scope:` header line, so its blast radius is
+stated rather than inferred from where it sits.
+
+| Tier | Home | Holds |
+| --- | --- | --- |
+| **Personal** | `paul-context/decisions/` | Life/estate decisions, private rationale (private repo) |
+| **User** | [`agentic-coding-config/adrs/`](https://github.com/pmgledhill102/agentic-coding-config/tree/main/adrs) | How I work with agents and repos, across the estate |
+| **Repo** | `<repo>/adrs/` | Architecture and technology choices for that repo |
+
+- **User-tier ADRs bind every repo.** They are public, so a sandbox session
+  with no local clone can read them at the URL above. Consult them on demand;
+  never copy them into a repo, because a copy drifts
+- **Placement follows scope, not convenience.** The authoring test: *would
+  this decision still bind if the current repo were archived?* If yes, it is
+  not repo-tier
+- **A repo may deviate from a higher tier, but only explicitly.** The repo
+  ADR must name the ADR it deviates from and why. Silent divergence is the
+  failure this rule exists to prevent
+- Numbering is per-directory; cross-tier references use full URLs, which also
+  work from sandboxes
+
 ## Cross-Repo Work
 
 - **Never edit files in a repo other than the one this session is working in.** Any direction, any repo pair: a project session editing `agentic-coding-config`, an `agentic-coding-config` session editing `dotfiles`, a `dotfiles` session editing `paul-context`. Cross-repo edits bypass the issue queue, skip that repo's review/PR flow, and pollute the current session's context with unrelated work. This holds even when the other repo is already cloned and writable, and even when the change is one line

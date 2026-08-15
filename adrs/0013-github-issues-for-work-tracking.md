@@ -3,6 +3,7 @@
 - **Status**: Accepted (2026-07-14)
 - **Date**: 2026-07-14
 - **Tags**: workflow, tooling, issue-tracking
+- **Scope**: user (applies to all personal repos)
 
 ## Context
 
