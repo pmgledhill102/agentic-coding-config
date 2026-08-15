@@ -1,0 +1,136 @@
+#!/bin/sh
+# start-session-claude-drift — report whether the deployed ~/.claude tree still
+# matches the agentic-coding-config source.
+#
+# A chezmoi-managed file can be fixed in the repo and keep running the old
+# version on a machine for as long as nobody applies there, and nothing says
+# so. On 2026-08-13 that produced a two-commit gap on `bin/gcp-credentials`:
+# the repo had the request/wait split, the Mac had a helper from the day
+# before, and local and cloud had silently diverged in behaviour on a security
+# control. It was only found by comparing line counts on a hunch.
+#
+# The failure is not forgetting to apply. It is that nothing distinguishes
+# "this machine is current" from "this machine is a day behind", so there is
+# nothing to forget about. This makes that difference visible at session start.
+#
+# It never applies anything. Applying config changes under an agent, without
+# the human seeing them, is its own hazard -- and this repo deploys the harness
+# the agent is running inside.
+#
+# Output protocol (stdout, one key=value or list line per row):
+#   state=absent          no deployed tree (a sandbox) -- nothing to compare
+#   state=no-source       not in an agentic-coding-config checkout
+#   state=compared        a file-by-file comparison ran
+#   behind=<n>            deployed file differs and the repo copy is newer
+#   modified=<n>          deployed file differs and the deployed copy is newer
+#   behind: <path>        one per file, capped
+#   modified: <path>      one per file, capped
+#
+# Exit status is 0 whenever the check ran, whatever it found: this is a
+# reporting step, not a gate.
+
+set -u
+
+CLAUDE_DIR="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
+MAX_LIST=10
+
+# A cloud sandbox has no deployed tree and no chezmoi. Say so and stop, rather
+# than reporting a scary-looking zero.
+if [ ! -d "$CLAUDE_DIR" ]; then
+    echo "state=absent"
+    echo "note=no ~/.claude on this surface (sandbox); nothing is deployed to drift"
+    exit 0
+fi
+
+# The comparison needs the source. Being *in* the agentic-coding-config
+# checkout is the case that matters: it is where this drift is both most likely
+# (the file being actively fixed is the one most likely to be stale) and most
+# consequential.
+ROOT=""
+if git rev-parse --show-toplevel > /dev/null 2>&1; then
+    candidate=$(git rev-parse --show-toplevel)
+    if git -C "$candidate" remote get-url origin 2> /dev/null | grep -q 'agentic-coding-config' &&
+        [ -d "$candidate/home" ]; then
+        ROOT="$candidate"
+    fi
+fi
+
+if [ -z "$ROOT" ]; then
+    # Outside the checkout there is nothing to diff against without a network
+    # fetch, which is too expensive for every session start. Fall back to how
+    # old the deployed tree is: the archive external carries a 168h refresh
+    # period, so anything older than that is due a refresh regardless.
+    newest=$(find "$CLAUDE_DIR" -maxdepth 2 \
+        \( -name projects -o -name todos -o -name plugins -o -name statsig \) -prune -o \
+        -type f -print 2> /dev/null |
+        while IFS= read -r f; do
+            stat -c %Y "$f" 2> /dev/null || stat -f %m "$f" 2> /dev/null
+        done | sort -n | tail -1)
+    echo "state=no-source"
+    if [ -n "$newest" ]; then
+        age_days=$((($(date -u '+%s') - newest) / 86400))
+        echo "applied_days_ago=$age_days"
+        if [ "$age_days" -ge 7 ]; then
+            echo "note=deployed tree last changed ${age_days}d ago, past the 168h refresh period — 'chezmoi apply --refresh-externals' if a recent a-c-c merge matters here"
+        fi
+    fi
+    exit 0
+fi
+
+TMP=$(mktemp -d)
+trap 'rm -rf "$TMP"' EXIT
+: > "$TMP/behind"
+: > "$TMP/modified"
+
+# Walk the source rather than the target: ~/.claude also holds Claude Code's
+# own runtime state (projects/, todos/, history.jsonl) and files retired from
+# the repo but never pruned, and neither is drift of the kind meant here.
+# (Retired-but-present is #125, and /end-session step 11 already covers it.)
+cd "$ROOT/home" || exit 0
+find . -type f -print 2> /dev/null | sed 's|^\./||' | while IFS= read -r rel; do
+    deployed="$CLAUDE_DIR/$rel"
+
+    if [ ! -e "$deployed" ]; then
+        echo "$rel (never deployed)" >> "$TMP/behind"
+        continue
+    fi
+
+    # The common case by far, and the only one that costs anything per file.
+    cmp -s "$rel" "$deployed" && continue
+
+    # They differ. Which direction? The repo copy's last commit time against
+    # the deployed copy's mtime separates "this machine has not applied yet"
+    # from "somebody edited the generated tree in place" -- different problems
+    # with different fixes, and conflating them makes the message ignorable.
+    src_epoch=$(git -C "$ROOT" log -1 --format=%ct -- "home/$rel" 2> /dev/null || echo 0)
+    [ -n "$src_epoch" ] || src_epoch=0
+    dep_epoch=$(stat -c %Y "$deployed" 2> /dev/null || stat -f %m "$deployed" 2> /dev/null || echo 0)
+
+    if [ "$dep_epoch" -gt "$src_epoch" ]; then
+        echo "$rel" >> "$TMP/modified"
+    else
+        echo "$rel" >> "$TMP/behind"
+    fi
+done
+
+n_behind=$(wc -l < "$TMP/behind" | tr -d ' ')
+n_modified=$(wc -l < "$TMP/modified" | tr -d ' ')
+
+echo "state=compared"
+echo "source=$ROOT/home"
+echo "behind=$n_behind"
+echo "modified=$n_modified"
+
+if [ "$n_behind" -gt 0 ]; then
+    head -n "$MAX_LIST" "$TMP/behind" | sed 's/^/behind: /'
+    [ "$n_behind" -gt "$MAX_LIST" ] && echo "behind: ... and $((n_behind - MAX_LIST)) more"
+    echo "remedy_behind=chezmoi apply --refresh-externals"
+fi
+
+if [ "$n_modified" -gt 0 ]; then
+    head -n "$MAX_LIST" "$TMP/modified" | sed 's/^/modified: /'
+    [ "$n_modified" -gt "$MAX_LIST" ] && echo "modified: ... and $((n_modified - MAX_LIST)) more"
+    echo "remedy_modified=hand-edits to ~/.claude are lost on the next apply — move the change into the repo"
+fi
+
+exit 0
