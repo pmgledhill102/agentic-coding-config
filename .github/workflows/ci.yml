@@ -54,6 +54,26 @@ jobs:
       - name: Run actionlint
         run: ./actionlint -color
 
+  gitleaks:
+    name: Gitleaks
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    # The default GITHUB_TOKEN no longer grants pull-requests: read, and
+    # gitleaks-action needs it in PR context to fetch the PR's commit list —
+    # without it the first PR run fails 403. Job-level to stay least-privilege.
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      # Full history: a secret is only interesting if it was ever committed,
+      # and a shallow clone cannot see that.
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e # v3.0.0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
   retired-paths:
     name: retired-paths validity
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
