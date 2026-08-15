@@ -189,6 +189,11 @@ run_sh gh_assigned '
         '\''
 '
 
+# Deployed-config drift. Cheap (a cmp per file, and nothing else unless one
+# differs), and silent when everything is current. Lives in its own script
+# because the direction-of-drift logic does not belong inline in a `sh -c`.
+run_section claude_drift "$(dirname "$0")/start-session-claude-drift"
+
 export PRE_FETCH_DEFAULT_SHA
 
 # shellcheck disable=SC2016
@@ -241,6 +246,6 @@ if [ "$FETCH_EXIT" -ne 0 ]; then
 fi
 printf '\n'
 
-for s in local_state main_ci recent_main_commits gh_ready gh_assigned; do
+for s in local_state main_ci recent_main_commits gh_ready gh_assigned claude_drift; do
     [ -f "$TMP/$s.exit" ] && emit "$s"
 done

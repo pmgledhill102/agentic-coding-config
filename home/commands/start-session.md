@@ -71,6 +71,7 @@ Output is a sectioned stream. Each section starts with `===<name> (exit=<N>)===`
 | `recent_main_commits` | 5 | First line is `count=<N>` (commits that merged into `origin/<default>` since the previous local tip). When non-zero, subsequent lines are `<short-sha> <subject>`, capped at 10. Empty when caught up. |
 | `gh_ready` | 7 | Content `not-github` / `gh-unavailable` / `jq-unavailable` = silent skip. Empty content = no ready work. Otherwise up to 10 pipe-separated rows: `#<n>\|P<pri>\|<title>` (priority `-` when the issue has no `P0`–`P4` label). Ready = open and not directly blocked (`gh issue list --search "is:open -is:blocked"`) — direct blocks only, no transitive query. Already pre-summarised — use rows directly in the brief without further parsing. |
 | `gh_assigned` | 7 | Same skip convention as `gh_ready`. Empty content = nothing in flight. Otherwise pipe-separated rows: `#<n>\|P<pri>\|<title>` for open issues assigned to me (usually 0-3). Same row shape as `gh_ready`. |
+| `claude_drift` | 6b, 7 | `state=absent` (sandbox, no `~/.claude`) or `state=no-source` (not in an a-c-c checkout) = silent skip. `state=compared` gives `behind=<n>` and `modified=<n>`, then one `behind: <path>` / `modified: <path>` line each, plus `remedy_behind=` / `remedy_modified=` when non-zero. Both zero = silent. |
 
 Rules for interpreting exit codes:
 
@@ -125,6 +126,39 @@ From gather section `recent_main_commits`. The first line is `count=<N>` — com
 
 This is informational only — no action prompts. The section adds a few lines on busy days and zero on quiet ones.
 
+### 5b. Deployed-config drift (Tier 1 — surface, never act)
+
+From gather section `claude_drift`. Answers a question nothing else asks: does
+`~/.claude/` on this machine still match what the repo says it should be?
+
+A chezmoi-managed file can be fixed in the repo and go on running the old
+version here for as long as nobody applies. The failure is not forgetting to
+apply — it is that nothing distinguishes "this machine is current" from "this
+machine is a day behind", so there is nothing to forget about. It has already
+cost a session: two merged commits to `bin/gcp-credentials` were undeployed
+while the cloud surface had them, so local and cloud disagreed on the behaviour
+of a security control and an issue was filed against a defect already fixed.
+
+- **`state=absent` or `state=no-source`**: silent skip. A sandbox has nothing
+  deployed; outside an a-c-c checkout there is nothing to compare against
+  without a network fetch, which is not worth every session start.
+- **`behind=0 modified=0`**: silent. This is the normal case and should stay
+  invisible.
+- **`behind >= 1`**: surface under **Needs attention** in the brief, naming the
+  count and the files, with the remedy verbatim from `remedy_behind`. The
+  command is `chezmoi apply --refresh-externals`, **not** a plain `chezmoi
+  apply` — the archive external's 168h refresh period means a plain apply can
+  re-serve the cached copy.
+- **`modified >= 1`**: surface separately, and do not conflate it with the
+  above. A hand-edited file in `~/.claude/` is a different problem with a
+  different fix — the edit is lost on the next apply, so it needs moving into
+  the repo. Reporting both as one number makes the message ignorable.
+
+**Never apply anything, and never offer to.** This is Tier 1 surface-only by
+design: applying config changes under an agent without the human reading them
+is its own hazard, and this repo deploys the harness the agent is running
+inside.
+
 ### 6. Paul-context inbox surface (Tier 2 — prompt, paul-context only; Tier 1 with policy opt-in)
 
 **Only fires when the current working tree is `paul-context`** (`basename "$(git rev-parse --show-toplevel)" = "paul-context"`). Otherwise skip silently. This is a runtime filesystem check, not part of the gather output — `/start-session` runs in many repos and a generic gather section would always be empty for the rest.
@@ -178,6 +212,10 @@ Needs attention:
   • <main CI red on workflow X>    (omit when green)
   • <feature branch behind main by N>          (omit when on default, even, or auto-switched)
   • <branch upstream gone but tree dirty>      (omit unless that case fires)
+  • ~/.claude is behind the repo on N file(s): <paths> — run `chezmoi apply --refresh-externals`
+                                               (omit when behind=0 / skipped)
+  • ~/.claude has N hand-edited file(s): <paths> — the edits are lost on the next
+    apply; move them into the repo    (omit when modified=0 / skipped)
 ───────────────────────────────────────────────
 ```
 
