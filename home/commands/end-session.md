@@ -105,6 +105,14 @@ Output is a sectioned stream. Each section starts with `===<name> (exit=<N>)===`
 | `gh_assigned` | 10 | Content `not-github` / `gh-unavailable` / `jq-unavailable` = silent skip. Empty content = nothing in flight. Otherwise one `#<n> <title>` line per open issue assigned to me. |
 | `stale_claude_files` | 11 | Content `chezmoi-unavailable` = silent skip. Empty body (exit=0) = nothing stale. Otherwise: one path per line under `.claude/commands/` or `.claude/bin/` that's present locally but not tracked by chezmoi. |
 
+**On `gh` inside the gather script.** The gather runs as a shell script, so its
+GitHub queries use `gh` and cannot use `mcp__github__*` — an MCP tool is not
+callable from a subprocess. That is a deliberate exception to the MCP-first
+preference, not an oversight: it is also what makes the gather work unchanged in
+a headless or sandbox run, where a `gh` token is more reliably present than an
+interactively-authenticated MCP server. Any GitHub op **this command** performs
+directly, outside the gather, should prefer MCP.
+
 Rules for interpreting exit codes:
 
 - `exit=0` with empty content: clean result (no stashes, no merged branches, no in-progress issues, etc.). Treat as "none".
