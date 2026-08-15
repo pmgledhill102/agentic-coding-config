@@ -1,5 +1,10 @@
 # CLAUDE.md
 
+Ephemeral-first engineering principles are maintained separately, because
+they are portable policy rather than Claude-specific:
+
+@ephemeral-first.md
+
 ## GitHub MCP
 
 - **Prefer `mcp__github__*` tools over the `gh` CLI for all GitHub operations** when the GitHub MCP server is connected. Only fall back to `gh` if the MCP server is unavailable or a specific capability is missing
