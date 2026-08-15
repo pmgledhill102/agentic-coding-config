@@ -6,6 +6,31 @@
 - Common mappings: PRs (`create_pull_request`, `pull_request_read`, `update_pull_request`, `merge_pull_request`, `list_pull_requests`, `search_pull_requests`), reviews (`pull_request_review_write`, `add_comment_to_pending_review`, `add_reply_to_pull_request_comment`), issues (`issue_read`, `issue_write`, `list_issues`, `search_issues`, `add_issue_comment`), releases (`get_latest_release`, `list_releases`, `get_release_by_tag`), repo content (`get_file_contents`, `list_commits`, `get_commit`, `list_branches`, `create_branch`), search (`search_code`, `search_repositories`)
 - PR review workflow: create a pending review with `pull_request_review_write` (method: "create"), add line comments with `add_comment_to_pending_review`, then submit with `pull_request_review_write` (method: "submit_pending")
 
+## Decision records (ADR tiers)
+
+Decisions are recorded at three tiers, per
+[ADR-0015](https://github.com/pmgledhill102/agentic-coding-config/blob/main/adrs/0015-tiered-adrs.md).
+Every ADR declares which with a `Scope:` header line, so its blast radius is
+stated rather than inferred from where it sits.
+
+| Tier | Home | Holds |
+| --- | --- | --- |
+| **Personal** | `paul-context/decisions/` | Life/estate decisions, private rationale (private repo) |
+| **User** | [`agentic-coding-config/adrs/`](https://github.com/pmgledhill102/agentic-coding-config/tree/main/adrs) | How I work with agents and repos, across the estate |
+| **Repo** | `<repo>/adrs/` | Architecture and technology choices for that repo |
+
+- **User-tier ADRs bind every repo.** They are public, so a sandbox session
+  with no local clone can read them at the URL above. Consult them on demand;
+  never copy them into a repo, because a copy drifts
+- **Placement follows scope, not convenience.** The authoring test: *would
+  this decision still bind if the current repo were archived?* If yes, it is
+  not repo-tier
+- **A repo may deviate from a higher tier, but only explicitly.** The repo
+  ADR must name the ADR it deviates from and why. Silent divergence is the
+  failure this rule exists to prevent
+- Numbering is per-directory; cross-tier references use full URLs, which also
+  work from sandboxes
+
 ## Git Workflow
 
 - Always create feature branches for changes -- never commit directly to main
