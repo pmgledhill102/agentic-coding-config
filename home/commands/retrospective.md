@@ -9,6 +9,11 @@ Run a retrospective on this session: draft a per-session journal entry into `pau
 - **Issue state**: `gh issue list --assignee @me --state open` (so the retro knows what was already in flight).
 - **Memory dir**: list `~/.claude/projects/<project>/memory/` (path matches the cwd-derived project key) and read `MEMORY.md` so you know what's already captured and don't propose duplicates.
 - **Settings**: read `~/.claude/settings.json` for permission-related observations.
+- **Surface**: `command -v chezmoi`. Present = workstation; absent = cloud sandbox. This decides which dimensions run in step 2.
+
+**The last two reads are workstation-only.** A cloud sandbox has no `~/.claude/settings.json` and no `projects/<project>/memory/` — nothing is wrong, that state simply lives on the machine the session is not running on.
+
+**Degrade explicitly, don't skip silently.** When either is absent, say so in the retro output — `settings: n/a (sandbox)`, `memory: n/a (sandbox)` — and carry on. A retro that quietly omits a dimension reads identically to one that ran it and found nothing, and the difference matters: the first means "not checked here", the second means "checked, all good".
 
 If we're not inside a git repo, treat the retro as cross-repo by default — every action becomes an Issue against `pmgledhill102/paul-context`.
 
@@ -16,7 +21,19 @@ If we're not inside a git repo, treat the retro as cross-repo by default — eve
 
 Review the full conversation history and evaluate each of these dimensions. Skip any that aren't relevant.
 
-- **Approval friction**: Which tool calls required manual approval? Were any repeatedly approved and should be added to `allowedTools` in settings? Note the specific tool patterns.
+**Two dimensions are surface-specific** — run whichever matches the surface detected in step 1, not both:
+
+- **Approval friction** — *workstation only*. Skip in a sandbox: the permission model there is the environment's, `~/.claude/settings.json` is not readable, and a recommendation to add an allow rule has nowhere to land.
+- **Missing sandbox config** — *sandbox only*. See below.
+
+- **Approval friction** (workstation only): Which tool calls required manual approval? Were any repeatedly approved and should be added to `allowedTools` in settings? Note the specific tool patterns.
+- **Missing sandbox config** (sandbox only): **what config, context or credentials were missing from this sandbox session?** This is the feedback loop that catches capability gaps, and it is the dimension most worth getting right, because a sandbox is the surface where a gap is invisible until it blocks something. Look for:
+  - **Tools absent** that the work needed — was `gcloud`, a linter, a language runtime missing because the environment's setup script does not install it? Name the tool and the setup-script change.
+  - **Credentials unavailable** — was GCP access needed and absent? The answer is the credential broker (`/gcp-credentials`), so the finding is usually "the broker was not configured for this environment", naming which of the request key, broker URL or allowed-domains entry was missing.
+  - **Context that only exists on a workstation** — did the session need a runbook, a decision record, or a policy statement that lives in `~/.claude/` or a private repo and is therefore unreachable from here? That is a portability gap, and the fix is usually to move the content into a public, fetched, or repo-committed home.
+  - **Guidance a local session would have had** — anything you had to work out that a `CLAUDE.md`/`AGENTS.md` on a laptop would simply have told you.
+
+  Route every finding as an Issue against `pmgledhill102/agentic-coding-config` — that is where the environment definition, the bootstrap and the policy core all live. Be specific enough to action without re-running the session: name the tool or setting, what failed without it, and where it should be configured.
 - **Shell-friction patterns**: Did Bash tool calls use shell shapes that a file-import alternative would replace? These shapes hide multi-line content on the rendered command line, can trigger the harness's re-prompt heuristic even with the bare command allow-listed, and break on quoting edge cases. Scan the transcript for these patterns:
   - `--description="$(cat PATH)"` / `--body="$(cat PATH)"` / `--message="$(cat PATH)"` — propose the tool's file flag (e.g. `gh issue create --body-file=PATH`, `gh pr create --body-file=PATH`).
   - Heredocs (`tool <<'EOF' … EOF`) — already banned in the user's CLAUDE.md, but spot any that leaked in. Propose `Write` to `/tmp/<slug>.md` followed by the tool's file flag.
