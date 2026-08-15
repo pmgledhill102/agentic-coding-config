@@ -92,7 +92,7 @@ collect the answer separately.
 Relay it **verbatim, as the first thing you say** — not buried in tool output.
 Say what they are approving:
 
-> Requesting GCP credentials for `pmgledhill-apix-sbx` (sandbox tier, 24h).
+> Requesting GCP credentials for `example-project-sbx` (sandbox tier, 24h).
 > **Verification phrase: `mint-copper-falcon`** — approve the Discord card only
 > if it shows exactly that.
 
@@ -175,7 +175,7 @@ exists to prevent.
 
 Report only what the helper printed:
 
-> Credentials installed for `pmgledhill-apix-sbx`, grant expires 2026-08-13T11:33Z.
+> Credentials installed for `example-project-sbx`, grant expires 2026-08-13T11:33Z.
 > Background refresh is running.
 
 `gcloud` is pointed at the token through a dedicated `agent-broker`
