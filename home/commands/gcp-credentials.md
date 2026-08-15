@@ -153,7 +153,7 @@ channel by the service that built it.
 | 5 | Rate limited | Wait. Do not loop. |
 | 6 | Not configured | No request key or no broker URL — see [Setup](#setup-not-per-session). |
 | 7 | Approved, but the identity never became usable | **Not a deny** — nobody refused. Report the reason the helper printed. Requesting again is legitimate; if it recurs, say so, because the sandbox's agent identity needs attention. |
-| 8 | This helper is too old for the broker | Relay the remedy the helper printed and **stop**. Retrying cannot help — nothing is wrong with the request, the client simply cannot speak the current contract. |
+| 8 | This helper is too old for the broker | Relay the remedy below and **stop**. Retrying cannot help — nothing is wrong with the request, the client simply cannot speak the current contract. Locally the fix is `chezmoi apply --refresh-externals`, **not** a plain `chezmoi apply`. |
 | 1 | Broker unreachable or mint failed | Report it. Do not proceed as if credentials exist. |
 
 Exit 7 is worth distinguishing from exit 3 in what you tell the user. A deny is a
@@ -163,9 +163,26 @@ retrying is the reasonable response.
 Exit 8 is neither. Nothing is wrong with the request and nobody decided
 anything — this helper predates a change to the broker's contract and cannot
 speak it. The broker refuses **before** posting a card, so no approval was spent
-and none will be until the helper is updated. Relay the remedy it printed
-(`chezmoi apply` locally, or bump `Rev:` in the cloud setup script) and stop;
+and none will be until the helper is updated. Relay the remedy and stop;
 retrying is the one thing that certainly will not help.
+
+The remedy differs by surface, and the local one is easy to get wrong:
+
+| Surface | Remedy |
+| --- | --- |
+| Local machine | `chezmoi apply --refresh-externals` (or `chezmoi update --refresh-externals`) |
+| Cloud sandbox | Bump `Rev:` in the environment's setup script, then start a fresh session |
+
+**A plain `chezmoi apply` does not fetch a newer helper.** `~/.claude/` is
+delivered as a chezmoi *archive external* with a `refreshPeriod` of 168h, so
+inside that week-long window chezmoi reuses the cached archive and re-applies the
+same stale helper — the exit-8 message repeats verbatim, from the one instruction
+whose whole purpose was to end it. `--refresh-externals` is what forces the
+re-download. The same caveat applies to `dotup` when the period has not elapsed.
+
+If the hint the broker printed says plain `chezmoi apply`, prefer the command
+above: the broker composes that string, and correcting it there is tracked
+separately.
 
 Never carry on without credentials after a non-zero exit. Silently falling back
 to whatever identity happens to be lying around is the exact failure the broker
