@@ -265,14 +265,61 @@ doing.
 - **Never pass the request key on a command line.** The helper reads it from the
   environment or a 0600 file for a reason; `--key`-style arguments are visible in
   process listings.
+- **Never pass the access token as a command-line argument.** Not
+  `-H "Authorization: Bearer $(cat …)"`, not `--token`, not as any argv. This
+  holds everywhere, on every surface — see below for why it is not the same as
+  the environment-variable form it resembles.
 - **Never re-request after a deny** without the user telling you to.
 
-For a tool that needs the token in an environment variable rather than a file,
-feed it from the file in the same command and never echo it:
+## Getting the token into a command without putting it in argv
+
+The token has to reach the tool somehow. Two shapes are safe and one is not,
+and the unsafe one looks exactly like the safe ones:
+
+| Shape | Token lands in | Readable by |
+| --- | --- | --- |
+| `-H "Authorization: Bearer $(cat …)"` | **argv** | **every process on the machine, via `ps`** |
+| `VAR="$(cat …)" cmd` | the environment | the owning user only |
+| `curl --config <0600 file>` | a 0600 file | the owning user only |
+
+`/proc/<pid>/cmdline` is world-readable; `/proc/<pid>/environ` is 0400,
+owner-only. So the command-substitution idiom that makes all three look
+equivalent — same `$(cat …)`, same "never echoed" property — is doing something
+materially different in the first row.
+
+This is the rule the helper already applies to itself: `write_header_cfg` sends
+the request key through a `--config` file *precisely* to keep it out of argv.
+The access token is the more valuable of the two secrets.
+
+**Environment-variable form** — the default, and what to reach for first:
 
 ```sh
 GOOGLE_OAUTH_ACCESS_TOKEN="$(cat ~/.config/claude/credential-broker/access_token)" terraform plan
 ```
+
+**`curl`, which is what an agent reaches for first** — use a config file, not
+`-H`:
+
+```sh
+printf 'header = "Authorization: Bearer %s"\n' \
+    "$(cat ~/.config/claude/credential-broker/access_token)" > /tmp/cb-hdr.conf
+chmod 600 /tmp/cb-hdr.conf
+curl -sS -K /tmp/cb-hdr.conf https://cloudresourcemanager.googleapis.com/v1/projects/example-project-sbx
+rm -f /tmp/cb-hdr.conf
+```
+
+Or, when the API accepts it, skip the header entirely and let `gcloud` carry the
+auth — it is already pointed at the token file:
+
+```sh
+gcloud projects describe example-project-sbx --format=json
+```
+
+On a single-tenant ephemeral container the practical exposure from argv is
+close to nil. On a local machine, where this helper is used identically and
+other processes genuinely are running, it is not. **The rule does not vary by
+surface** — partly because a session cannot always tell which one it is on, and
+mostly because a habit that is conditional is not a habit.
 
 ## An authentication failure? Run `renew` first, then think
 
