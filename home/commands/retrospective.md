@@ -6,7 +6,7 @@ Run a retrospective on this session: draft a per-session journal entry into `pau
 
 - **Current repo**: `git rev-parse --show-toplevel` to identify which repo we're in (if any).
 - **Current branch + state**: `git status` (branch name, dirty/clean).
-- **Issue state**: `gh issue list --assignee @me --state open` (so the retro knows what was already in flight).
+- **Issue state**: list open issues assigned to me, so the retro knows what was already in flight — `mcp__github__list_issues` when connected, else `gh issue list --assignee @me --state open`.
 - **Memory dir**: list `~/.claude/projects/<project>/memory/` (path matches the cwd-derived project key) and read `MEMORY.md` so you know what's already captured and don't propose duplicates.
 - **Settings**: read `~/.claude/settings.json` for permission-related observations.
 - **Surface**: `command -v chezmoi`. Present = workstation; absent = cloud sandbox. This decides which dimensions run in step 2.
@@ -91,16 +91,20 @@ For each finding, decide what kind of artifact it should produce:
 | Kind | When to use | How to produce |
 | --- | --- | --- |
 | **Journal entry** | Always (unless the session was uneventful — then skip and stop). Captures the narrative thread, Continue items, and Observations that don't fit into actionable artifacts | Draft via the inbox/promote pattern. **Filesystem path** (preferred when `~/dev/paul-context/_incoming/` is writeable): `Write` to `~/dev/paul-context/_incoming/<YYYY-MM-DD>-<source-repo-slug>-<topic-slug>.md` — **no git ops against `paul-context`**. **GitHub Issue fallback** (sandbox / remote VM / no local clone): `gh issue create --repo pmgledhill102/paul-context --label journal-draft --title="journal: <filename-without-.md>" --body-file=/tmp/<filename>`. Tight format: H1 title, project/duration metadata, Continue / Stop / Created / Observations sections, ~30-50 lines. Promoted into `paul-context/journal/` later by `/promote-journal-inbox` |
-| **Same-repo Issue** | Action whose subject is the **current cwd's repo** | `gh issue create --title=... --label "type: <task/bug/feature>,P<n>"` in the current repo (priority P0-P4; P2 is "do this soon", P3 is "next time we touch this", P4 is "backlog"). **Body MUST include**: "From retro: paul-context/journal/<file>.md" |
-| **Cross-repo Issue** | Action whose subject is a *different* personal repo from cwd | `gh issue create --repo pmgledhill102/<target> --title=... --body=...` — picked up by `/start-session` there. **Body MUST include** the journal cross-reference |
-| **paul-context Issue** | Cross-cutting or no-clear-home findings | `gh issue create --repo pmgledhill102/paul-context --title=... --body=...`. **Body MUST include** the journal cross-reference |
+| **Same-repo Issue** | Action whose subject is the **current cwd's repo** | Create an issue in the current repo with a `type: <task/bug/feature>` label and a `P0`–`P4` priority (P2 is "do this soon", P3 is "next time we touch this", P4 is "backlog") — `mcp__github__issue_write` when connected, else `gh issue create --title=... --label "type: <type>,P<n>"`. **Body MUST include**: "From retro: paul-context/journal/<file>.md" |
+| **Cross-repo Issue** | Action whose subject is a *different* personal repo from cwd | Create an issue against `pmgledhill102/<target>` — `mcp__github__issue_write` with an explicit `owner`/`repo`, else `gh issue create --repo pmgledhill102/<target>`. Picked up by `/start-session` there. **Body MUST include** the journal cross-reference |
+| **paul-context Issue** | Cross-cutting or no-clear-home findings | Create an issue against `pmgledhill102/paul-context`, same two routes as above. **Body MUST include** the journal cross-reference |
 | **Memory write** | Durable lesson that should auto-load on future sessions | `Write` to `~/.claude/projects/<project>/memory/<slug>.md` with frontmatter, then `Edit` `MEMORY.md` index |
 | **Settings change** | Permission to add/move, hook to register, env var to set | File an Issue against `pmgledhill102/agentic-coding-config` describing the change and why — same routing as any other a-c-c finding. **Never edit a `settings.json` directly** (see 3b) |
 | **Observation only** | Something noted but not actionable ("everything went smoothly") | No artifact; mention in the journal's Observations section |
 
 ### 3a. No cd-shortcut
 
-**The cross-repo path is `gh issue create --repo`. Always.** Even when the target repo is checked out at a known path locally, do NOT cd into it to file the issue from there. Retros run from a remote Claude sandbox don't have target repos cloned — the slash command must be portable, and `gh issue create --repo` works identically from a sandbox or a local laptop.
+**Always name the target repo explicitly. Never `cd` into it.** Even when the target repo is checked out at a known path locally, do NOT change into it to file the issue from there. Retros run from a remote sandbox don't have target repos cloned — the command must be portable.
+
+Both routes satisfy this, because both take the repo as an argument rather than inferring it from the working directory: `mcp__github__issue_write` with an explicit `owner`/`repo`, or `gh issue create --repo pmgledhill102/<target>`. Either works identically from a sandbox or a laptop.
+
+Prefer MCP when it is connected. Keep `gh` in mind for headless or sandbox runs, where a `gh` token is more reliably present than an interactively-authenticated MCP server — that portability is the reason the `gh` forms are still written out here.
 
 ### 3b. Never edit settings.json — file an a-c-c Issue
 
@@ -154,6 +158,12 @@ Wait for explicit confirmation. Don't proceed on ambiguous input.
      - **Filesystem inbox** (preferred): if `[ -d ~/dev/paul-context/_incoming ] && [ -w ~/dev/paul-context/_incoming ]`, `Write` the journal markdown to `~/dev/paul-context/_incoming/<filename>`. **No git operations against `paul-context`.**
      - **GitHub Issue fallback** (sandbox / remote VM / no local clone): stage the journal markdown with the `Write` tool to `/tmp/<filename>` (`Edit(/tmp/**)` is auto-allowed, and `Edit` rules cover the `Write` tool), then file as a labeled Issue:
 
+       Create the issue on `pmgledhill102/paul-context` with the
+       `journal-draft` label and the title `journal: <filename-without-.md>`,
+       body taken from the staged file. Prefer `mcp__github__issue_write`;
+       the `gh` form below is the portable fallback, and matters here because
+       this path fires precisely when the session is in a sandbox:
+
        ```sh
        gh issue create --repo pmgledhill102/paul-context \
            --label journal-draft \
@@ -165,9 +175,9 @@ Wait for explicit confirmation. Don't proceed on ambiguous input.
      - **Both unreachable** (rare — offline AND no local clone): print the full draft to the session log with clear `===BEGIN JOURNAL===` / `===END JOURNAL===` delimiters and stop. Don't silently discard content. Tell the user to save it manually.
    - Capture `paul-context/journal/<filename>` (the eventual post-promotion path) for cross-references in subsequent issues. The path is stable across both inbox paths because both preserve `<filename>` exactly.
 2. **memory**: Write the memory file with proper frontmatter (`name`, `description`, `type` of `user|feedback|project|reference`), then Edit `MEMORY.md` to add a one-line index entry. Follow the conventions in the parent CLAUDE.md auto-memory section.
-3. **issue** (same-repo): `gh issue create --title="..." --body-file=... --label "type: <type>,P<n>"` — run from the **current cwd** against the current repo. Body **MUST** include `From retro: paul-context/journal/<file>.md` near the top. Capture the issue number for the summary.
-4. **issue** (cross-repo): `gh issue create --repo pmgledhill102/<repo> --title="..." --body="..."` — filed from wherever the retro runs; never `cd` into the target repo (see step 3a). Body **MUST** include `From retro: paul-context/journal/<file>.md`. Capture the URL.
-5. **settings**: file it as an Issue against `pmgledhill102/agentic-coding-config` — `gh issue create --repo pmgledhill102/agentic-coding-config --title="..." --body-file=...` — exactly as for any other cross-repo finding. Include the precise rule string, the friction it removes, and whether the command is read-only. **Do not apply the change to any `settings.json`** (see 3b); a single-line permission addition is still an Issue, not an edit.
+3. **issue** (same-repo): create it against the current repo, with a `type:` label and a `P<n>` priority — `mcp__github__issue_write`, else `gh issue create --title="..." --body-file=... --label "type: <type>,P<n>"` from the **current cwd**. Body **MUST** include `From retro: paul-context/journal/<file>.md` near the top. Capture the issue number for the summary.
+4. **issue** (cross-repo): create it against `pmgledhill102/<repo>`, naming the repo explicitly — `mcp__github__issue_write` with `owner`/`repo`, else `gh issue create --repo pmgledhill102/<repo>`. Filed from wherever the retro runs; never `cd` into the target repo (see step 3a). Body **MUST** include `From retro: paul-context/journal/<file>.md`. Capture the URL.
+5. **settings**: file it as an Issue against `pmgledhill102/agentic-coding-config`, by either route — exactly as for any other cross-repo finding. Include the precise rule string, the friction it removes, and whether the command is read-only. **Do not apply the change to any `settings.json`** (see 3b); a single-line permission addition is still an Issue, not an edit.
 
 If any single create fails, surface the error and continue with the rest. Don't roll back successful artifacts on partial failure.
 

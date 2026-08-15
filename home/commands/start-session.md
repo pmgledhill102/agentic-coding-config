@@ -98,6 +98,14 @@ Output is a sectioned stream. Each section starts with `===<name> (exit=<N>)===`
 | `gh_assigned` | 7 | Same skip convention as `gh_ready`. Empty content = nothing in flight. Otherwise pipe-separated rows: `#<n>\|P<pri>\|<title>` for open issues assigned to me (usually 0-3). Same row shape as `gh_ready`. |
 | `claude_drift` | 6b, 7 | `state=absent` (sandbox, no `~/.claude`) or `state=no-source` (not in an a-c-c checkout) = silent skip. `state=compared` gives `behind=<n>` and `modified=<n>`, then one `behind: <path>` / `modified: <path>` line each, plus `remedy_behind=` / `remedy_modified=` when non-zero. Both zero = silent. |
 
+**On `gh` inside the gather script.** The gather runs as a shell script, so its
+GitHub queries use `gh` and cannot use `mcp__github__*` — an MCP tool is not
+callable from a subprocess. That is a deliberate exception to the MCP-first
+preference, not an oversight: it is also what makes the gather work unchanged in
+a headless or sandbox run, where a `gh` token is more reliably present than an
+interactively-authenticated MCP server. Any GitHub op **this command** performs
+directly, outside the gather, should prefer MCP.
+
 Rules for interpreting exit codes:
 
 - `exit=0` with empty content: clean result (no ready work, nothing assigned, etc.). Treat as "none".

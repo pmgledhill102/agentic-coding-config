@@ -12,16 +12,13 @@ Anything portable belongs in `AGENTS.md`, not here. This file is for what
 would be meaningless to Codex or OpenCode: Claude Code tool names, and the
 MCP servers configured on this surface.
 
-Ephemeral-first engineering principles are maintained separately, because
-they are portable policy rather than Claude-specific:
-
-@ephemeral-first.md
-
 ## GitHub MCP
 
 - **Prefer `mcp__github__*` tools over the `gh` CLI for all GitHub operations** when the GitHub MCP server is connected. Only fall back to `gh` if the MCP server is unavailable or a specific capability is missing
 - Common mappings: PRs (`create_pull_request`, `pull_request_read`, `update_pull_request`, `merge_pull_request`, `list_pull_requests`, `search_pull_requests`), reviews (`pull_request_review_write`, `add_comment_to_pending_review`, `add_reply_to_pull_request_comment`), issues (`issue_read`, `issue_write`, `list_issues`, `search_issues`, `add_issue_comment`), releases (`get_latest_release`, `list_releases`, `get_release_by_tag`), repo content (`get_file_contents`, `list_commits`, `get_commit`, `list_branches`, `create_branch`), search (`search_code`, `search_repositories`)
 - PR review workflow: create a pending review with `pull_request_review_write` (method: "create"), add line comments with `add_comment_to_pending_review`, then submit with `pull_request_review_write` (method: "submit_pending")
+- **`gh` commands written into a skill or slash command are illustrative, not prescriptive.** Use the `mcp__github__*` equivalent when the MCP server is connected; keep `gh` for sandbox and headless runs, where a `gh` token is more reliably present than an interactively-authenticated MCP server. A literal command in an instruction otherwise overrides this preference at execution time, which is how a session ends up doing every discretionary GitHub op through MCP and every skill-driven one through the CLI
+- Both routes are auto-approved to the same extent, so preferring MCP costs no extra prompts. The one asymmetry is scope: `Bash(gh issue create --repo pmgledhill102/*)` restricts CLI issue creation to the user's own repos, while `mcp__github__issue_write` cannot express that and is approved unscoped. Accepted deliberately — the tool takes an explicit `owner`, so a wrong-repo write is a visible argument rather than a silent default
 
 ### How the portable rules map to these tools
 

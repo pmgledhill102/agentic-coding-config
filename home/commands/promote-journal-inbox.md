@@ -49,13 +49,19 @@ For each `<filename>` in the sorted list:
 
 ### 1. Find labeled Issues
 
+List open issues on `pmgledhill102/paul-context` labelled `journal-draft`,
+with their number, title, body and creation time.
+
+Prefer `mcp__github__list_issues` (`labels=["journal-draft"]`, `state=OPEN`)
+when the MCP server is connected. The `gh` form is the portable fallback, for
+sandbox and headless runs where a token is more reliably present than an
+interactively-authenticated MCP server:
+
 ```sh
 gh issue list --repo pmgledhill102/paul-context \
     --label journal-draft --state open --limit 100 \
     --json number,title,body,createdAt
 ```
-
-If the `gh` CLI is unavailable, fall back to `mcp__github__list_issues` with `labels=["journal-draft"]` and `state=OPEN`.
 
 If empty, skip to Phase 3.
 
