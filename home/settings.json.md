@@ -95,9 +95,11 @@ its own heading — currently just `gcloud builds` (see below).
 
 #### Auth and config
 
+`gcloud auth list` reports which accounts are configured; it prints no
+credential material. The two `print-*-token` forms do, and are in the
+Never Allow list below.
+
 - `Bash(gcloud auth list *)`
-- `Bash(gcloud auth print-access-token *)`
-- `Bash(gcloud auth print-identity-token *)`
 - `Bash(gcloud config *)`
 - `Bash(gcloud info *)`
 
@@ -677,6 +679,7 @@ the user revisits it.
 | `Bash(gcloud storage cp *)` | Write operation — uploads to GCS |
 | `Bash(gcloud run services update-traffic *)` | Mutates production Cloud Run traffic |
 | `Bash(gcloud secrets versions access *)` | Reads secret values — credential-exfiltration risk |
+| `Bash(gcloud auth print-access-token *)` / `Bash(gcloud auth print-identity-token *)` | Prints a live credential to stdout, i.e. into the transcript and therefore into model context — the exact exfiltration path the credential broker exists to close. `home/commands/gcp-credentials.md` forbids running these in bold ("Never run `gcloud auth print-access-token`"), so auto-approving them made the forbidden action the frictionless one on every local machine. Removed 2026-08; do not re-add |
 | `Bash(gcloud monitoring *)` / `Bash(gcloud beta monitoring *)` / `Bash(gcloud alpha monitoring *)` | Can modify alerts and dashboards, not read-only |
 | `Bash(gh api *)` / `Bash(gh api repos/*)` | Full GitHub API including POST/PATCH/DELETE — prefer `mcp__github__*` |
 | `Bash(gh repo create *)` | Creates repositories — infrequent, should always prompt |

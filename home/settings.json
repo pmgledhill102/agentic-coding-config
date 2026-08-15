@@ -65,8 +65,6 @@
       "Bash(gcloud artifacts repositories describe *)",
       "Bash(gcloud artifacts repositories list *)",
       "Bash(gcloud auth list *)",
-      "Bash(gcloud auth print-access-token *)",
-      "Bash(gcloud auth print-identity-token *)",
       "Bash(gcloud beta logging tail *)",
       "Bash(gcloud builds *)",
       "Bash(gcloud compute backend-services describe *)",
