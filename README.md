@@ -56,7 +56,9 @@ restructure that introduced `home/` is on top of that history.
 ├── docs/                      # repo-meta: workflow docs and runbooks
 ├── .github/, .pre-commit-config.yaml, .markdownlint.yaml, .gitignore
 └── home/                      # ← THIS subdirectory mounts at ~/.claude/
-    ├── CLAUDE.md              → ~/.claude/CLAUDE.md  (universal policy)
+    ├── AGENTS.md              → ~/.claude/AGENTS.md  (portable policy core — every provider)
+    ├── CLAUDE.md              → ~/.claude/CLAUDE.md  (Claude adapter; imports the other two)
+    ├── local-machine.md       → ~/.claude/local-machine.md  (workstation-only guidance)
     ├── settings.json          → ~/.claude/settings.json
     ├── settings.json.md       → ~/.claude/settings.json.md  (annotated companion, kept alongside)
     ├── commands/              → ~/.claude/commands/
