@@ -1,5 +1,32 @@
 repos:
   - repo: https://github.com/DavidAnson/markdownlint-cli2
-    rev: v0.21.0
+    rev: v0.23.2
     hooks:
       - id: markdownlint-cli2
+
+  # shellcheck and actionlint as `repo: local` / system hooks rather than a
+  # mirror or a docker_image hook, per /setup-common's own guidance: prefer the
+  # binary the project already depends on, so the hook and CI cannot silently
+  # run different versions. The docker_image variants would also need a Docker
+  # daemon, which a podman machine does not necessarily provide.
+  #
+  # These need shellcheck and actionlint on PATH. Both are already assumed by
+  # this repo (CI runs them, and both are auto-approved in home/settings.json).
+  # If one is genuinely missing, `SKIP=shellcheck git commit ...` gets past it —
+  # CI is the source of truth and still runs both.
+  - repo: local
+    hooks:
+      - id: shellcheck
+        name: shellcheck
+        description: the repo's payload is shell scripts; CI covered them, this catches them earlier
+        language: system
+        entry: shellcheck
+        types: [shell]
+
+      - id: actionlint
+        name: actionlint
+        description: lint workflow files before they reach CI
+        language: system
+        entry: actionlint
+        files: ^\.github/workflows/
+        types: [yaml]
