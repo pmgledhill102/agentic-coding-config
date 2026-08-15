@@ -4,15 +4,19 @@ Portable working policy, in AGENTS.md format. Everything here holds for any
 agent on any surface — Claude Code, Codex, OpenCode, local machine or cloud
 sandbox.
 
-Two companions carry what does *not* belong here:
+Companions:
 
+- `ephemeral-first.md` — portable too, kept separate because it is a coherent
+  set of principles rather than a rule list. Imported below.
 - `CLAUDE.md` — the Claude Code adapter: tool-name mappings and anything
   meaningless to another provider. It imports this file.
 - `local-machine.md` — guidance that is only true on a workstation:
   chezmoi, the interactive shell, macOS paths.
 
-Keep a statement in exactly one of the three. If a rule is portable it
-belongs here, and the adapter should reference it rather than restate it.
+Keep a statement in exactly one of these. If a rule is portable it belongs
+here, and the adapter should reference it rather than restate it.
+
+@ephemeral-first.md
 
 ## Git Workflow
 
