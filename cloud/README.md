@@ -135,3 +135,49 @@ the branch that installs the gcloud wrapper.
 
 Skills are read when the agent starts, so a newly installed skill appears after
 the session restarts or resumes. The helper is usable immediately.
+
+## When the broker says the helper is too old (exit 8)
+
+The helper sends a `X-Client-Version` header on `/request` and `/poll`, and the
+broker refuses anything below its minimum with HTTP 426 — **before** posting an
+approval card, so a stale client never spends a human approval it cannot
+complete. The helper exits 8 and renders the broker's hint.
+
+This exists because a client too old to understand a new broker state is also
+too old to know that the state exists: three broker releases in a row
+(`warming`, `failed`, `provisioning`) each broke running sessions with
+`unexpected state: <name>`. Self-checking asks the stale component to detect its
+own staleness, which only works for cases it already anticipated. The broker
+always knows what it needs, so the check belongs there.
+
+**Why this bites cloud sessions specifically.** The environment snapshots the
+setup script's result and re-runs it only when the script *text* changes, the
+allowed domains change, or roughly seven days pass. Because `main` never changes
+as a string, **pushing to `main` does not reach new sessions** — they keep
+restoring a snapshot built with whatever helper was current then. A cloud
+session can be running a week-old client with nothing to indicate it.
+
+Two remedies, in the order you want them:
+
+| Situation | Do this |
+| --- | --- |
+| The session in front of you | Re-run the bootstrap (above). Takes effect immediately for the helper |
+| Every session from now on | Bump `Rev:` in the setup script, forcing a rebuild |
+
+Do both. The re-run unblocks the task at hand; the `Rev:` bump is what stops the
+next session hitting the same wall. On a local machine the equivalent is
+`chezmoi apply --refresh-externals` — see the skill doc.
+
+**The version constant is bumped in the same commit as the wire change that
+needs it**, on both sides. That is the whole value of the mechanism: the bump is
+the moment someone notices a client change is required, rather than a session
+discovering it mid-task. The helper's `CLIENT_VERSION` carries a comment saying
+so; the broker's `clientversion.go` keeps the authoritative history.
+
+Do **not** make the skill fetch and install a newer helper before running. The
+helper is what displays the verification phrase, which makes it the one
+client-side component that is security-relevant — a compromised helper could
+show a phrase that does not match the request it made and walk a human into
+approving something else. Updating that component *inside* the credential flow
+means the code implementing the phrase check can change during the request it is
+checking. Detect and instruct; do not self-modify.
