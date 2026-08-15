@@ -1,6 +1,9 @@
 # ADR-0014: Portable agent-config architecture (skills-first, provider-neutral core)
 
-- **Status**: Accepted (2026-08-09, ratified via PR #143)
+- **Status**: Accepted (2026-08-09, ratified via PR #143), **amended
+  2026-08-13 by [ADR-0016](0016-capability-delivery-principles.md)** —
+  which narrows decision 3: per-repo marketplace configuration is not the
+  delivery route for everything it implies here. Read 0016 alongside this.
 - **Date**: 2026-08-09
 - **Tags**: claude-code, codex, opencode, skills, plugins, architecture
 - **Scope**: user (applies to all personal repos and agent surfaces)
