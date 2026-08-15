@@ -66,6 +66,27 @@ non-zero and the table below says to.
 Useful options: `--ttl 72h` (1–7 days, default 24h), `--timeout 900`,
 `--no-gcloud` if you only want the token file.
 
+### If a grant is already live, `request` refuses
+
+`request` checks for an unexpired grant on disk before it opens anything, and
+exits 2 rather than asking a human to approve access they have already approved:
+
+```text
+gcp-credentials: a live grant already exists for example-project-sbx, valid for
+another 19h 40m (until 2026-08-16T11:33Z). ... Run 'gcp-credentials renew' to
+mint a token now, or 'gcp-credentials refresh --background' if the refresh loop
+has died; 'gcp-credentials status' shows which. Pass --force to request a new
+approval anyway.
+```
+
+This is not an error to work around. Do what it says — `renew` and
+`refresh --background` need no human and take one HTTP call. `--force` exists
+for the case where the existing grant is genuinely the wrong one (wrong project,
+wrong tier, too little time left for the work); spending an approval to get back
+something you already hold is not that case.
+
+Nothing was sent to the broker when you see this, so no approval was consumed.
+
 Write a **specific purpose**. It is the only thing the human has to judge the
 request by, and it is rendered on the card as untrusted, agent-written text.
 "deploy the Apigee bootstrap module to the sandbox" is approvable;
@@ -147,7 +168,7 @@ channel by the service that built it.
 | Exit | Meaning | What to do |
 | --- | --- | --- |
 | 0 | Installed | Carry on. Say which project and when the grant expires. |
-| 2 | Usage error | Fix the arguments. |
+| 2 | Usage error, **or a live grant already exists** | Fix the arguments. If it names a live grant, use `renew` / `refresh --background` instead — see [above](#if-a-grant-is-already-live-request-refuses). |
 | 3 | **Denied** or revoked | Stop. A human said no. Do not re-request without asking them why. |
 | 4 | Timed out / expired | Nobody answered, which the broker treats as a deny. Ask the user before retrying. |
 | 5 | Rate limited | Wait. Do not loop. |
