@@ -77,7 +77,8 @@ restructure that introduced `home/` is on top of that history.
     ├── local-machine.md       → ~/.claude/local-machine.md  (workstation-only guidance)
     ├── settings.json          → ~/.claude/settings.json
     ├── settings.json.md       → ~/.claude/settings.json.md  (annotated companion, kept alongside)
-    ├── commands/              → ~/.claude/commands/
+    ├── commands/              → ~/.claude/commands/  (Claude slash commands)
+    ├── skills/                → ~/.claude/skills/    (Agent Skills — provider-neutral)
     └── bin/                   → ~/.claude/bin/  (helper executables)
 ```
 
@@ -258,6 +259,32 @@ Each `/setup-*` command contains:
 /setup-common     # Local tooling foundation (depends on branch protection for auto-merge)
 /setup-python     # Language-specific tooling
 ```
+
+### Skills (provider-neutral)
+
+The 16 provider-neutral commands — every `/setup-*` plus `/repo-review` — also
+exist as [Agent Skills](https://agentskills.io) under `home/skills/`, one
+`<name>/SKILL.md` each with `name` + `description` frontmatter. Skills are the
+portable unit: native in Claude Code, and the primary customisation unit in
+Codex, with OpenCode, Gemini CLI, Cursor and Copilot also reading the format
+(ADR-0014).
+
+Skill bodies carry no `$ARGUMENTS` / `$1` / `` !`cmd` `` / `@file` templating —
+Codex's parser rejects those — so arguments arrive as free text ("the user names
+the target language in their request").
+
+**Both forms ship for now.** The commands stay until the plugin cutover
+([#48][issue-48]); retirement is tracked separately. Until then the skill body
+is a copy, so **a change to one needs the same change to the other** — the
+duplication is deliberate and temporary, but it can drift.
+
+The session-lifecycle commands (`/start-session`, `/end-session`,
+`/retrospective`, `/promote-journal-inbox`) and `/gcp-credentials` are **not**
+converted: they carry Claude-specific tool references or are local-only.
+`/gcp-credentials` already ships as a skill to sandboxes by another route —
+`cloud/bootstrap.sh` writes it to `~/.agents/skills/`.
+
+[issue-48]: https://github.com/pmgledhill102/agentic-coding-config/issues/48
 
 **Maintenance and review:**
 
