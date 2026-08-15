@@ -42,6 +42,21 @@ jobs:
         uses: ludeeus/action-shellcheck@00b27aa7cb85167568cb48a3838b75f4265f2bca # master
         with:
           scandir: './cloud'
+      - name: Run ShellCheck (tests/)
+        uses: ludeeus/action-shellcheck@00b27aa7cb85167568cb48a3838b75f4265f2bca # master
+        with:
+          scandir: './tests'
+
+  credential-helper:
+    name: gcp-credentials behaviour
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      # The helper ships to every cloud sandbox via the bootstrap fetch and to
+      # every laptop via chezmoi, so a regression here has no staging tier.
+      - name: Run the credential-helper tests
+        run: sh tests/gcp-credentials-test.sh
 
   actionlint:
     name: Action Lint
