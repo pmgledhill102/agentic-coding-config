@@ -57,6 +57,10 @@ jobs:
       # every laptop via chezmoi, so a regression here has no staging tier.
       - name: Run the credential-helper tests
         run: sh tests/gcp-credentials-test.sh
+      # The hook fires on every Bash call, so what it does and does not
+      # classify as a commit/push is the whole of its cost.
+      - name: Run the pre-commit hook classification tests
+        run: sh tests/precommit-hook-test.sh
 
   skills-sync:
     name: skills ↔ commands sync
