@@ -266,6 +266,51 @@ Escalate only if `renew` itself fails:
 - exit 2 — no grant on this machine at all; request one
 - exit 1 — the broker is unreachable, which is a real fault worth reporting
 
+### `ACCESS_TOKEN_TYPE_UNSUPPORTED` — the one `renew` cannot fix
+
+This error reads like a broker fault or an IAM problem and is neither. It means
+**an environment variable is outranking the token file**, so gcloud never looks
+at what the helper installed.
+
+gcloud resolves every property in the order environment variable →
+configuration → default. `CLOUDSDK_AUTH_ACCESS_TOKEN` is both higher precedence
+*and* a different property (`auth/access_token`) than the
+`auth/access_token_file` the helper sets, so a preset value wins over everything
+the helper does — silently. It was preset in a sandbox image, and cost most of a
+debugging session because every diagnostic said healthy.
+
+`status` now says so directly:
+
+```text
+gcloud  : OVERRIDDEN by CLOUDSDK_AUTH_ACCESS_TOKEN — gcloud ignores the broker token; calls will fail
+          unset it, or run gcloud through a wrapper that does. The grant is fine.
+```
+
+The variables that do this:
+
+| Variable | Overrides |
+| --- | --- |
+| `CLOUDSDK_AUTH_ACCESS_TOKEN` | `auth/access_token_file` — the observed case |
+| `CLOUDSDK_AUTH_ACCESS_TOKEN_FILE` | the same property the helper sets |
+| `CLOUDSDK_CORE_PROJECT` | the project the helper sets — calls go elsewhere |
+| `GOOGLE_APPLICATION_CREDENTIALS` | client libraries and Terraform, not gcloud |
+| `GOOGLE_OAUTH_ACCESS_TOKEN` | client libraries and Terraform, not gcloud |
+
+**The remedy is `unset`, not `renew` and not `request`.** The grant is valid and
+the token file is correct; this is gcloud plumbing. `renew` will cheerfully
+succeed and change nothing, and `request` spends a human approval on a problem
+no approval can solve.
+
+```sh
+unset CLOUDSDK_AUTH_ACCESS_TOKEN
+```
+
+If the variable is preset by the environment image rather than by something in
+the session, it will come back in the next session: say so, so it gets reported
+to whoever owns the image. A general-purpose dev container presetting
+`CLOUDSDK_AUTH_ACCESS_TOKEN` hijacks gcloud auth for anything that brings its
+own credentials.
+
 ## After a container restart or a resumed session
 
 **Check this before anything else in a resumed cloud session.** Sandboxes
