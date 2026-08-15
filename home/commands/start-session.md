@@ -22,6 +22,31 @@ git rev-parse --is-inside-work-tree
 
 If the exit code is non-zero (or stdout is not `true`), print a single-line warning (`` `/start-session` requires a git-backed repo — nothing to sync, stopping. ``) and stop.
 
+## Surface
+
+This command runs on a workstation and in a cloud sandbox, and some steps only
+make sense on one of them. Two facts settle every such case:
+
+**Where the helper scripts are.** Prefer the plugin-relative path and fall back
+to the chezmoi one:
+
+```sh
+${CLAUDE_PLUGIN_ROOT:-$HOME/.claude}/bin/<script>
+```
+
+Both spellings are auto-approved in `settings.json`. Under chezmoi the variable
+is unset and this resolves to `~/.claude/bin/`; under a plugin install it
+resolves inside the plugin. Do not hard-code either.
+
+**Which surface this is.** `command -v chezmoi` is the test. A workstation has
+chezmoi and a `~/.claude/` it manages; a sandbox has neither, having been built
+by `cloud/bootstrap.sh` from scratch.
+
+Machine-specific steps **detect and skip** — they never error. A skipped step
+reports `n/a (sandbox)` in the summary rather than vanishing, so the brief means
+the same thing everywhere and a missing line is never ambiguous between "clean"
+and "could not check".
+
 ## Repo-level policy (`.agent-policy`)
 
 **Optional.** A POSIX shell `KEY=VALUE` file at the repo root that opts specific Tier 2 prompts into Tier 1 (auto-run, no prompt) on a per-repo basis. Defaults (file absent or key unset) preserve the prompt — adding the file never makes any repo behave more aggressively than before.
@@ -58,7 +83,7 @@ This loads any opt-in keys consulted by Tier 2 steps. The file is optional; if a
 Run the parallel gather script. It does `git fetch --all --prune --tags` first, resolves the repo's default branch, then fans out all read-only queries (local branch state, `main` CI, ready/assigned GitHub issues) in parallel. The script compacts each section's output to keep model-visible context cost low: `fetch`'s body is suppressed on success, and `main_ci` is parsed in-script to one line per workflow.
 
 ```sh
-~/.claude/bin/start-session-gather-state
+${CLAUDE_PLUGIN_ROOT:-$HOME/.claude}/bin/start-session-gather-state
 ```
 
 Output is a sectioned stream. Each section starts with `===<name> (exit=<N>)===`. The sections are:

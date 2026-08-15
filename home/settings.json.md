@@ -41,6 +41,17 @@ prompt.
 
 - `Bash(~/.claude/bin/end-session-*)`
 - `Bash(~/.claude/bin/start-session-*)`
+- `Bash(${CLAUDE_PLUGIN_ROOT}/bin/end-session-*)`
+- `Bash(${CLAUDE_PLUGIN_ROOT}/bin/start-session-*)`
+
+The `${CLAUDE_PLUGIN_ROOT}` pair is the same grant for the plugin delivery
+path (ADR-0014), added ahead of the cutover so the commands can reference
+their helpers plugin-relative wherever that variable is set. The matcher is
+literal-prefix and runs **before** shell expansion, so the variable spelling
+in the rule matches the variable spelling in the command — which is why both
+forms are listed rather than one being made to cover the other. Under chezmoi
+the variable is unset and the `~/.claude/bin/` rules are what match; the
+commands pick the form that exists.
 
 See `docs/end-session-design.md` for the full rationale.
 

@@ -22,6 +22,30 @@ git rev-parse --is-inside-work-tree
 
 If the exit code is non-zero (or stdout is not `true`), print a single-line warning (`` `/end-session` requires a git-backed repo — nothing to tidy, stopping. ``) and stop. Do not run any further checks, do not proceed to Phase 2.
 
+## Surface
+
+This command runs on a workstation and in a cloud sandbox. Two facts settle
+every step that only makes sense on one of them:
+
+**Where the helper scripts are.** Prefer the plugin-relative path and fall back
+to the chezmoi one — `${CLAUDE_PLUGIN_ROOT:-$HOME/.claude}/bin/<script>`. Both
+spellings are auto-approved in `settings.json`. Under chezmoi the variable is
+unset and this resolves to `~/.claude/bin/`; under a plugin install it resolves
+inside the plugin. Do not hard-code either.
+
+**Which surface this is.** `command -v chezmoi` is the test. A workstation has
+chezmoi and a `~/.claude/` it manages; a sandbox has neither.
+
+Machine-specific steps **detect and skip** — they never error, and they report
+`n/a (sandbox)` in the summary rather than vanishing, so a missing line is never
+ambiguous between "clean" and "could not check". Step 11 already works this way
+via the gather's `chezmoi-unavailable` sentinel; anything added later that
+touches `~/.claude/`, chezmoi, or a workstation path must do the same.
+
+Stash hygiene (step 9) is worth calling out: stashes exist in a sandbox but mean
+something different — the container is disposable, so a stash left behind is
+lost rather than waiting. Surface it as usual, and say so.
+
 ## Repo-level policy (`.agent-policy`)
 
 **Optional.** A POSIX shell `KEY=VALUE` file at the repo root that opts specific Tier 2 prompts into Tier 1 (auto-run, no prompt) on a per-repo basis. The file is shared with `/start-session` (which has its own keys); each command consults the keys it cares about. Defaults (file absent or key unset) preserve every prompt — adding the file never makes any repo behave more aggressively than before.
@@ -64,7 +88,7 @@ This loads any opt-in keys consulted by Tier 2 steps. The file is optional; if a
 Run the parallel gather script. It does `git fetch --all --prune --tags` first, then fans out all read-only queries (status/branch/log, stashes, worktrees, merged branches, `main` CI, open PRs, assigned GitHub issues) in parallel.
 
 ```sh
-~/.claude/bin/end-session-gather-state
+${CLAUDE_PLUGIN_ROOT:-$HOME/.claude}/bin/end-session-gather-state
 ```
 
 Output is a sectioned stream. Each section starts with `===<name> (exit=<N>)===`. The sections are:
@@ -160,7 +184,7 @@ Take the list from gather section `merged_brs`.
 **Batch B — Squash-merged branches** — branches whose upstream was deleted (`[upstream: gone]`, typical after GitHub squash-merge + branch delete) AND whose work is provably on `main`. These won't show up in Batch A because squash-merging rewrites history; `-d` would refuse them. The script accepts either of two "work is delivered" signals as the safety net — empty diff vs `main`, or GitHub records a merged PR with the branch as `headRefName` (fallback for cases where main has subtle post-squash drift that fails the diff but the PR clearly merged):
 
 ```sh
-~/.claude/bin/end-session-squash-merged
+${CLAUDE_PLUGIN_ROOT:-$HOME/.claude}/bin/end-session-squash-merged
 ```
 
 For each batch:
