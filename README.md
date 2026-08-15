@@ -1,8 +1,21 @@
 # agentic-coding-config
 
-Claude Code configuration: slash commands, hooks, settings, MCP. Mounted at
-`~/.claude/` on every machine via [chezmoi externals][chezmoi-externals]
-from my [dotfiles][dotfiles] repo.
+Agent configuration: slash commands, hooks, settings, MCP, and the helper
+executables they drive.
+
+It reaches an agent by **two delivery channels**, and which one applies
+depends on where the session is running:
+
+| Channel | Surface | Mechanism |
+| --- | --- | --- |
+| [chezmoi external][chezmoi-externals] | local machines | `home/` mounts at `~/.claude/`, via [dotfiles][dotfiles] |
+| network fetch | cloud sandboxes | `cloud/bootstrap.sh`, run by the environment's setup script |
+
+The second exists because a cloud sandbox starts empty and never sees your
+machine's user-level config. See [`cloud/README.md`](cloud/README.md) for
+the per-environment setup and
+[ADR-0016](adrs/0016-capability-delivery-principles.md) for why the substance
+lives in a fetched script rather than in the setup script itself.
 
 [chezmoi-externals]: https://www.chezmoi.io/reference/special-files-and-directories/chezmoiexternal-format/
 [dotfiles]: https://github.com/pmgledhill102/dotfiles
@@ -55,6 +68,9 @@ restructure that introduced `home/` is on top of that history.
 ├── adrs/                      # repo-meta: architecture decisions
 ├── docs/                      # repo-meta: workflow docs and runbooks
 ├── .github/, .pre-commit-config.yaml, .markdownlint.yaml, .gitignore
+├── cloud/                     # ← fetched over the network into cloud sandboxes
+│   ├── bootstrap.sh           #   installs the helper + skill into a container
+│   └── README.md              #   per-environment setup (script, domains, vars)
 └── home/                      # ← THIS subdirectory mounts at ~/.claude/
     ├── CLAUDE.md              → ~/.claude/CLAUDE.md  (universal policy)
     ├── settings.json          → ~/.claude/settings.json
@@ -152,12 +168,22 @@ the foundation, then stack any combination.
 
 ## What deploys vs what doesn't
 
-The archive external's `include` pattern means **only `home/**` deploys**.
-Everything at the repo root (this `README.md`, `adrs/`, `docs/`,
+The archive external's `include` pattern means **only `home/**` deploys via
+chezmoi**. Everything at the repo root (this `README.md`, `adrs/`, `docs/`,
 `.github/`, `.pre-commit-config.yaml`, `.markdownlint.yaml`, `.gitignore`,
 the project-level `CLAUDE.md` and `AGENTS.md`) stays in the
 repo and never lands at `~/.claude/`. No `.chezmoiignore` needed for these
 — the archive filter handles it cleanly.
+
+**`cloud/` is the exception that proves the rule.** It is excluded from the
+chezmoi external like everything else outside `home/`, and it is not
+repo-meta either: it is fetched over the network by a cloud environment's
+setup script and executed inside the container. So it never reaches
+`~/.claude/` on a laptop, and it is the only directory here that runs
+somewhere this repo is not checked out.
+
+That is also why CI shellchecks `cloud/` separately: code piped to a shell in
+every sandbox is the code most in need of linting, not the least.
 
 ### Deleting a file here does not delete it on machines
 
@@ -239,8 +265,10 @@ Each `/setup-*` command contains:
 
 `/repo-review` is portable — runs on any repo. Per-language scanners are
 required only when their manifest is detected (e.g. `pip-audit` only if
-`pyproject.toml` exists). Action items are emitted as Beads tasks when the
-project uses Beads, otherwise as a markdown report at
+`pyproject.toml` exists). Action items are emitted as **GitHub Issues**,
+following the conventions in
+[`docs/github-issues-workflow.md`](docs/github-issues-workflow.md); on a repo
+with no GitHub remote they land as a markdown report at
 `docs/reviews/repo-review-YYYY-MM-DD.md`.
 
 **GCP credentials:**
@@ -264,32 +292,65 @@ them. No context spent on rules — tooling output *is* the context.
 
 ## Hook configuration examples
 
-**Pre-commit hook (Layer 2):**
+The hooks actually shipped in
+[`home/settings.json`](home/settings.json) are the reference implementation,
+and [`home/settings.json.md`](home/settings.json.md) carries the rationale for
+each one. The two examples below are lifted from them, so the shapes here are
+real.
+
+There are two events, `PreToolUse` and `PostToolUse`, and each entry nests a
+`hooks` array inside a matcher. The matcher matches **tool names** —
+`Bash`, `Write`, `Edit` — not filesystem verbs.
+
+**Gating a command before it runs (`PreToolUse`):**
 
 ```json
 {
   "hooks": {
-    "PreCommit": [
-      { "command": "pre-commit run --all-files 2>&1 | tail -40" }
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/bin/precommit-claude-hook",
+            "timeout": 120
+          }
+        ]
+      }
     ]
   }
 }
 ```
 
-**File-level auto-fix (Layer 3):**
+There is **no `PreCommit` event**. Commit-stage linting is done by matching
+`Bash` and having the hook script inspect the command it was handed, which is
+what `precommit-claude-hook` does; blocking requires `exit 2`, the only
+non-zero code that both stops the call and returns stderr to Claude.
+
+**File-level auto-fix after a write (`PostToolUse`):**
 
 ```json
 {
   "hooks": {
     "PostToolUse": [
       {
-        "matcher": "write_file|edit_file|create_file",
-        "command": "prettier --write $CLAUDE_FILE_PATHS 2>&1 | tail -5"
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "FILE_PATH=$(jq -r '.tool_input.file_path // empty'); [[ \"$FILE_PATH\" == *.tf ]] && terraform fmt \"$FILE_PATH\" || true",
+            "timeout": 10
+          }
+        ]
       }
     ]
   }
 }
 ```
+
+The edited path arrives as JSON on the hook's **stdin** and is parsed with
+`jq`.
 
 ## MCP servers
 
