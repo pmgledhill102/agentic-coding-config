@@ -111,6 +111,11 @@ Fill this section in from that run rather than from the documentation.
 Not this. `~/.claude` is chezmoi-managed from `home/`; the bootstrap is for
 containers that start empty.
 
+## Ending access, and incident response
+
+Revocation levels and what to do about a possibly-exposed token or request key:
+[`docs/runbooks/sandbox-gcp-credentials.md`](../docs/runbooks/sandbox-gcp-credentials.md).
+
 ## What lands where
 
 | Path | What |
