@@ -41,7 +41,7 @@ gh repo edit \
   --enable-projects=false
 ```
 
-**Why both merge-commit and squash, and never rebase.** Merge-commit is the default (see the Git Workflow section of `~/.claude/CLAUDE.md`): squash replaces a branch's commits with a new SHA, so anything stacked on it re-applies work `main` already has. Rebase-merge shares that defect and offers no cleanup in return, so it is disabled outright rather than left as a tempting third button. Squash stays enabled for the case it is actually good at — a branch carrying WIP or fixup commits.
+**Why both merge-commit and squash, and never rebase.** Merge-commit is the default (see the Git Workflow section of `~/.claude/AGENTS.md`): squash replaces a branch's commits with a new SHA, so anything stacked on it re-applies work `main` already has. Rebase-merge shares that defect and offers no cleanup in return, so it is disabled outright rather than left as a tempting third button. Squash stays enabled for the case it is actually good at — a branch carrying WIP or fixup commits.
 
 GitHub has no "default merge method" field; the only levers are these three booleans, so leaving rebase enabled is what lets it drift back into use.
 
