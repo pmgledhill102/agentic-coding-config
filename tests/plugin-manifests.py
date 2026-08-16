@@ -13,6 +13,7 @@ Usage: python3 tests/plugin-manifests.py
 """
 
 import json
+import os
 import pathlib
 import re
 import sys
@@ -27,6 +28,24 @@ MARKETPLACE = ROOT / ".claude-plugin" / "marketplace.json"
 PLUGIN_COMPONENT_DIRS = {"skills", "commands", "agents", "hooks", "bin", "monitors"}
 
 NAME_RE = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
+
+# Hook events a plugin's hooks/hooks.json may declare.
+HOOK_EVENTS = {
+    "PreToolUse",
+    "PostToolUse",
+    "UserPromptSubmit",
+    "Notification",
+    "Stop",
+    "SubagentStop",
+    "SessionStart",
+    "SessionEnd",
+    "PreCompact",
+}
+
+# `${CLAUDE_PLUGIN_ROOT}/bin/foo` -> `bin/foo`, and the bare script name a
+# `plugin-hook-dispatch foo` invocation resolves under bin/.
+PLUGIN_ROOT_REF = re.compile(r"\$\{CLAUDE_PLUGIN_ROOT\}/([A-Za-z0-9._/-]+)")
+DISPATCH_REF = re.compile(r"plugin-hook-dispatch\"?\s+([A-Za-z0-9._-]+)")
 
 errors = []
 
@@ -123,6 +142,72 @@ def check_plugin_entry(entry):
         err(f"plugin '{name}' has no component directories at its root")
     else:
         print(f"  plugin '{name}' at {source}: {', '.join(found)}")
+
+    check_hooks(plugin_root)
+
+
+def check_hooks(plugin_root):
+    """Validate hooks/hooks.json, and that every script it names is really there.
+
+    A hook whose command points at a path that no longer exists fails at tool-use
+    time, in a sandbox, as a non-blocking warning nobody reads -- so a renamed or
+    deleted script under bin/ would go unnoticed indefinitely. Resolving the
+    references here is the cheap way to catch it.
+    """
+    hooks_file = plugin_root / "hooks" / "hooks.json"
+    if not hooks_file.exists():
+        # A plugin without hooks is legitimate; only a broken one is an error.
+        return
+    rel = hooks_file.relative_to(ROOT)
+    try:
+        data = json.loads(hooks_file.read_text())
+    except json.JSONDecodeError as e:
+        err(f"{rel} is not valid JSON: {e}")
+        return
+
+    events = data.get("hooks")
+    if not isinstance(events, dict) or not events:
+        err(f"{rel} must have a non-empty top-level 'hooks' object")
+        return
+
+    count = 0
+    for event, matchers in events.items():
+        if event not in HOOK_EVENTS:
+            err(f"{rel}: unknown hook event '{event}'")
+        if not isinstance(matchers, list):
+            err(f"{rel}: '{event}' must be a list of matcher groups")
+            continue
+        for group in matchers:
+            for hook in group.get("hooks", []):
+                count += 1
+                if hook.get("type") != "command":
+                    err(f"{rel}: '{event}' hook has type '{hook.get('type')}', expected 'command'")
+                command = hook.get("command", "")
+                if not isinstance(command, str) or not command:
+                    err(f"{rel}: '{event}' hook has no command string")
+                    continue
+                if "timeout" in hook and not isinstance(hook["timeout"], int):
+                    err(f"{rel}: '{event}' hook timeout must be an integer")
+                check_hook_targets(rel, plugin_root, command)
+    print(f"  hooks.json: {count} hooks across {len(events)} events")
+
+
+def check_hook_targets(rel, plugin_root, command):
+    for ref in PLUGIN_ROOT_REF.findall(command):
+        target = plugin_root / ref
+        if not target.is_file():
+            err(f"{rel}: command references ${{CLAUDE_PLUGIN_ROOT}}/{ref}, which does not exist")
+        elif not os.access(target, os.X_OK):
+            err(f"{rel}: ${{CLAUDE_PLUGIN_ROOT}}/{ref} is not executable")
+
+    # The dispatcher takes a bare script name and runs bin/<name>; a typo there
+    # is invisible to the reference check above.
+    for name in DISPATCH_REF.findall(command):
+        target = plugin_root / "bin" / name
+        if not target.is_file():
+            err(f"{rel}: plugin-hook-dispatch names '{name}', which is not in bin/")
+        elif not os.access(target, os.X_OK):
+            err(f"{rel}: bin/{name} is not executable")
 
 
 def main():
