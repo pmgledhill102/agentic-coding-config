@@ -23,9 +23,41 @@
 # Entries are permanent. Removing a line once the file is gone everywhere is
 # not worth the risk — a machine that hasn't been applied to in a year still
 # needs it. Group by retirement with a dated comment.
+#
+# THIS FILE HAS TWO SECTIONS. Everything above the UNDEPLOYED marker below is
+# retired: gone from home/, gone from every machine. Everything below it is
+# still in home/ — because home/ is also the plugin root — but is no longer
+# delivered to ~/.claude/. The pruner treats both the same way and needs no
+# knowledge of the distinction; CI is what tells them apart, and it asserts
+# the OPPOSITE condition for each. See the marker comment for the rules.
 
 # 2026-07-18 (d7a3f6d) — beads tracker retired in favour of GitHub Issues (#123)
 commands/bd-enable-server-mode.md
 commands/bd-import-github-issues.md
 commands/bd-modernize.md
 bin/bd-push-safe
+
+# === UNDEPLOYED: delivered by the plugin, no longer deployed by chezmoi ===
+#
+# WHY A SECOND SECTION: #48 made home/ double as the plugin root, so the paths
+# that move to the plugin cannot be deleted from home/ the way a retired file
+# is — deleting them would remove them from the plugin too. They still have to
+# be removed from ~/.claude/ on machines that already have them, because
+# chezmoi never deletes a target it has stopped managing. Same pruner, opposite
+# precondition.
+#
+# CI RULE: an entry below this marker MUST still exist in home/. If it doesn't,
+# it isn't undeployed — it's retired, and belongs above the marker. That
+# inversion is the guard: neither section can silently absorb the other's
+# mistakes, and moving the marker without moving the entries fails the build.
+#
+# ORDERING, AND WHY THIS SECTION IS EMPTY: an entry here is only correct once
+# the chezmoi external has stopped deploying that path — which is a change to
+# the `include` filter in pmgledhill102/dotfiles, not something this repo can
+# make. Listing a path while chezmoi still deploys it makes every `chezmoi
+# apply` write the file and the post-apply pruner immediately delete it again.
+# That converges on the right end state, but it is churn masquerading as
+# working. So: dotfiles narrows the include FIRST, then the paths land here.
+#
+# It is also gated on #48's end-to-end verification — do not undeploy anything
+# the plugin has not been observed to deliver. See #142.

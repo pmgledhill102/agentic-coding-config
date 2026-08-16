@@ -38,7 +38,11 @@ No build step. Quality gates (run before pushing; CI runs the same):
 ```bash
 markdownlint-cli2 "**/*.md"              # markdown lint
 sh tests/gcp-credentials-test.sh         # credential-helper behaviour
+sh tests/precommit-hook-test.sh          # pre-commit hook matching
+sh tests/retired-paths.sh                # the prune list is safe and sectioned
+sh tests/retired-paths-test.sh           # ...and its validator still catches
 python3 tests/skills-match-commands.py   # skills match their source commands
+python3 tests/plugin-manifests.py        # marketplace, plugin and hook manifests
 
 # shell — CI scans home/bin/, cloud/ and tests/. Select by shebang: home/bin/
 # also holds a Python script, and `shellcheck home/bin/*` errors on it.

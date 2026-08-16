@@ -291,6 +291,53 @@ never has to change again.
 Entries are permanent: a machine that hasn't been applied to in a year
 still needs them.
 
+### Undeploying a file, which is not the same as retiring it
+
+Since `home/` doubles as the plugin root, the paths that move to the plugin
+channel **cannot be deleted from `home/`** — that would remove them from the
+plugin too. But they still have to leave `~/.claude/`, because chezmoi never
+deletes a target it has stopped managing. Same pruner, opposite precondition.
+
+`home/retired-paths` therefore has two sections, split by an `UNDEPLOYED`
+marker line:
+
+| Section | Meaning | CI asserts |
+| --- | --- | --- |
+| Above the marker | Retired — gone from `home/`, gone from machines | the path is **absent** from `home/` |
+| Below the marker | Undeployed — the plugin still ships it, chezmoi no longer delivers it | the path is **present** in `home/` |
+
+The inversion is the guard: an entry on the wrong side fails the build, so
+neither section can quietly absorb the other's mistakes. `tests/retired-paths.sh`
+is the validator and runs in CI; `tests/retired-paths-test.sh` checks the
+validator against both mirror-image mistakes, because the real list is empty
+below the marker and so exercises neither branch on its own.
+
+**The undeployed section is empty on purpose.** An entry is only correct once
+the chezmoi external has stopped deploying that path — a change to the
+`include` filter in `dotfiles`, which this repo cannot make. List a path while
+chezmoi still deploys it and every `chezmoi apply` writes the file, then the
+post-apply pruner deletes it again: convergent, but churn masquerading as
+working. The order is dotfiles first, entries second. See [#142][issue-142].
+
+### The residue this is heading for
+
+Once the plugin channel is verified end to end ([#48][issue-48]), what chezmoi
+deploys shrinks to the part a plugin structurally cannot carry:
+
+| Stays deployed | Why |
+| --- | --- |
+| `CLAUDE.md`, `AGENTS.md`, `ephemeral-first.md`, `local-machine.md` | Policy prose can't ride a plugin |
+| `settings.json`, `settings.json.md` | Permission allowlists can't ride a plugin |
+| `retired-paths` | Read by the pruner at `~/.claude/retired-paths` |
+| `bin/claude-prune-retired` | Invoked by dotfiles after each apply |
+
+Everything else — `commands/`, `skills/`, `hooks/`, the rest of `bin/` — is
+delivered by the plugin and belongs below the `UNDEPLOYED` marker when that
+step is taken. Note this is a longer list than [#142][issue-142] originally
+assumed: it was written before `home/` became the plugin root, and named only
+the machine-local fragment as residue, when in fact all four policy files are
+structurally stuck on the chezmoi channel.
+
 `/end-session` step 11 remains the backstop. It compares `chezmoi
 managed` against the real contents of `~/.claude/commands/` and
 `~/.claude/bin/`, so it catches drift the list doesn't know about — a
@@ -299,6 +346,8 @@ file retired without a list entry, or one left by another tool.
 [dotfiles-371]: https://github.com/pmgledhill102/dotfiles/issues/371
 
 [issue-125]: https://github.com/pmgledhill102/agentic-coding-config/issues/125
+
+[issue-142]: https://github.com/pmgledhill102/agentic-coding-config/issues/142
 
 ## Slash commands
 
