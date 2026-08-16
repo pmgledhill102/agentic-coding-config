@@ -54,7 +54,7 @@ array.
 | `bin/` helpers | yes, at `~/.claude/bin/` | yes, added to the Bash tool's `PATH` |
 | Policy prose (`AGENTS.md`, `CLAUDE.md`) | yes | **no** |
 | Permission allowlist (`settings.json`) | yes | **no** |
-| Hooks | yes, via `settings.json` | not yet — see below |
+| Hooks | yes, via `settings.json` | yes, via `hooks/hooks.json` |
 
 Two limits are structural rather than temporary:
 
@@ -64,10 +64,23 @@ Two limits are structural rather than temporary:
 - **Permissions travel only in repo `.claude/settings.json`**, which is the one
   place a cloud session reads them from.
 
-**Hooks are not in the plugin yet.** They live in `home/settings.json` and
-reference `~/.claude/bin/` paths that don't exist in a sandbox. Porting them
-means a `home/hooks/hooks.json` plus a per-hook surface audit — several are
-workstation-only by nature — so it is deliberately separate work.
+### Hooks, declared twice, run once
+
+The surface audit the hooks port was waiting on found nothing workstation-only:
+all five fail open without `gh`, `jq`, a git repo or terraform, so all five are
+in `hooks/hooks.json`. Two details make the double declaration safe:
+
+- Claude Code runs every matching hook from **every** source, so a local
+  machine in a plugin-enabled repo has both copies live. The plugin's three
+  script hooks go through `bin/plugin-hook-dispatch`, which stands down when
+  `~/.claude/bin/<hook>` exists — the chezmoi copy wins wherever it is
+  deployed, and neither channel is ever skipped entirely.
+- `prchecks-wait-claude-hook` finds its wrapper beside itself
+  (`$(dirname "$0")/gh-pr-checks-wait`) instead of at a fixed `~/.claude/bin`
+  path, so one file serves both channels.
+
+`home/settings.json.md` carries the per-hook detail, including which parts do
+still run twice and why that is fine.
 
 Locally, nothing changes: chezmoi delivers the same content directly, and the
 plugin manifests simply ride along inert.
