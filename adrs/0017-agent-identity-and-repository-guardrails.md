@@ -355,6 +355,55 @@ rejected in Option 3.
 registry — consistent with the trade-off ADR-0015 already accepted. The
 reconciler runs in Actions, so this costs nothing operationally.
 
+### Private repositories: what the plan and the platform allow
+
+Three constraints shape how fine-grained this can get on personal repos.
+
+**Collaborator access is write, or nothing.** GitHub is explicit: *"In a
+private repository, repository owners can only grant write access to
+collaborators."* The Read / Triage / Write / Maintain / Admin ladder is
+an **organization** feature; personal repos have one tier. This cuts
+both ways. It is harmless for the guardrail design — write is exactly
+what the bot needs, and write still cannot edit protection rules — but
+it means access to a private repo is **binary**. There is no way to let
+the agent read a private repo without also letting it push. "Just the
+right amount of stuff" is therefore per-repo, not per-permission, and
+the registry's `permission:` field is aspirational on private repos
+until a repo moves to an organization.
+
+**GitHub Pro is a hard dependency, not a nicety.** Protected branches
+are available *"in public repositories with GitHub Free… and in public
+and private repositories with GitHub Pro, GitHub Team, GitHub Enterprise
+Cloud, and GitHub Enterprise Server."* Without Pro, private repos get no
+enforcement at all and this entire ADR would apply only to public ones.
+The existing subscription is load-bearing. CODEOWNERS is available on
+Free, Pro and Team, so it covers private repos too.
+
+Prefer **classic branch protection** for private repos rather than
+rulesets. It is confirmed covered by Pro, it is what `setup-repo`
+already calls, and it provides every control this ADR needs: required
+PRs, required approvals, required status checks, `enforce_admins`, and
+blocked force-pushes and deletions. Ruleset availability for private
+repos on a personal Pro account is genuinely ambiguous in GitHub's own
+documentation — the "Team and Enterprise" phrasing describes
+organization-wide rulesets, and the widely-reported "won't be enforced
+until you upgrade" error comes from Free *organizations* — so treat
+rulesets as a nicer UI to verify on one repo, never as the mechanism the
+design depends on.
+
+Note also that "restrict who can push" is not usable here: personal
+repos cannot name permitted push actors, which `setup-repo` already
+records as `restrictions: null`. The available shape is "nobody pushes
+to the default branch directly", which is what is wanted anyway.
+
+**Invitations need accepting.** Adding a collaborator by API creates an
+*invitation*, not access. The reconciler must either hold the bot's own
+token to accept via the repository-invitations endpoint, or leave a
+manual acceptance step per repo. Worth designing in deliberately —
+otherwise the automation appears to succeed while the bot still cannot
+see the repository, and the failure surfaces later as a cloud session
+that will not start.
+
 ## Consequences
 
 ### Positive
