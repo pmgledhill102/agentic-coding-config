@@ -1,0 +1,11 @@
+{
+  "name": "agentic-config",
+  "description": "Project setup skills for 15 language and tooling stacks, a repo currency review, session lifecycle commands, and the GCP credential-broker client.",
+  "version": "0.1.0",
+  "author": {
+    "name": "pmgledhill102"
+  },
+  "homepage": "https://github.com/pmgledhill102/agentic-coding-config",
+  "repository": "https://github.com/pmgledhill102/agentic-coding-config",
+  "license": "MIT"
+}
