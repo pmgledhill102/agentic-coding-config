@@ -264,6 +264,30 @@ single human is to make all code arrive via the bot — defensible, but it
 deadlocks any PR the human pushes to, and that friction should be a
 deliberate later choice rather than a side effect of this ADR.
 
+### Contribution attribution
+
+The attribution loss is **accepted, and blocks none of the options
+above**. Three findings carry that, and one judgment underwrites it.
+
+- It is mostly already paid. 42% was forfeited by the move to cloud
+  sessions, before any identity decision was on the table.
+- It cannot be reclaimed. Every documented workaround is closed
+  upstream, broken against the environment's signing, or reported
+  ignored.
+- It measures the wrong thing. 43 of the 51 commits authored to the
+  human were Claude-written; the graph has been recording which surface
+  a session ran on, in both directions, and never authorship.
+
+Underneath the numbers is a judgment they do not settle. The expectation
+that engineers hand-write their code is already historical, and a metric
+resting on that assumption measures a shrinking part of the job.
+Direction, design argument and review are the contribution being made
+here; a commit graph simply does not count them, and adjusting identity
+settings will not make it start.
+
+Revisit if upstream ships configurable cloud attribution, or if a
+graph-visible signal for review work appears. Neither is expected.
+
 ### CODEOWNERS
 
 Adopt it, path-scoped rather than blanket. With one human, whole-repo
