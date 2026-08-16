@@ -129,13 +129,39 @@ the *GitHub connection*, not the git author recorded in a commit. It
 does change the baseline the cost is measured against, and it means the
 attribution being defended is already arbitrary.
 
-It also surfaces a lever independent of everything else in this ADR:
-cloud environments support environment variables and setup scripts, so
-the commit author in cloud sessions is configurable rather than fixed —
-either to the bot, for a clean audit trail, or to the human, to restore
-parity with local sessions. The interaction with the environment's
-delegated commit signing is untested and must be verified before relying
-on it.
+### Prior art: this is known upstream, and unfixed
+
+The obvious lever — cloud environments accept environment variables and
+setup scripts, so set `GIT_AUTHOR_EMAIL` — has been tried by others and
+does not work. It breaks GPG/SSH signature verification in web sessions,
+because the environment's signing credentials are held outside the
+sandbox and are bound to the identity it sets. Assume this route is
+closed until proven otherwise.
+
+The upstream record is unambiguous, and consistently stale:
+
+| Issue | Substance | Status |
+| --- | --- | --- |
+| [claude-code#18715](https://github.com/anthropics/claude-code/issues/18715) | This exact problem: web-session commits attributed solely to Claude, user absent from contributor stats. Asks for an automatic `Co-authored-by` trailer | **Closed, not planned**; `stale` |
+| [claude-code#65710](https://github.com/anthropics/claude-code/issues/65710) | Agent commits attributed to an *unrelated* GitHub account, which then appears in Contributors | Open, `stale` |
+| [claude-code#72477](https://github.com/anthropics/claude-code/issues/72477) | `noreply@anthropic.com` resolves to no account; asks for a configurable or omitted address | Open, `stale` |
+| [claude-code#65657](https://github.com/anthropics/claude-code/issues/65657), [#45137](https://github.com/anthropics/claude-code/issues/45137) | The documented `attribution.commit` setting is ignored; the built-in trailer wins | Open |
+| [community#188915](https://github.com/orgs/community/discussions/188915) | A phantom "claude Claude" contributor on GitHub's side, from its own AI attribution feature | Community workaround only |
+
+Issue #65710 is the same class of defect visible in this repo: the
+`claude` account credited by our commits is a third party with no
+involvement, and it sits in the Contributors list. GitHub offers a
+partial mitigation of its own — repository **Settings → Code security
+and analysis → AI-powered features → AI contribution attribution** — but
+availability is inconsistent and it addresses GitHub's synthetic entries,
+not the git author field.
+
+Two conclusions follow. First, cloud commit attribution should be treated
+as **fixed and outside our control** for planning purposes, not as a dial
+to be tuned. Second, that makes the identity decision *cheaper* rather
+than dearer: if cloud commit credit cannot be reclaimed by any means,
+the bot identity forfeits nothing further, and the marginal cost narrows
+to the PR-opened statistic alone.
 
 What actually changes under a separate identity:
 
