@@ -96,16 +96,46 @@ Applied to this repo as it stands today:
 
 | Activity | Author today | Counts for the human? |
 | --- | --- | --- |
-| Code commits | `Claude <noreply@anthropic.com>`, which GitHub maps to the unrelated `claude` account | **No — already lost** |
+| Code commits, local CLI sessions | `Paul Gledhill <github@pmgledhill.com>`, with a `Co-Authored-By: Claude` trailer | Yes |
+| Code commits, cloud sessions | `Claude <noreply@anthropic.com>`, which GitHub maps to the unrelated `claude` account | **No** |
 | Merge commits | `Paul Gledhill`, created by clicking Merge | Yes |
 | PRs opened | The human's token, so the human | Yes |
 | Issues opened | The human's token | Yes |
 | Reviews | None — no approval is required | No |
 
-The single most useful finding: **the code-commit credit is already
-gone.** Every agent commit is authored to a third-party `claude`
-account, not to the human, and has been all along. A bot identity does
-not take that away, because it is not currently held.
+Commit attribution therefore tracks **the surface the session ran on**,
+not who wrote the code. Cloud environments set their own git identity
+(`user.name=Claude`, `user.email=noreply@anthropic.com`) because signing
+credentials are held outside the sandbox; the local CLI leaves the user's
+git config alone and adds a co-author trailer instead.
+
+The 91 non-merge commits in this repo make the effect concrete:
+
+| Origin | Count | Graph credit |
+| --- | --- | --- |
+| Cloud sessions, authored `Claude` | 38 | None |
+| Local sessions, authored human, Claude co-authored | 43 | Full |
+| Hand-written, no Claude involvement | 8 | Full |
+| Dependabot | 2 | n/a |
+
+The same collaboration is recorded two different ways depending on
+whether the session ran in a terminal or a browser. So roughly 42% of
+agent-assisted commit credit has already been forfeited — by the move to
+cloud sessions, which began 2026-08-04, and not by any identity
+decision. Moving primarily to cloud forfeits the rest.
+
+This does not change what Option 2 costs, because a bot account governs
+the *GitHub connection*, not the git author recorded in a commit. It
+does change the baseline the cost is measured against, and it means the
+attribution being defended is already arbitrary.
+
+It also surfaces a lever independent of everything else in this ADR:
+cloud environments support environment variables and setup scripts, so
+the commit author in cloud sessions is configurable rather than fixed —
+either to the bot, for a clean audit trail, or to the human, to restore
+parity with local sessions. The interaction with the environment's
+delegated commit signing is untested and must be verified before relying
+on it.
 
 What actually changes under a separate identity:
 
@@ -114,8 +144,8 @@ What actually changes under a separate identity:
 - **Kept**: merge commits, because the human still clicks Merge — but
   only under the merge-commit strategy. A squash merge attributes the
   squashed commit to the branch author, so squash-merging would forfeit
-  these regardless of identity. Merge strategy affects the graph more
-  than identity does.
+  these regardless of identity. Session surface and merge strategy each
+  move the graph at least as much as identity does.
 - **Gained**: a review contribution per PR, because the approval gate
   makes reviewing mandatory rather than optional.
 
