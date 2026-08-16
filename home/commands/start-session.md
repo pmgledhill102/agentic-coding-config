@@ -7,20 +7,10 @@ This command runs in a single phase. It mirrors `/end-session`'s shape — paral
 Every step falls into one of three tiers — keep this in mind when adding or editing steps:
 
 - **Tier 1 — auto-act, no prompt**: safe, reversible, expected. Examples: `git fetch --prune`, `git pull --rebase` on the default branch, read-only surface listings.
-- **Tier 2 — auto-act behind one batched confirmation**: predictable but should be a conscious choice. Example: chaining into `/promote-journal-inbox` when journal drafts are pending. Per-repo opt-in to Tier 1 is available via `.agent-policy` (see below) for users who always say "yes" in a given repo.
-- **Tier 3 — surface only, user drives**: needs per-item judgment. Examples: a feature branch trailing `main`, issues left assigned mid-flight from the last session, red `main` CI. **Never** opt-in via `.agent-policy` — these require human judgment by design.
+- **Tier 2 — auto-act behind one batched confirmation**: predictable but should be a conscious choice. Example: chaining into `/promote-journal-inbox` when journal drafts are pending.
+- **Tier 3 — surface only, user drives**: needs per-item judgment. Examples: a feature branch trailing `main`, issues left assigned mid-flight from the last session, red `main` CI.
 
 When in doubt, downgrade a tier (Tier 1 → 2, or 2 → 3). Never upgrade silently.
-
-## Pre-flight
-
-This command **requires a git-backed repository**. Run the bare command below and branch on its exit code — don't paste a compound `||` / `&&` form, which won't match any single allow rule and will trigger a permission prompt.
-
-```sh
-git rev-parse --is-inside-work-tree
-```
-
-If the exit code is non-zero (or stdout is not `true`), print a single-line warning (`` `/start-session` requires a git-backed repo — nothing to sync, stopping. ``) and stop.
 
 ## Surface
 
@@ -47,36 +37,10 @@ reports `n/a (sandbox)` in the summary rather than vanishing, so the brief means
 the same thing everywhere and a missing line is never ambiguous between "clean"
 and "could not check".
 
-## Repo-level policy (`.agent-policy`)
-
-**Optional.** A POSIX shell `KEY=VALUE` file at the repo root that opts specific Tier 2 prompts into Tier 1 (auto-run, no prompt) on a per-repo basis. Defaults (file absent or key unset) preserve the prompt — adding the file never makes any repo behave more aggressively than before.
-
-**Supported keys:**
-
-| Key | When `=true` | Affects |
-| --- | --- | --- |
-| `AUTO_JOURNAL_PROMOTE` | Auto-run `/promote-journal-inbox` when filesystem `_incoming/` count >= 1 — no prompt | Step 6 |
-
-Any value other than `true` is treated as unset. Unknown keys are ignored silently (forward-compatibility).
-
-**Trust model:** the file is sourced as POSIX shell, so a hostile commit could place arbitrary commands in it. Treat `.agent-policy` the same as `.envrc` / `.editorconfig` — only commit it on repos you control, and only opt into automation you actually want. The file lives at the repo root (not under `.claude/`, which is reserved for the harness's own config).
-
-**Example `.agent-policy`:**
-
-```sh
-# .agent-policy — opt-in automation for /start-session in this repo
-AUTO_JOURNAL_PROMOTE=true
-```
-
 ## Phase 1 — Sync
 
-If `.agent-policy` exists at the repo root, source it once before proceeding:
-
-```sh
-[ -f .agent-policy ] && . ./.agent-policy
-```
-
-This loads any opt-in keys consulted by Tier 2 steps. The file is optional; if absent, every Tier 2 step prompts as today.
+Everything starts with one script call. The pre-flight check is inside it, so
+this command makes **no standalone Bash calls before the gather**.
 
 ### 1. Gather state (Tier 1 — one tool call)
 
@@ -90,6 +54,7 @@ Output is a sectioned stream. Each section starts with `===<name> (exit=<N>)===`
 
 | Section | Drives step(s) | Notes on exit code |
 | --- | --- | --- |
+| `not_a_git_repo` | pre-flight | Only present when the gather ran outside a git repo, in which case it is the **only** section and the script exits 1. Print the line it contains and stop; every other step assumes a repo. |
 | `fetch` | 2 (folded in) | Body is empty on success (exit=0). Non-zero = network/auth issue — body contains the error; surface before proceeding. |
 | `local_state` | 3, 7 | Includes branch, dirty/clean, ahead/behind upstream, ahead/behind `origin/<default>`. |
 | `main_ci` | 4 | Content `gh-unavailable` / `jq-unavailable` = silent skip. Otherwise: first line is `workflows=<N>`; subsequent lines are `<workflow-name>=<conclusion-or-status>@<short-sha>` (one per most-recent run per workflow on `<default>`). On `failure` / `cancelled` / `timed_out`, the line ends with a trailing space-separated run URL: `<workflow-name>=<conclusion>@<short-sha> <url>`. Non-zero with other content = real error. |
@@ -192,7 +157,7 @@ design: applying config changes under an agent without the human reading them
 is its own hazard, and this repo deploys the harness the agent is running
 inside.
 
-### 6. Paul-context inbox surface (Tier 2 — prompt, paul-context only; Tier 1 with policy opt-in)
+### 6. Paul-context inbox surface (Tier 2 — prompt, paul-context only)
 
 **Only fires when the current working tree is `paul-context`** (`basename "$(git rev-parse --show-toplevel)" = "paul-context"`). Otherwise skip silently. This is a runtime filesystem check, not part of the gather output — `/start-session` runs in many repos and a generic gather section would always be empty for the rest.
 
@@ -205,7 +170,6 @@ Filter the listing to entries matching `^[0-9]{4}-[0-9]{2}-[0-9]{2}-[a-z0-9-]+\.
 - **0 matches**: skip silently.
 - **>= 1 match**: print the count and (up to first 5) filenames, then:
 
-  - **If `AUTO_JOURNAL_PROMOTE=true` (from `.agent-policy`)**: skip the prompt and invoke `/promote-journal-inbox` directly. Add a `Policy:` line to the session brief noting that the promote fired automatically.
   - **Otherwise (default)**: prompt:
 
     > `<N>` journal draft(s) pending in `_incoming/`. Run `/promote-journal-inbox` now? (y/n)
@@ -225,9 +189,6 @@ Repo:     <repo>             Branch: <branch> (<clean|dirty>)
 Sync:     <default> <ahead/behind/even>   upstream <ahead/behind/even/gone/n/a>
           [auto-switched <feature> → <default> (upstream gone)]    (only when Step 3 auto-switched)
 CI:       <green / N failing / N in-progress / n/a>
-
-Policy:                                             (omit when no policy keys fired)
-  AUTO_JOURNAL_PROMOTE=true → promoted <N> draft(s)
 
 Recent merges:                                      (omit when count=0)
   <short-sha>  <commit subject>
@@ -258,7 +219,6 @@ Rules:
 - "Ready to pick up next" is sourced from gather section `gh_ready`. Each row is already pipe-separated `#<n>|P<pri>|<title>` — split on `|`, sort by priority label (P0 first, `-` last), and emit the top 5. Ready = open and not directly blocked; the filter is direct-blocks-only, so eyeball the blocked icon before claiming work.
 - "In progress" is sourced from gather section `gh_assigned`. Same `#<n>|P<pri>|<title>` row shape; no cap (usually 0–3 items).
 - "Recent merges" is sourced from gather section `recent_main_commits`. Omit the entire section when `count=0`.
-- "Policy" lists each `.agent-policy` key that fired this session (i.e. promoted a Tier 2 prompt to Tier 1 auto-action). Omit the entire section when no keys fired or the file is absent. Don't list keys that were set but had nothing to do (e.g. `AUTO_JOURNAL_PROMOTE=true` with an empty inbox) — only list actual fires.
 - If the repo has no GitHub origin (`gh_ready` / `gh_assigned` report `not-github` or are skipped), drop both issue sections silently (the brief still shows git/CI lines).
 - Truncate any title to ~78 columns to keep rows on one line.
 
@@ -267,6 +227,5 @@ Rules:
 - **Pre-flight gate is non-negotiable.** Never proceed when not in a git repo.
 - **Never auto-rebase a feature branch** onto an advanced default branch. Surface the gap and stop. The user picks the strategy.
 - **Never switch branches except when the upstream is gone and the tree is clean.** That single case (PR merged + branch auto-deleted on remote, no local uncommitted work) is auto-handled per Step 3. Otherwise, `/start-session` reports state on whatever branch the user is on.
-- **Don't push anything.** Pushes belong to `/end-session` (for git/`main`). `/start-session` is read-mostly. (Note: if `AUTO_JOURNAL_PROMOTE=true` fires, `/promote-journal-inbox` runs its own commit + push against `paul-context` — that's the promote command's contract, not a carve-out here.)
+- **Don't push anything.** Pushes belong to `/end-session` (for git/`main`). `/start-session` is read-mostly. (Note: if the user says yes to the journal-promote prompt, `/promote-journal-inbox` runs its own commit + push against `paul-context` — that's the promote command's contract, not a carve-out here.)
 - **Don't modify settings, config, or unrelated files.** Scope is git and GitHub-issue surface only.
-- **`.agent-policy` only promotes Tier 2 → Tier 1 for the keys it explicitly governs.** Tier 3 surfaces (user judgment) cannot be opted in. Unknown keys are ignored silently.
