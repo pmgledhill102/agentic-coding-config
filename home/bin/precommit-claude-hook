@@ -37,19 +37,67 @@ cwd=$(printf '%s' "$payload" | jq -r '.cwd // empty')
 # must exit immediately. Honour the standard --no-verify / -n escape hatch
 # (caveat: a message literally containing " --no-verify"/" -n " also skips —
 # a false skip, not a false block; CI still covers it).
+#
+# Matched by *position*, not by substring. `*"git commit"*` matched any command
+# merely containing the phrase, so writing it into a notes file or an issue body
+# triggered a whole pre-commit cycle -- harmless, but it costs the latency of
+# the full run on a call that was never going to commit anything.
+
+# git_subcommand prints the git subcommand a segment invokes, or nothing.
+# Skips git's own global options so `git -C path commit` still classifies.
+git_subcommand() {
+    gs_ifs=$IFS
+    IFS=' 	'
+    # shellcheck disable=SC2086  # deliberate: split the segment into words.
+    set -- $1
+    IFS=$gs_ifs
+    [ "${1:-}" = "git" ] || return 0
+    shift
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            -C | -c | --git-dir | --work-tree | --namespace)
+                [ $# -ge 2 ] || return 0
+                shift 2
+                ;;
+            -*) shift ;;
+            *)
+                printf '%s' "$1"
+                return 0
+                ;;
+        esac
+    done
+}
+
+# Split on shell separators, so `cd x && git commit -m ...` still matches while
+# `echo "git commit"` does not.
 stage=""
-case "$cmd" in
-  *"git commit"*)
+cls_ifs=$IFS
+IFS='
+'
+# shellcheck disable=SC2046,SC2086  # deliberate: split on the inserted newlines.
+set -- $(printf '%s' "$cmd" | tr ';&|' '\n')
+IFS=$cls_ifs
+for seg in "$@"; do
+    case "$(git_subcommand "$seg")" in
+        commit)
+            stage="pre-commit"
+            break
+            ;;
+        push) [ -n "$stage" ] || stage="pre-push" ;;
+    esac
+done
+[ -n "$stage" ] || exit 0
+
+# Honour --no-verify / -n against the whole command, as before.
+case "$stage" in
+  "pre-commit")
     case "$cmd" in
       *" --no-verify "*|*" --no-verify"|*" -n "*|*" -n") exit 0 ;;
-    esac
-    stage="pre-commit" ;;
-  *"git push"*)
+    esac ;;
+  "pre-push")
     case "$cmd" in
       *" --no-verify "*|*" --no-verify") exit 0 ;;
-    esac
-    stage="pre-push" ;;
-  *) exit 0 ;;
+    esac ;;
 esac
 
 # --- Move into the repo the command targets. ------------------------------
