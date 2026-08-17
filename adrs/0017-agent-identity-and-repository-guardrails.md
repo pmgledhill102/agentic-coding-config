@@ -8,19 +8,22 @@
 ## Context
 
 `CLAUDE.md` carries a rule — no direct push to `main`, no unreviewed
-merge — that has been ignored more than once. An audit of this repo on
-2026-08-16 explains why: nothing enforces it.
+merge — that has been ignored more than once. An audit on 2026-08-16
+established why: nothing enforced it anywhere. It was a sentence in a
+file that the agent bound by it could also edit.
 
-| Finding | Evidence |
-| --- | --- |
-| `main` has no branch protection | `list_branches` returns `protected: false` |
-| Cloud sessions act as the human, with admin | `get_me` returns `pmgledhill102`, repo `permissions.admin: true` |
-| Approvals are structurally impossible | `setup-repo` hardcodes `required_pull_request_reviews: null`, commented *"solo developer — cannot require approvals from others"* |
-| Pushes are unrestricted client-side | `home/settings.json` allows `Bash(git push *)` with no prompt |
-| Merge is one click from unsupervised | `mcp__github__merge_pull_request` is not allow-listed, but not denied either |
+The audit's specific findings — which controls were absent, on which
+repositories, and what an agent session could therefore reach — are
+recorded in the **personal tier** under ADR-0015, not here. Current-state
+weaknesses in a live system are personal-tier material regardless of
+which repository they concern; publishing them buys a reader nothing the
+decision below does not, and costs whatever window exists before they are
+closed.
 
-The rule was never enforced anywhere. It was a sentence in a file that
-the agent bound by it could also edit.
+What generalises, and what this ADR records, is the shape of the problem:
+a policy expressed only as prose, on a surface where the agent holds the
+same privileges as its author, has neither an enforcement boundary nor an
+audit boundary. Every option below is an attempt to create one or both.
 
 Two further facts frame the options.
 
@@ -98,7 +101,7 @@ Applied to this repo as it stands today:
 
 | Activity | Author today | Counts for the human? |
 | --- | --- | --- |
-| Code commits, local CLI sessions | `Paul Gledhill <github@pmgledhill.com>`, with a `Co-Authored-By: Claude` trailer | Yes |
+| Code commits, local CLI sessions | The human's own git identity, with a `Co-Authored-By: Claude` trailer | Yes |
 | Code commits, cloud sessions | `Claude <noreply@anthropic.com>`, which GitHub maps to the unrelated `claude` account | **No** |
 | Merge commits | `Paul Gledhill`, created by clicking Merge | Yes |
 | PRs opened | The human's token, so the human | Yes |
@@ -203,12 +206,12 @@ button, backed by a `deny` entry for `mcp__github__merge_pull_request`,
 
 ### Option 2 — Rulesets plus a bot as the connecting identity (recommended)
 
-Create `pmgledhill102-bot`, invite it to each repo with **Write** (never
-Admin), and reconnect the Claude Code GitHub integration authorising as
-that account — either through the browser OAuth flow in a separate
-profile, or by logging `gh` in as the bot and running `/web-setup`.
-Verify with one command: `get_me` in a fresh cloud session must return
-`pmgledhill102-bot` with `admin: false`.
+Create a dedicated machine account, invite it to each repo with **Write**
+(never Admin), and reconnect the Claude Code GitHub integration
+authorising as that account — either through the browser OAuth flow in a
+separate profile, or by logging `gh` in as the bot and running
+`/web-setup`. Verify with one command: `get_me` in a fresh cloud session
+must return the bot account with `admin: false`.
 
 Then the ruleset from Option 1 plus `required_approving_review_count: 1`,
 which becomes possible for the first time because the PR author and the
@@ -271,54 +274,47 @@ deliberate later choice rather than a side effect of this ADR.
 This reverses a recorded decision, and says so rather than quietly
 diverging — the failure ADR-0015's deviation rule exists to prevent.
 
-`paul-context/decisions/2026-05-13-sandbox-agent-identity.md` decided
-**"Adopt the cloud-coop model. No separate sandbox-bot account."** Its
-reasoning was not contribution statistics, which it never mentions. It
-was:
+A personal-tier decision of 2026-05-13 chose a single-identity model for
+sandbox agents and declined a separate bot account. Its reasoning was
+**not** contribution statistics, which it never mentions — the informal
+objection above and the recorded one are different arguments. It rested on
+three grounds: alignment with earlier decisions already committing to one
+human identity with the narrowest credential per surface; bounding blast
+radius per surface rather than per identity; and audit-trail clarity,
+which it considered and explicitly rejected.
 
-- **alignment** with three `cloud-coop` ADRs already committing to one
-  human identity, narrowest credential per surface;
-- **blast radius per surface, not per identity** — a leaked deploy key
-  costs one repo's contents, a leaked fine-grained PAT costs the Issue
-  and PR surface, neither costs the account;
-- **audit-trail clarity considered and rejected**, explicitly: cloud-coop
-  ADR-0029 keeps commits authored as the user, and this decision extended
-  that.
-
-Both of the first two survive intact, and Option 2 does not contradict
-them: a Write-only bot *is* the narrowest credential for the GitHub
-connection, and it narrows blast radius further than a fine-grained PAT
-on an admin account can. What changed is the third point, and it changed
-for a reason that decision could not have weighed.
+The first two survive intact, and Option 2 does not contradict them: a
+Write-only bot *is* the narrowest credential for the GitHub connection,
+and it bounds blast radius more tightly than a broadly-scoped token on an
+admin account can. What changed is the third point, and it changed for a
+reason that decision could not have weighed.
 
 **A merge gate needs two principals, and that is a mechanism constraint
 rather than a preference.** GitHub does not let a pull request's author
 approve it. With one identity, `required_approving_review_count: 1` is
 not merely undesirable — it is unsatisfiable, which is exactly what
 `setup-repo` already records in the comment *"solo developer — cannot
-require approvals from others"*. The 2026-05-13 decision treated
-attribution as the only thing a second identity would buy. It also buys
-the only enforceable form of the rule this ADR exists to enforce.
+require approvals from others"*. The earlier decision treated attribution
+as the only thing a second identity would buy. It also buys the only
+enforceable form of the rule this ADR exists to enforce.
 
-That decision listed its own triggers to revisit. One has fired
-literally: *"the first time a non-`pmgledhill102` actor … needs to
-operate against personal-infra repos"* — which is what the reconciler and
-the bot are. The rest of it stands: the per-surface credential model, the
-deploy-key mechanism for git, and the tiered credential delivery are all
-unaffected and should continue.
+That decision listed its own triggers to revisit, and one has now fired
+literally: the first time an actor other than the human needs to operate
+against personal-infrastructure repos, which is what the reconciler and
+the bot are. The rest of it stands — the per-surface credential model and
+the tiered credential delivery are unaffected and should continue.
 
-It also parked a hardening option that this ADR should decline
-explicitly rather than silently pass over: *"a dedicated SSH or GPG
-signing key for sandbox commits would give pseudo-attribution-via-
-signature without changing identity"*. That remains true and remains
-unnecessary. It addresses attribution, which the next section accepts as
-lost and not worth reclaiming; it does nothing for the gate, which is the
-actual problem.
+It also parked a hardening option that this ADR should decline explicitly
+rather than silently pass over: a dedicated signing key, giving
+pseudo-attribution by signature without changing identity. That remains
+true and remains unnecessary. It addresses attribution, which the next
+section accepts as lost and not worth reclaiming; it does nothing for the
+gate, which is the actual problem.
 
 **Required follow-up**: the personal-tier decision must be marked
-superseded in `paul-context`, pointing here. A user-tier ADR cannot edit
-it, and leaving two live decisions that contradict each other is worse
-than either one alone.
+superseded, pointing here. A user-tier ADR cannot edit the personal tier,
+and leaving two live decisions that contradict each other is worse than
+either one alone.
 
 ### Contribution attribution
 
@@ -371,43 +367,43 @@ either becomes a system or becomes a chore. Making it declarative is
 what turns the friction into the feature: an explicit, reviewable
 statement of exactly which repos the agent may touch.
 
-`paul-context` — already the personal-tier home under ADR-0015 — gains a
-registry:
-
-```yaml
-# agents/access.yaml
-identity: pmgledhill102-bot
-repos:
-  - name: pmgledhill102/agentic-coding-config
-    permission: push          # GitHub Write
-    ruleset: standard
-  - name: pmgledhill102/some-sandbox
-    permission: push
-    ruleset: relaxed
-```
-
-A scheduled workflow in `paul-context` reconciles reality against the
-file: it invites, downgrades or removes the bot to match `permission`,
-applies the named ruleset profile to each repo, and opens an issue on
-drift. Deleting a line revokes access on the next run — the property
+The pattern: a private, personal-tier repository holds a registry, and a
+scheduled workflow reconciles reality against it — inviting, downgrading
+or removing the agent identity to match the declared permission, applying
+the named protection profile to each repo, and opening an issue on drift.
+Deleting an entry revokes access on the next run, which is the property
 manual invites never have.
 
-Two invariants make this safe, and both are load-bearing:
+```yaml
+# agents/access.yaml — shape only
+identity: <agent-account>
+repos:
+  - name: <owner>/<repo>
+    permission: push          # GitHub Write
+    protection: standard
+```
 
-1. **The bot has no access to `paul-context`.** If the agent can edit the
-   registry, it can grant itself anything. This is the single rule that
-   the whole design rests on.
-2. **The reconciler credential lives only in `paul-context`.** It needs
-   `administration: write`, so it must not be reachable from any repo the
-   bot can write to. Per-repo secret scoping gives this by default;
-   stating it prevents a later workflow from breaking it.
+The concrete registry — which identity, which repositories, and where the
+reconciler and its credential live — is personal-tier and is not recorded
+here.
+
+Two invariants make the pattern safe, and both are load-bearing:
+
+1. **The agent identity has no write access to the registry.** If the
+   agent can edit the file declaring its own reach, it can grant itself
+   anything. This is the single rule the whole design rests on.
+2. **The reconciler credential is reachable only from the registry
+   repository.** It needs `administration: write`, so no workflow in any
+   repo the agent can write to may be able to read it. Per-repo secret
+   scoping gives this by default; stating it stops a later workflow from
+   quietly breaking it.
 
 The credential is a fine-grained PAT initially, and a self-owned GitHub
 App if rotation becomes a nuisance. This is CI automation with no
 interactive approval step, so it does not reintroduce the approval flow
 rejected in Option 3.
 
-`paul-context` being private means cloud sessions cannot read the
+Keeping the registry private means cloud sessions cannot read the
 registry — consistent with the trade-off ADR-0015 already accepted. The
 reconciler runs in Actions, so this costs nothing operationally.
 
@@ -484,17 +480,17 @@ that will not start.
 - Repo ownership still implies admin, so the ruleset can always be
   disabled by the human. The control is that doing so is deliberate and
   logged — prevention is not available to a sole owner.
-- `paul-context` becomes materially more sensitive: it now governs access
-  rather than merely recording decisions.
+- The registry repository becomes materially more sensitive: it now
+  governs access rather than merely recording decisions.
 - A personal-tier decision is reversed, so the estate carries two records
-  of this question until `paul-context` marks its own superseded. That
+  of this question until the personal tier marks its own superseded. That
   window is the cost of the tiers being in separate repos, one private.
 
 ## Follow-on work
 
 - `setup-repo`: replace `required_pull_request_reviews: null` and its now
   obsolete comment with the bot-aware ruleset payload
-- `paul-context`: mark `decisions/2026-05-13-sandbox-agent-identity.md`
+- Personal tier: mark the 2026-05-13 sandbox-agent-identity decision
   superseded by this ADR, keeping its per-surface credential model
 - `CODEOWNERS` for the guardrail paths, plus the relaxed default
 - A protection audit script with a `--check` mode for CI drift detection
@@ -512,5 +508,7 @@ that will not start.
 - [Troubleshooting missing contributions](https://docs.github.com/en/account-and-profile/how-tos/contribution-settings/troubleshooting-missing-contributions)
 - [ADR-0015](0015-tiered-adrs.md) — tier placement, and the rule that a
   deviation must name what it deviates from
-- `paul-context/decisions/2026-05-13-sandbox-agent-identity.md` — the
-  personal-tier decision this supersedes (private repo)
+- The personal-tier companion record — the audit findings this decision
+  responds to, the 2026-05-13 decision it supersedes, the concrete access
+  registry, and remaining tracking. Held privately per ADR-0015; not
+  linked from here.
