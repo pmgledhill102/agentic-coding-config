@@ -17,51 +17,41 @@ Every step is classified by how much human judgment it needs:
 
 When in doubt we downgrade a tier rather than upgrade.
 
-## Retrospective — why the script split exists
+## Why the script split exists
 
-Two observations from using the command in anger.
+Two properties of the harness drove Phase 1's compound blocks into scripts.
+Both still hold, and both are what the extraction rules further down are
+derived from.
 
-> This section is a record of the April 2026 design work, not a
-> description of today's pipeline. It refers to `bd dolt push`, which was
-> genuinely one of the original 14 calls — beads was the tracker at the
-> time and has since been retired (see
-> [ADR-0013](../adrs/0013-github-issues-for-work-tracking.md)). Left as
-> written: editing it would falsify the measurement rather than update it.
+**The permission matcher sees a Bash call as one command string.** A rule like
+`Bash(git status *)` matches a call *beginning* with `git status`; it does not
+match a compound block that merely contains it alongside other commands. So a
+compound block never matches a narrow allow rule, however many of its pieces are
+individually allowed. Three fixes were available — pre-approve the exact
+compound strings (brittle: any whitespace edit breaks the match), split into N
+individual tool calls (works for a sequence, not for a pipeline, and inflates
+tool-call count), or extract the logic into a script and allow its path. The
+third gives one rule, is shellcheck-testable, and can be edited without
+reshuffling permissions.
 
-### Observation 1 — recurring approval prompts
+**Round-trip latency dominates.** Each tool call costs a model turn — emit,
+run, read, emit again — and at a large context that is seconds of latency
+independent of the command's own runtime. Most of Phase 1's reads are
+independent and network-bound, so running them serially multiplied that cost
+for no correctness benefit. Fanning them out behind a single `git fetch`
+collapses N sequential calls into one, and summed serial latency into
+max-of-parallel.
 
-Two steps of Phase 1 triggered explicit approval prompts every run, even though every individual sub-command in them was already on the permission allowlist:
+The remaining steps stay serial because they either need a y/n or depend on
+prior output. `/retrospective` was deliberately left alone: it is short, has no
+multi-line approval blockers, and its value is in agentic reasoning rather than
+fixed commands, so parallelising it would buy nothing.
 
-- Step 1 (state gather) — a compound `echo "===pwd==="; pwd; echo "===status==="; git status ...` block.
-- Step 6 Batch B (squash-merged detection) — a pipeline of `git for-each-ref | awk | grep | while read … git diff …`.
-
-**Root cause.** The Claude Code permission matcher sees a Bash tool call as a single command string. A pattern like `Bash(git status *)` matches a call whose command begins with `git status` — it does **not** match a compound block that happens to contain `git status` alongside other commands. So compound blocks never match a narrow allow rule no matter how many of their pieces are allowed individually.
-
-Three ways to fix this:
-
-1. Pre-approve the exact compound strings. Brittle — any whitespace edit breaks the match.
-2. Split the block into N individual tool calls. Works for Step 1 but not for Step 6 Batch B's pipeline, and inflates tool-call count / output noise.
-3. Extract the compound logic into a script and allow the script's path. One rule; shellcheck-testable; editable without reshuffling permissions.
-
-We picked (3).
-
-### Observation 2 — round-trip latency dominates
-
-The original Phase 1 issued ~14 sequential Bash tool calls. For each one: the model emits the call, the runtime runs the command (often network-bound — `git fetch`, `gh run list`, `gh pr list`, `bd dolt push`), the result comes back, the model reads it and emits the next call. With a large context (1M), every round trip costs meaningful seconds of model latency **independent of** the command's own runtime.
-
-Of those 14 calls, 8 are independent read-only queries with no inter-dependencies — they can all run in parallel after `git fetch`. Serialising them doubled the latency for no correctness benefit.
-
-Extracting the gather into a script that runs `git fetch` first, then fans out the 8 reads with `&` + `wait`, collapses:
-
-- ~8 sequential tool calls into 1.
-- Summed serial network latency into max-of-parallel.
-- ~7 model-turn round-trips (each ~3–8s at 1M context) into 1.
-
-Measured on the `dotfiles` repo (2026-04-21): Phase 1 gather wall time dropped from an estimated ~70s total to ~15s end-to-end (fetch-dominated). The remaining steps (Tier 2 destructive actions, `bd dolt push`, summary) are serial because they either need a y/n or depend on prior output.
-
-### Decision
-
-Extract two scripts, land one allow rule, rewrite Phase 1 to consume sectioned output. `/retrospective` was deliberately left alone — it's short, doesn't have multi-line approval blockers, and its value is in agentic reasoning rather than fixed commands; parallelisation would buy nothing.
+> The original write-up of this section carried the April 2026 measurements
+> that motivated the change, including a call to `bd dolt push` from when beads
+> was the tracker ([ADR-0013](../adrs/0013-github-issues-for-work-tracking.md)).
+> The conclusions above are what survived; the measurement narrative lives in
+> the PR that made the change.
 
 ## Architecture
 

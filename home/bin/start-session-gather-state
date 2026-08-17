@@ -20,6 +20,15 @@ set -uo pipefail
 
 progress() { printf '[gather] %s\n' "$*" >&2; }
 
+# --- Phase 0: pre-flight ------------------------------------------------
+# Folded in from /start-session, which used to run this as its own Bash call.
+# Everything below assumes a git repo, so this has to come before the fetch.
+if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    printf '===not_a_git_repo (exit=1)===\n'
+    printf '/start-session requires a git-backed repo — nothing to sync.\n\n'
+    exit 1
+fi
+
 TMP=$(mktemp -d -t start-session-gather.XXXXXX)
 trap 'rm -rf "$TMP"' EXIT
 

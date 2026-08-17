@@ -1,7 +1,8 @@
 # GitHub Issues workflow
 
-How work is tracked in personal repos, replacing beads
-(see [ADR-0013](../adrs/0013-github-issues-for-work-tracking.md)).
+How work is tracked in personal repos. The decision and the history behind it
+are in [ADR-0013](../adrs/0013-github-issues-for-work-tracking.md); this file
+states the current conventions only.
 
 ## Structure
 
@@ -9,7 +10,7 @@ How work is tracked in personal repos, replacing beads
 | --- | --- | --- |
 | Epic → Feature → Task | Sub-issues (`--parent`) | Nests up to 8 levels; 100 children per parent |
 | Type | Labels `type: epic\|feature\|task\|bug` | Issue *types* are org-only; labels work everywhere |
-| Priority | Labels `P0`–`P4` | P0 critical … P2 medium … P4 backlog (beads scale) |
+| Priority | Labels `P0`–`P4` | P0 critical … P2 medium … P4 backlog |
 | Dependencies | Native blocked-by (`--blocked-by`) | Max 50 per relationship type; blocked icon in lists |
 | History | Issue timeline | Automatic; includes label/state/relationship events |
 
@@ -46,8 +47,8 @@ commands above are the fallback and the cloud-sandbox option.
   `gh issue list` or direct reads (`gh issue view <n>`), which are
   strongly consistent. Deduplicate against `gh issue list --state all`,
   not search.
-- **Create an issue before starting work** (same habit as `bd create`),
-  and close it when the work merges: `gh issue close <n> --comment
+- **Create an issue before starting work**, and close it when the work
+  merges: `gh issue close <n> --comment
   "Shipped in #<pr>"`. Reference the issue from the PR body (`Closes
   #<n>`) so closure is automatic on merge.
 - **"Ready" is approximate.** `-is:blocked` filters direct blocks only;
@@ -74,9 +75,8 @@ for t in epic feature task bug; do
 done
 ```
 
-`/setup-repo` is the natural home for this — tracked in
-[#49](https://github.com/pmgledhill102/agentic-coding-config/issues/49)
-follow-ups.
+`/setup-repo` applies this as one of its steps, so a repo set up through it
+already has the labels; the loop above is for anything that was not.
 
 **Label-less infra repos**: a secondary repo that will never get the
 full `/setup-repo` baseline (a Terraform-only sibling, a mirror) ends up

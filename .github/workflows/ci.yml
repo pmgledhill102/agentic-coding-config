@@ -86,6 +86,17 @@ jobs:
       - name: Marketplace and plugin manifests must be valid
         run: python3 tests/plugin-manifests.py
 
+  allowlist-coverage:
+    name: allowlist covers documented commands
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # A permission rule that stops matching fails invisibly: nothing errors,
+      # the user just gets a prompt, and a prompt looks like normal life.
+      - name: Every helper invocation must be covered by an allow rule
+        run: python3 tests/allowlist-covers-commands.py
+
   actionlint:
     name: Action Lint
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
@@ -140,41 +151,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: Entries must be safe and actually retired
-        run: |
-          set -eu
-          list=home/retired-paths
-          if [ ! -f "$list" ]; then
-            echo "$list not present — nothing to validate."
-            exit 0
-          fi
-          rc=0
-          while IFS= read -r line || [ -n "$line" ]; do
-            path=$(printf '%s' "$line" | sed 's/[[:space:]]*$//')
-            case "$path" in
-              '' | '#'*) continue ;;
-            esac
-            # Must not escape ~/.claude/ — the pruner refuses these too, but
-            # failing here means a bad entry never reaches a machine.
-            case "$path" in
-              /* | *..*)
-                echo "::error file=$list::unsafe entry (absolute or ..): $path"
-                rc=1
-                continue
-                ;;
-            esac
-            # The whole point is that the file is GONE from home/. An entry
-            # that still exists would have the pruner delete a live file on
-            # every apply, and chezmoi restore it on the next one.
-            if [ -e "home/$path" ]; then
-              echo "::error file=$list::still present in home/ — retire the file first, or drop this entry: $path"
-              rc=1
-            fi
-          done < "$list"
-          if [ "$rc" -eq 0 ]; then
-            echo "All retired-paths entries are safe and refer to removed files."
-          fi
-          exit "$rc"
+      - name: Entries must be safe and correctly sectioned
+        run: sh tests/retired-paths.sh
+      - name: The validator itself must catch a bad entry
+        run: sh tests/retired-paths-test.sh
 
   settings-sync:
     name: settings.json ↔ settings.json.md sync

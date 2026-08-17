@@ -5,6 +5,12 @@
 - **Tags**: claude-code, tooling
 - **Scope**: user (applies to all personal repos and agent surfaces)
 
+> **Why the numbering starts at 0012.** This directory continues the
+> sequence begun in `pmgledhill102/dotfiles`, where the first eleven ADRs
+> live. `dotfiles` has since grown its own 0015, so a bare "ADR-0015" is
+> ambiguous across the two homes — **cross-repo references should use full
+> URLs**, as [ADR-0015](0015-tiered-adrs.md) requires for cross-tier links.
+
 ## Context
 
 Claude Code's user-level configuration (`~/.claude/`) defines the

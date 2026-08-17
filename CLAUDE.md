@@ -36,10 +36,26 @@ blocked-by dependencies).
 No build step. Quality gates (run before pushing; CI runs the same):
 
 ```bash
-markdownlint-cli2 "**/*.md"        # markdown lint
-shellcheck home/bin/*              # shell scripts (CI scans home/bin/)
-HOME=/tmp/chezmoi-test chezmoi init --source . --dry-run  # template sanity
+markdownlint-cli2 "**/*.md"              # markdown lint
+sh tests/gcp-credentials-test.sh         # credential-helper behaviour
+sh tests/precommit-hook-test.sh          # pre-commit hook matching
+sh tests/retired-paths.sh                # the prune list is safe and sectioned
+sh tests/retired-paths-test.sh           # ...and its validator still catches
+python3 tests/skills-match-commands.py   # skills match their source commands
+python3 tests/plugin-manifests.py        # marketplace, plugin and hook manifests
+python3 tests/allowlist-covers-commands.py  # allow rules match documented commands
+
+# shell — CI scans home/bin/, cloud/ and tests/. Select by shebang: home/bin/
+# also holds a Python script, and `shellcheck home/bin/*` errors on it.
+find home/bin cloud tests -type f \
+  -exec sh -c 'head -1 "$1" | grep -q "^#!.*sh$"' _ {} \; -print0 \
+  | xargs -0 shellcheck
 ```
+
+**There is no chezmoi template check.** This repo contains no chezmoi
+templates: it is consumed as an **archive** external, so files deploy verbatim.
+The `chezmoi init --dry-run` gate listed here previously was inherited from
+`dotfiles`, where templates do exist, and never applied to this repo.
 
 ## Architecture Overview
 

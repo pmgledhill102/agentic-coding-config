@@ -21,9 +21,17 @@ To change any of it, open an issue against `agentic-coding-config`; see
 
 A merge to that repo does **not** reach this machine immediately. The
 external carries a `refreshPeriod` of 168h, so a plain `chezmoi apply` can
-re-apply the cached archive: use `chezmoi apply --refresh-externals` (or
-`chezmoi update --refresh-externals`) when you specifically need a change
-that just merged.
+re-apply the cached archive.
+
+**`dotup` already handles this** — it runs `chezmoi update
+--refresh-externals`, which is pull plus apply with the cache bypassed, and
+it is the command to reach for after a merge. Drop to
+`chezmoi apply --refresh-externals` only when you want the apply without
+the rest of what `dotup` does (Oh My Zsh, plugins, Starship).
+
+The same apply is what removes retired files: `dotup` triggers dotfiles'
+post-apply hook, which runs `~/.claude/bin/claude-prune-retired` against
+the `retired-paths` list that just arrived through the external.
 
 ## The interactive shell is zsh
 

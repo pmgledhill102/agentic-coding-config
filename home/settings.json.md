@@ -41,17 +41,34 @@ prompt.
 
 - `Bash(~/.claude/bin/end-session-*)`
 - `Bash(~/.claude/bin/start-session-*)`
-- `Bash(${CLAUDE_PLUGIN_ROOT}/bin/end-session-*)`
-- `Bash(${CLAUDE_PLUGIN_ROOT}/bin/start-session-*)`
+- `Bash(${CLAUDE_PLUGIN_ROOT:-$HOME/.claude}/bin/end-session-*)`
+- `Bash(${CLAUDE_PLUGIN_ROOT:-$HOME/.claude}/bin/start-session-*)`
 
-The `${CLAUDE_PLUGIN_ROOT}` pair is the same grant for the plugin delivery
-path (ADR-0014), added ahead of the cutover so the commands can reference
-their helpers plugin-relative wherever that variable is set. The matcher is
-literal-prefix and runs **before** shell expansion, so the variable spelling
-in the rule matches the variable spelling in the command — which is why both
-forms are listed rather than one being made to cover the other. Under chezmoi
-the variable is unset and the `~/.claude/bin/` rules are what match; the
-commands pick the form that exists.
+The matcher compares rule text against the command **before** shell expansion,
+with `*` as the only wildcard. So a rule covering a command that contains a
+shell variable has to contain that variable's characters *literally* — the
+rule is never expanded, and neither is the command at match time.
+
+That is why the second pair carries the full `${CLAUDE_PLUGIN_ROOT:-$HOME/.claude}`
+spelling, defaults and all. The commands emit exactly one string, deliberately,
+so a single line works on both delivery channels:
+
+```sh
+${CLAUDE_PLUGIN_ROOT:-$HOME/.claude}/bin/start-session-gather-state
+```
+
+Good design for execution, and unforgiving for matching: it is neither
+`~/.claude/bin/…` nor `${CLAUDE_PLUGIN_ROOT}/bin/…`, so a rule written as
+either of those covers nothing. That was the state from #139 until #237 — four
+rules, zero matches, every `/start-session` and `/end-session` prompting on its
+first step with nothing to indicate why.
+
+The `~/.claude/bin/` pair stays for anything that spells the tilde path
+directly, including a human typing it, but is no longer what carries the
+slash commands.
+
+`tests/allowlist-covers-commands.py` now checks this mechanically — see the
+note there on the one thing it cannot check.
 
 See `docs/end-session-design.md` for the full rationale.
 
@@ -698,6 +715,10 @@ the user revisits it.
 
 ## Hooks
 
+Every hook below is also declared in `home/hooks/hooks.json`, which is what
+carries them to a cloud session — see "Two channels, one set of hooks" at the
+end of this section for how the two copies avoid running twice.
+
 ### PreToolUse (Bash)
 
 1. **pr-checks registration-race rewrite** —
@@ -787,6 +808,43 @@ the user revisits it.
 2. **terraform validate** — Validates the module directory after `.tf` file
    changes. Only runs if `.terraform/` exists in the file's directory
    (i.e., `terraform init` has been run). 30s timeout.
+
+Both are written in POSIX `sh` (`case`, not `[[ ]]`) and lead with
+`command -v terraform || exit 0`. The bash-only test was fine on a workstation
+and silently never matched under `dash`, which is what a Linux sandbox is
+likely to run these with; the `command -v` guard keeps a sandbox that edits a
+`.tf` file from emitting "terraform: not found" on every Write.
+
+### Two channels, one set of hooks
+
+The same five hooks are declared twice: here, for the chezmoi deployment, and
+in `home/hooks/hooks.json`, for the plugin. Claude Code runs every matching
+hook from every source, so a local machine working in a repo that has enabled
+the plugin has both live at once — and `precommit-claude-hook` running
+pre-commit twice on every commit is up to 120s of duplicated work on the
+hottest path there is.
+
+The three script hooks therefore go through `bin/plugin-hook-dispatch` in the
+plugin copy. It stands down when `~/.claude/bin/<hook>` exists, so **the
+chezmoi copy wins wherever it is deployed** — which is also the copy the
+`Bash(~/.claude/bin/gh-pr-checks-wait *)` allow rule below is written for.
+That rule holds through the #142 transition in either order: a machine on an
+old `settings.json` with the plugin already enabled runs each hook once via
+chezmoi, and a machine whose `bin/` has been pruned runs each hook once via
+the plugin. Never twice, never zero.
+
+The two terraform hooks are inline commands rather than scripts, so they have
+no dispatcher and do run twice where both channels are live. Accepted: `fmt`
+is idempotent and instant, `validate` re-reads a module that is already
+initialised, and both no-op entirely without terraform on PATH.
+
+`prchecks-wait-claude-hook` resolves its wrapper as
+`$(dirname "$0")/gh-pr-checks-wait` rather than at a fixed `~/.claude/bin`
+path, which is what lets one file serve both channels. Note the consequence
+for permissions: from the plugin the rewritten command names a path under the
+plugin root, which this allowlist cannot match — cloud sessions read their
+permissions from the project repo's own `.claude/settings.json`, so that is
+where the grant has to be if the rewrite is to stay auto-approved there.
 
 ## StatusLine
 

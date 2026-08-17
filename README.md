@@ -54,7 +54,7 @@ array.
 | `bin/` helpers | yes, at `~/.claude/bin/` | yes, added to the Bash tool's `PATH` |
 | Policy prose (`AGENTS.md`, `CLAUDE.md`) | yes | **no** |
 | Permission allowlist (`settings.json`) | yes | **no** |
-| Hooks | yes, via `settings.json` | not yet — see below |
+| Hooks | yes, via `settings.json` | yes, via `hooks/hooks.json` |
 
 Two limits are structural rather than temporary:
 
@@ -64,10 +64,23 @@ Two limits are structural rather than temporary:
 - **Permissions travel only in repo `.claude/settings.json`**, which is the one
   place a cloud session reads them from.
 
-**Hooks are not in the plugin yet.** They live in `home/settings.json` and
-reference `~/.claude/bin/` paths that don't exist in a sandbox. Porting them
-means a `home/hooks/hooks.json` plus a per-hook surface audit — several are
-workstation-only by nature — so it is deliberately separate work.
+### Hooks, declared twice, run once
+
+The surface audit the hooks port was waiting on found nothing workstation-only:
+all five fail open without `gh`, `jq`, a git repo or terraform, so all five are
+in `hooks/hooks.json`. Two details make the double declaration safe:
+
+- Claude Code runs every matching hook from **every** source, so a local
+  machine in a plugin-enabled repo has both copies live. The plugin's three
+  script hooks go through `bin/plugin-hook-dispatch`, which stands down when
+  `~/.claude/bin/<hook>` exists — the chezmoi copy wins wherever it is
+  deployed, and neither channel is ever skipped entirely.
+- `prchecks-wait-claude-hook` finds its wrapper beside itself
+  (`$(dirname "$0")/gh-pr-checks-wait`) instead of at a fixed `~/.claude/bin`
+  path, so one file serves both channels.
+
+`home/settings.json.md` carries the per-hook detail, including which parts do
+still run twice and why that is fine.
 
 Locally, nothing changes: chezmoi delivers the same content directly, and the
 plugin manifests simply ride along inert.
@@ -291,6 +304,53 @@ never has to change again.
 Entries are permanent: a machine that hasn't been applied to in a year
 still needs them.
 
+### Undeploying a file, which is not the same as retiring it
+
+Since `home/` doubles as the plugin root, the paths that move to the plugin
+channel **cannot be deleted from `home/`** — that would remove them from the
+plugin too. But they still have to leave `~/.claude/`, because chezmoi never
+deletes a target it has stopped managing. Same pruner, opposite precondition.
+
+`home/retired-paths` therefore has two sections, split by an `UNDEPLOYED`
+marker line:
+
+| Section | Meaning | CI asserts |
+| --- | --- | --- |
+| Above the marker | Retired — gone from `home/`, gone from machines | the path is **absent** from `home/` |
+| Below the marker | Undeployed — the plugin still ships it, chezmoi no longer delivers it | the path is **present** in `home/` |
+
+The inversion is the guard: an entry on the wrong side fails the build, so
+neither section can quietly absorb the other's mistakes. `tests/retired-paths.sh`
+is the validator and runs in CI; `tests/retired-paths-test.sh` checks the
+validator against both mirror-image mistakes, because the real list is empty
+below the marker and so exercises neither branch on its own.
+
+**The undeployed section is empty on purpose.** An entry is only correct once
+the chezmoi external has stopped deploying that path — a change to the
+`include` filter in `dotfiles`, which this repo cannot make. List a path while
+chezmoi still deploys it and every `chezmoi apply` writes the file, then the
+post-apply pruner deletes it again: convergent, but churn masquerading as
+working. The order is dotfiles first, entries second. See [#142][issue-142].
+
+### The residue this is heading for
+
+Once the plugin channel is verified end to end ([#48][issue-48]), what chezmoi
+deploys shrinks to the part a plugin structurally cannot carry:
+
+| Stays deployed | Why |
+| --- | --- |
+| `CLAUDE.md`, `AGENTS.md`, `ephemeral-first.md`, `local-machine.md` | Policy prose can't ride a plugin |
+| `settings.json`, `settings.json.md` | Permission allowlists can't ride a plugin |
+| `retired-paths` | Read by the pruner at `~/.claude/retired-paths` |
+| `bin/claude-prune-retired` | Invoked by dotfiles after each apply |
+
+Everything else — `commands/`, `skills/`, `hooks/`, the rest of `bin/` — is
+delivered by the plugin and belongs below the `UNDEPLOYED` marker when that
+step is taken. Note this is a longer list than [#142][issue-142] originally
+assumed: it was written before `home/` became the plugin root, and named only
+the machine-local fragment as residue, when in fact all four policy files are
+structurally stuck on the chezmoi channel.
+
 `/end-session` step 11 remains the backstop. It compares `chezmoi
 managed` against the real contents of `~/.claude/commands/` and
 `~/.claude/bin/`, so it catches drift the list doesn't know about — a
@@ -299,6 +359,8 @@ file retired without a list entry, or one left by another tool.
 [dotfiles-371]: https://github.com/pmgledhill102/dotfiles/issues/371
 
 [issue-125]: https://github.com/pmgledhill102/agentic-coding-config/issues/125
+
+[issue-142]: https://github.com/pmgledhill102/agentic-coding-config/issues/142
 
 ## Slash commands
 

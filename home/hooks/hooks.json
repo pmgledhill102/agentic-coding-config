@@ -1,0 +1,43 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/bin/plugin-hook-dispatch\" prchecks-wait-claude-hook",
+            "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/bin/plugin-hook-dispatch\" prepush-guard-claude-hook",
+            "timeout": 30
+          },
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/bin/plugin-hook-dispatch\" precommit-claude-hook",
+            "timeout": 120
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "command -v terraform >/dev/null 2>&1 || exit 0; FILE_PATH=$(jq -r '.tool_input.file_path // empty'); case \"$FILE_PATH\" in *.tf) terraform fmt \"$FILE_PATH\" ;; esac; true",
+            "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "command -v terraform >/dev/null 2>&1 || exit 0; FILE_PATH=$(jq -r '.tool_input.file_path // empty'); case \"$FILE_PATH\" in *.tf) DIR=$(dirname \"$FILE_PATH\"); [ -d \"$DIR/.terraform\" ] && cd \"$DIR\" && terraform validate ;; esac; true",
+            "timeout": 30
+          }
+        ]
+      }
+    ]
+  }
+}
