@@ -243,6 +243,56 @@ log "adapter -> $HOME/.claude/skills/gcp-credentials"
 # two sources for one command.
 rm -f "$HOME/.claude/commands/gcp-credentials.md"
 
+# --- the workflow skills ------------------------------------------------------
+#
+# Everything above installs the credential client. This section is what makes
+# the script a config channel rather than a credential one: an explicit list of
+# skills that a sandbox should have, fetched by name.
+#
+# WHY A WHITELIST AND NOT `home/skills/*`: there is no directory listing over
+# raw.githubusercontent.com, so a wildcard would need the GitHub API, a token,
+# and a JSON parser — three dependencies for a list that changes a few times a
+# year. Naming them is also the review point: a skill reaches every sandbox the
+# moment it is added here, so the addition should be a decision rather than a
+# side effect of creating a file. The 15 `setup-*` skills are deliberately
+# absent pending a currency review: they are repo-scaffolding procedures that a
+# sandbox session rarely needs, and they predate this surface by some months.
+#
+# WHY THESE FETCH A PRE-BUILT SKILL.md AND gcp-credentials DOES NOT: the 17
+# skills under `home/skills/` are checked in with frontmatter and guarded
+# against drifting from their source command by tests/skills-match-commands.py.
+# There is nothing to synthesise, so this loop just fetches. The credential
+# skill above predates that machinery and is still generated from its command
+# file at install time; when it joins `home/skills/` these two paths merge.
+
+SKILLS="retrospective"
+
+for skill in $SKILLS; do
+    curl -sSfL "$RAW/home/skills/$skill/SKILL.md" -o "$TMP/$skill.SKILL.md" ||
+        die "could not fetch the $skill skill from $REF"
+
+    # Same 404-as-content guard as the helper: a bad ref returns an HTML error
+    # page with a 200 from some proxies, and a skill whose body is HTML fails
+    # in a way that reads like the skill being wrong rather than absent.
+    head -1 "$TMP/$skill.SKILL.md" | grep -q '^---$' ||
+        die "fetched $skill skill has no frontmatter — check that $REF exists"
+
+    dir="$HOME/.agents/skills/$skill"
+    mkdir -p "$dir"
+    cp "$TMP/$skill.SKILL.md" "$dir/SKILL.md"
+
+    # Same canonical/adapter split as the credential skill above: the real file
+    # lives in the vendor-neutral tree, each vendor path is a symlink that
+    # cannot drift. See that comment for the reasoning.
+    rm -rf "$HOME/.claude/skills/$skill"
+    ln -sfn "$dir" "$HOME/.claude/skills/$skill"
+    log "skill   -> $dir/SKILL.md (+ ~/.claude/skills/$skill)"
+
+    # A previous chezmoi-era or hand-copied command file registers the same
+    # /name a second time. Same reasoning as gcp-credentials above.
+    rm -f "$HOME/.claude/commands/$skill.md"
+done
+
 # --- report -------------------------------------------------------------------
 #
 # The pinned ref is logged because a cached cloud environment can serve an older

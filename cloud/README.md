@@ -4,9 +4,16 @@ Everything a vendor's cloud sandbox needs to gain this repo's capabilities,
 without the repo you are working on carrying any of it.
 
 `bootstrap.sh` is the whole mechanism: an environment's setup script fetches it
-by ref and runs it, and it installs the helper and skill into the container.
-See [ADR-0016](../adrs/0016-capability-delivery-principles.md) for why the
-substance lives here rather than in the setup script itself.
+by ref and runs it, and it installs the credential helper and a named set of
+skills into the container. See
+[ADR-0016](../adrs/0016-capability-delivery-principles.md) for why the substance
+lives here rather than in the setup script itself.
+
+Which skills is an explicit whitelist — the `SKILLS` variable in the script —
+rather than everything under `home/skills/`. Raw GitHub offers no directory
+listing, so a wildcard would need the API, a token and a JSON parser; and the
+list being hand-maintained means adding a skill to every sandbox is a decision
+someone makes rather than a side effect of creating a file.
 
 ## Claude Code
 
@@ -125,6 +132,12 @@ Revocation levels and what to do about a possibly-exposed token or request key:
 | `/usr/local/bin/gcp-credentials` | the helper (or `~/.local/bin` unprivileged) |
 | `~/.claude/bin/gcp-credentials` | symlink, because the skill still names that path |
 | `/usr/local/bin/gcloud` | wrapper: prefers the broker token, renews it when stale |
+| `~/.agents/skills/<name>/SKILL.md` | each whitelisted skill, canonical |
+| `~/.claude/skills/<name>` | symlink to the above, for Claude Code |
+
+Whitelisted today: `retrospective`. The 15 `setup-*` skills are held back
+pending a currency review — they are repo-scaffolding procedures a sandbox
+session rarely needs, and they predate this surface.
 
 ## Updating a running session
 
