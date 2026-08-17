@@ -41,17 +41,34 @@ prompt.
 
 - `Bash(~/.claude/bin/end-session-*)`
 - `Bash(~/.claude/bin/start-session-*)`
-- `Bash(${CLAUDE_PLUGIN_ROOT}/bin/end-session-*)`
-- `Bash(${CLAUDE_PLUGIN_ROOT}/bin/start-session-*)`
+- `Bash(${CLAUDE_PLUGIN_ROOT:-$HOME/.claude}/bin/end-session-*)`
+- `Bash(${CLAUDE_PLUGIN_ROOT:-$HOME/.claude}/bin/start-session-*)`
 
-The `${CLAUDE_PLUGIN_ROOT}` pair is the same grant for the plugin delivery
-path (ADR-0014), added ahead of the cutover so the commands can reference
-their helpers plugin-relative wherever that variable is set. The matcher is
-literal-prefix and runs **before** shell expansion, so the variable spelling
-in the rule matches the variable spelling in the command — which is why both
-forms are listed rather than one being made to cover the other. Under chezmoi
-the variable is unset and the `~/.claude/bin/` rules are what match; the
-commands pick the form that exists.
+The matcher compares rule text against the command **before** shell expansion,
+with `*` as the only wildcard. So a rule covering a command that contains a
+shell variable has to contain that variable's characters *literally* — the
+rule is never expanded, and neither is the command at match time.
+
+That is why the second pair carries the full `${CLAUDE_PLUGIN_ROOT:-$HOME/.claude}`
+spelling, defaults and all. The commands emit exactly one string, deliberately,
+so a single line works on both delivery channels:
+
+```sh
+${CLAUDE_PLUGIN_ROOT:-$HOME/.claude}/bin/start-session-gather-state
+```
+
+Good design for execution, and unforgiving for matching: it is neither
+`~/.claude/bin/…` nor `${CLAUDE_PLUGIN_ROOT}/bin/…`, so a rule written as
+either of those covers nothing. That was the state from #139 until #237 — four
+rules, zero matches, every `/start-session` and `/end-session` prompting on its
+first step with nothing to indicate why.
+
+The `~/.claude/bin/` pair stays for anything that spells the tilde path
+directly, including a human typing it, but is no longer what carries the
+slash commands.
+
+`tests/allowlist-covers-commands.py` now checks this mechanically — see the
+note there on the one thing it cannot check.
 
 See `docs/end-session-design.md` for the full rationale.
 

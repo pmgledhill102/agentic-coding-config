@@ -86,6 +86,17 @@ jobs:
       - name: Marketplace and plugin manifests must be valid
         run: python3 tests/plugin-manifests.py
 
+  allowlist-coverage:
+    name: allowlist covers documented commands
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # A permission rule that stops matching fails invisibly: nothing errors,
+      # the user just gets a prompt, and a prompt looks like normal life.
+      - name: Every helper invocation must be covered by an allow rule
+        run: python3 tests/allowlist-covers-commands.py
+
   actionlint:
     name: Action Lint
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
