@@ -75,11 +75,13 @@ second identity, while an approval gate does.
 
 ## The contribution-statistics question
 
-A separate identity was previously rejected because it appeared to cost
-personal recognition for work that is real — design direction, review,
-20+ hours a month — even where the lines are not hand-typed. That
-concern deserves numbers rather than intuition, and the numbers are not
-what they appear.
+A separate identity has been informally resisted on the grounds that it
+costs personal recognition for work that is real — design direction,
+review, 20+ hours a month — even where the lines are not hand-typed.
+That concern deserves numbers rather than intuition, and the numbers are
+not what they appear. (It is *not* the reason recorded in the
+personal-tier decision, which weighed different factors — see
+"Reconciling with the personal-tier decision" below.)
 
 **What GitHub counts** toward the contribution graph: commits where you
 are the *author* (with an email linked to your account) on the default
@@ -264,6 +266,60 @@ single human is to make all code arrive via the bot — defensible, but it
 deadlocks any PR the human pushes to, and that friction should be a
 deliberate later choice rather than a side effect of this ADR.
 
+### Reconciling with the personal-tier decision
+
+This reverses a recorded decision, and says so rather than quietly
+diverging — the failure ADR-0015's deviation rule exists to prevent.
+
+`paul-context/decisions/2026-05-13-sandbox-agent-identity.md` decided
+**"Adopt the cloud-coop model. No separate sandbox-bot account."** Its
+reasoning was not contribution statistics, which it never mentions. It
+was:
+
+- **alignment** with three `cloud-coop` ADRs already committing to one
+  human identity, narrowest credential per surface;
+- **blast radius per surface, not per identity** — a leaked deploy key
+  costs one repo's contents, a leaked fine-grained PAT costs the Issue
+  and PR surface, neither costs the account;
+- **audit-trail clarity considered and rejected**, explicitly: cloud-coop
+  ADR-0029 keeps commits authored as the user, and this decision extended
+  that.
+
+Both of the first two survive intact, and Option 2 does not contradict
+them: a Write-only bot *is* the narrowest credential for the GitHub
+connection, and it narrows blast radius further than a fine-grained PAT
+on an admin account can. What changed is the third point, and it changed
+for a reason that decision could not have weighed.
+
+**A merge gate needs two principals, and that is a mechanism constraint
+rather than a preference.** GitHub does not let a pull request's author
+approve it. With one identity, `required_approving_review_count: 1` is
+not merely undesirable — it is unsatisfiable, which is exactly what
+`setup-repo` already records in the comment *"solo developer — cannot
+require approvals from others"*. The 2026-05-13 decision treated
+attribution as the only thing a second identity would buy. It also buys
+the only enforceable form of the rule this ADR exists to enforce.
+
+That decision listed its own triggers to revisit. One has fired
+literally: *"the first time a non-`pmgledhill102` actor … needs to
+operate against personal-infra repos"* — which is what the reconciler and
+the bot are. The rest of it stands: the per-surface credential model, the
+deploy-key mechanism for git, and the tiered credential delivery are all
+unaffected and should continue.
+
+It also parked a hardening option that this ADR should decline
+explicitly rather than silently pass over: *"a dedicated SSH or GPG
+signing key for sandbox commits would give pseudo-attribution-via-
+signature without changing identity"*. That remains true and remains
+unnecessary. It addresses attribution, which the next section accepts as
+lost and not worth reclaiming; it does nothing for the gate, which is the
+actual problem.
+
+**Required follow-up**: the personal-tier decision must be marked
+superseded in `paul-context`, pointing here. A user-tier ADR cannot edit
+it, and leaving two live decisions that contradict each other is worse
+than either one alone.
+
 ### Contribution attribution
 
 The attribution loss is **accepted, and blocks none of the options
@@ -430,11 +486,16 @@ that will not start.
   logged — prevention is not available to a sole owner.
 - `paul-context` becomes materially more sensitive: it now governs access
   rather than merely recording decisions.
+- A personal-tier decision is reversed, so the estate carries two records
+  of this question until `paul-context` marks its own superseded. That
+  window is the cost of the tiers being in separate repos, one private.
 
 ## Follow-on work
 
 - `setup-repo`: replace `required_pull_request_reviews: null` and its now
   obsolete comment with the bot-aware ruleset payload
+- `paul-context`: mark `decisions/2026-05-13-sandbox-agent-identity.md`
+  superseded by this ADR, keeping its per-surface credential model
 - `CODEOWNERS` for the guardrail paths, plus the relaxed default
 - A protection audit script with a `--check` mode for CI drift detection
 - `home/settings.json`: a `deny` block for `merge_pull_request`,
@@ -449,4 +510,7 @@ that will not start.
   — GitHub staff confirmation that trailers give no graph credit
 - [Creating a commit with multiple authors](https://docs.github.com/en/pull-requests/committing-changes-to-your-project/creating-and-editing-commits/creating-a-commit-with-multiple-authors)
 - [Troubleshooting missing contributions](https://docs.github.com/en/account-and-profile/how-tos/contribution-settings/troubleshooting-missing-contributions)
-- [ADR-0015](0015-tiered-adrs.md) — tier placement for this decision
+- [ADR-0015](0015-tiered-adrs.md) — tier placement, and the rule that a
+  deviation must name what it deviates from
+- `paul-context/decisions/2026-05-13-sandbox-agent-identity.md` — the
+  personal-tier decision this supersedes (private repo)
