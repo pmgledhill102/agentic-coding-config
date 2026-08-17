@@ -160,9 +160,19 @@ carrying on with bd.
 
 ## Global cleanup (once all repos are migrated)
 
-Tracked as follow-up work under
-[#49](https://github.com/pmgledhill102/agentic-coding-config/issues/49):
-retire the `bd prime` hooks, `bd-*` commands, `bd-push-safe`, and the
-`bd`/`beads`/`dolt` permission allowlist entries from `home/`; update
-`/start-session`, `/end-session`, `/retrospective`, and `/repo-review`
-to target GitHub Issues.
+Mostly done. Removed from `home/` on 2026-07-18
+([#123](https://github.com/pmgledhill102/agentic-coding-config/issues/123)):
+the `bd prime` hooks, the `bd-*` commands, `bd-push-safe`, and the
+`bd`/`beads`/`dolt` permission allowlist entries. `/start-session`,
+`/end-session`, `/retrospective` and `/repo-review` now target GitHub
+Issues and no longer mention beads at all. The retired paths are listed in
+`home/retired-paths`, so machines that already had them lose them on the
+next apply
+([#125](https://github.com/pmgledhill102/agentic-coding-config/issues/125),
+verified 2026-08-16).
+
+What remains is `home/bin/bd-migrate-to-github` — the tool this runbook
+drives. It retires with the last repo still on beads, along with that
+repo's `.beads/` workspace, tracked under
+[#131](https://github.com/pmgledhill102/agentic-coding-config/issues/131).
+This runbook retires with it.

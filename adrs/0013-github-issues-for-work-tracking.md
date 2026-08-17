@@ -60,10 +60,17 @@ Summary of the conventions:
 
 ## Consequences
 
-- The beads integration in this repo (bd `prime` hooks, `bd-*` commands,
-  `bd-push-safe`, permission allowlist entries, `.beads/` workspaces)
-  retires once migration is proven — tracked as follow-up work under
-  issue #49, deliberately separate from this decision.
+- The beads integration in this repo retires as migration proves out,
+  deliberately separate from this decision. Most of it has now gone: the
+  `bd prime` hooks, the `bd-*` commands, `bd-push-safe` and the
+  `bd`/`beads`/`dolt` permission entries were removed on 2026-07-18
+  ([#123](https://github.com/pmgledhill102/agentic-coding-config/issues/123)),
+  and the retired paths are listed in `home/retired-paths` so machines that
+  already had them lose them on the next apply
+  ([#125](https://github.com/pmgledhill102/agentic-coding-config/issues/125)).
+  One helper remains — `home/bin/bd-migrate-to-github` — which retires with
+  the last repo still on beads, along with that repo's `.beads/` workspace
+  ([#131](https://github.com/pmgledhill102/agentic-coding-config/issues/131)).
 - Work tracking now requires network access. Accepted: offline operation
   was explicitly not a requirement.
 - Ticket data lives in GitHub rather than in-repo. History is preserved
