@@ -211,6 +211,18 @@ or in the environment's setup script.
 - **Skills delivered by the bootstrap**, listed in `cloud/README.md`.
   A command that exists on the workstation is not necessarily present here.
 
+### `gh` is not installed here
+
+GitHub work goes through the MCP tools. The `gh` CLI is absent from this
+container, so a step that shells out to it fails rather than degrading — and
+several do: `start-session` and `end-session` gather state through helper
+scripts that call `gh`, and those sections report `gh-unavailable` on this
+surface.
+
+Treat a `gh` command written into a skill as naming the *operation*, not the
+tool, and reach for the equivalent MCP call. Where a whole section depends on
+it, say what could not be gathered rather than reporting a clean result.
+
 ## Claude Code adapter
 
 Claude-specific guidance. The portable policy and the environment guidance
@@ -225,7 +237,7 @@ Anything portable belongs in the core fragment, not here.
 - **Prefer `mcp__github__*` tools over the `gh` CLI for all GitHub operations** when the GitHub MCP server is connected. Only fall back to `gh` if the MCP server is unavailable or a specific capability is missing
 - Common mappings: PRs (`create_pull_request`, `pull_request_read`, `update_pull_request`, `merge_pull_request`, `list_pull_requests`, `search_pull_requests`), reviews (`pull_request_review_write`, `add_comment_to_pending_review`, `add_reply_to_pull_request_comment`), issues (`issue_read`, `issue_write`, `list_issues`, `search_issues`, `add_issue_comment`), releases (`get_latest_release`, `list_releases`, `get_release_by_tag`), repo content (`get_file_contents`, `list_commits`, `get_commit`, `list_branches`, `create_branch`), search (`search_code`, `search_repositories`)
 - PR review workflow: create a pending review with `pull_request_review_write` (method: "create"), add line comments with `add_comment_to_pending_review`, then submit with `pull_request_review_write` (method: "submit_pending")
-- **`gh` commands written into a skill or slash command are illustrative, not prescriptive.** Use the `mcp__github__*` equivalent when the MCP server is connected; keep `gh` for sandbox and headless runs, where a `gh` token is more reliably present than an interactively-authenticated MCP server. A literal command in an instruction otherwise overrides this preference at execution time, which is how a session ends up doing every discretionary GitHub op through MCP and every skill-driven one through the CLI
+- **`gh` commands written into a skill or slash command are illustrative, not prescriptive.** Use the `mcp__github__*` equivalent when the MCP server is connected; fall back to `gh` where the MCP server is unavailable and `gh` is present. Which of the two exists is a property of the surface, so the environment fragment states it rather than this one. A literal command in an instruction otherwise overrides this preference at execution time, which is how a session ends up doing every discretionary GitHub op through MCP and every skill-driven one through the CLI
 - Both routes are auto-approved to the same extent, so preferring MCP costs no extra prompts. The one asymmetry is scope: `Bash(gh issue create --repo pmgledhill102/*)` restricts CLI issue creation to the user's own repos, while `mcp__github__issue_write` cannot express that and is approved unscoped. Accepted deliberately — the tool takes an explicit `owner`, so a wrong-repo write is a visible argument rather than a silent default
 
 #### How the portable rules map to these tools
