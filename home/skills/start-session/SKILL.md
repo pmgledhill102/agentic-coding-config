@@ -67,6 +67,7 @@ Output is a sectioned stream. Each section starts with `===<name> (exit=<N>)===`
 | `gh_ready` | 7 | Content `not-github` / `gh-unavailable` / `jq-unavailable` = silent skip. Empty content = no ready work. Otherwise up to 10 pipe-separated rows: `#<n>\|P<pri>\|<title>` (priority `-` when the issue has no `P0`–`P4` label). Ready = open and not directly blocked (`gh issue list --search "is:open -is:blocked"`) — direct blocks only, no transitive query. Already pre-summarised — use rows directly in the brief without further parsing. |
 | `gh_assigned` | 7 | Same skip convention as `gh_ready`. Empty content = nothing in flight. Otherwise pipe-separated rows: `#<n>\|P<pri>\|<title>` for open issues assigned to me (usually 0-3). Same row shape as `gh_ready`. |
 | `claude_drift` | 6b, 7 | `state=absent` (sandbox, no `~/.claude`) or `state=no-source` (not in an a-c-c checkout) = silent skip. `state=compared` gives `behind=<n>` and `modified=<n>`, then one `behind: <path>` / `modified: <path>` line each, plus `remedy_behind=` / `remedy_modified=` when non-zero. Both zero = silent. |
+| `bootstrap_currency` | 6b, 7 | `state=not-a-container` (a workstation) or `state=current` = silent skip. `state=no-manifest` = a container built before manifests existed; silent, and it self-heals when the snapshot next expires. `state=pinned` names the ref the environment froze to — report only if something else looks stale. `state=behind` gives `installed=`, `head=` and a `remedy=` line: surface it, because everything the container ships is that old. `state=unknown` = the ref could not be resolved (no network); mention once, do not retry. |
 
 **On `gh` inside the gather script.** The gather runs as a shell script, so its
 GitHub queries use `gh` and cannot use `mcp__github__*` — an MCP tool is not
@@ -130,6 +131,25 @@ From gather section `recent_main_commits`. The first line is `count=<N>` — com
 This is informational only — no action prompts. The section adds a few lines on busy days and zero on quiet ones.
 
 ### 5b. Deployed-config drift (Tier 1 — surface, never act)
+
+### Is this container running current config?
+
+From gather section `bootstrap_currency`. The container equivalent of the
+drift check below: a cloud environment restores a filesystem snapshot and
+re-runs its setup script only when the script text changes, the allowed hosts
+change, or roughly seven days pass — so pushing to a branch does not reach new
+sessions, and a sandbox can be running week-old skills, policy and helper
+scripts with nothing saying so.
+
+On `state=behind`, say so plainly and give the remedy: re-running the bootstrap
+takes effect immediately and needs no restart. Everything the container
+delivers — skills, policy, helpers — is as old as that SHA, so it is worth
+one line at the top of the brief rather than a footnote.
+
+Two honest limits, worth knowing rather than implying more than it does. The
+check ships inside the thing it checks, so a container older than the check
+cannot report it — that resolves itself after one cache cycle, not immediately.
+And this runs only when start-session runs; it is advisory, not a guarantee.
 
 From gather section `claude_drift`. Answers a question nothing else asks: does
 `~/.claude/` on this machine still match what the repo says it should be?

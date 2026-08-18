@@ -202,6 +202,61 @@ run_sh gh_assigned '
 # differs), and silent when everything is current. Lives in its own script
 # because the direction-of-drift logic does not belong inline in a `sh -c`.
 run_section claude_drift "$(dirname "$0")/start-session-claude-drift"
+# Container currency. The sibling of claude_drift: that asks "is deployed config
+# behind the repo?" on a workstation, this asks it of a container. A cloud
+# environment restores a filesystem snapshot and re-runs its setup script only
+# when the script text changes or the cache expires, so a sandbox can be running
+# week-old skills, policy and helpers with nothing in the session saying so
+# (#246).
+#
+# Silent when there is nothing to say, like claude_drift. A workstation has no
+# manifest and reports not-a-container, which is not a problem to solve.
+#
+# shellcheck disable=SC2016
+run_sh bootstrap_currency '
+    manifest="$HOME/.agents/.bootstrap-manifest"
+    repo="https://github.com/pmgledhill102/agentic-coding-config"
+
+    if [ ! -f "$manifest" ]; then
+        # Either a workstation, or a container built before manifests existed.
+        # The second cannot be distinguished from here, and self-heals: once the
+        # snapshot expires, the next build writes one.
+        if [ -d "$HOME/.agents/skills" ]; then
+            echo "state=no-manifest"
+        else
+            echo "state=not-a-container"
+        fi
+        exit 0
+    fi
+
+    ref=$(sed -n "s/^ref=//p" "$manifest")
+    kind=$(sed -n "s/^ref_kind=//p" "$manifest")
+    installed=$(sed -n "s/^sha=//p" "$manifest")
+    at=$(sed -n "s/^installed_at=//p" "$manifest")
+
+    # A pinned SHA cannot be behind — it is what the environment asked for.
+    # Saying so is still useful: it tells a reader the container is frozen by
+    # intent rather than by neglect.
+    if [ "$kind" != "ref" ]; then
+        echo "state=pinned ref=$ref sha=$installed installed_at=$at"
+        exit 0
+    fi
+
+    head=$(git ls-remote "$repo" "$ref" 2>/dev/null | head -1 | cut -f1)
+    if [ -z "$head" ]; then
+        echo "state=unknown ref=$ref installed_at=$at"
+        exit 0
+    fi
+
+    if [ "$head" = "$installed" ]; then
+        echo "state=current ref=$ref installed_at=$at"
+        exit 0
+    fi
+
+    echo "state=behind ref=$ref installed=$installed head=$head installed_at=$at"
+    echo "remedy=re-run the bootstrap; it takes effect immediately and needs no restart"
+'
+
 
 export PRE_FETCH_DEFAULT_SHA
 
@@ -255,6 +310,6 @@ if [ "$FETCH_EXIT" -ne 0 ]; then
 fi
 printf '\n'
 
-for s in local_state main_ci recent_main_commits gh_ready gh_assigned claude_drift; do
+for s in local_state main_ci recent_main_commits gh_ready gh_assigned claude_drift bootstrap_currency; do
     [ -f "$TMP/$s.exit" ] && emit "$s"
 done
