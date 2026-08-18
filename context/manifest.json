@@ -1,0 +1,25 @@
+{
+  "//": "Source of truth for composed agent context. See adrs/0018-composing-agent-context-per-surface.md.",
+  "//fragments": "Fragments are authored standalone with their own H1. The generator demotes every heading one level and emits a single H1 per output, so composed files satisfy MD025.",
+  "//outputs": "Output paths differ by delivery route, deliberately: the workstation profile writes to home/, which chezmoi deploys unchanged; other profiles write to profiles/, which is repo-meta and is fetched by cloud/bootstrap.sh.",
+  "fragment_dir": "context/fragments",
+  "environment_fragments": ["env-workstation", "env-cloud-sandbox"],
+  "profiles": {
+    "claude-workstation": {
+      "title": "Agent context — Claude Code on a workstation",
+      "environment": "env-workstation",
+      "outputs": {
+        "home/AGENTS.md": ["core", "ephemeral-first"],
+        "home/CLAUDE.md": ["core", "ephemeral-first", "env-workstation", "provider-claude"]
+      }
+    },
+    "claude-cloud-sandbox": {
+      "title": "Agent context — Claude Code in a cloud sandbox",
+      "environment": "env-cloud-sandbox",
+      "outputs": {
+        "profiles/claude-cloud-sandbox/AGENTS.md": ["core", "ephemeral-first"],
+        "profiles/claude-cloud-sandbox/CLAUDE.md": ["core", "ephemeral-first", "env-cloud-sandbox", "provider-claude"]
+      }
+    }
+  }
+}
