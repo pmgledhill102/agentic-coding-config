@@ -136,10 +136,54 @@ Revocation levels and what to do about a possibly-exposed token or request key:
 | `~/.claude/skills/<name>` | symlink to the above, for Claude Code |
 | `~/.agents/AGENTS.md` | the composed policy profile |
 | `~/.claude/CLAUDE.md` | the Claude adapter profile (Claude profiles only) |
+| `~/.config/git/hooks/pre-commit` | global git hook, with `--with-precommit` |
+| `/usr/local/bin/pre-commit`, `/usr/bin/shellcheck`, `/usr/local/bin/actionlint` | with `--with-precommit` |
 
 Whitelisted today: `retrospective`. The 15 `setup-*` skills are held back
 pending a currency review — they are repo-scaffolding procedures a sandbox
 session rarely needs, and they predate this surface.
+
+## Pre-commit enforcement
+
+Sandboxes bypassed the pre-commit framework entirely until `--with-precommit`:
+the binary was absent and no `.git/hooks/pre-commit` existed, so a repo's
+committed `.pre-commit-config.yaml` did nothing here (#254).
+
+```sh
+  | sh -s -- <REF> --with-precommit
+```
+
+It installs `pre-commit`, plus `shellcheck` and `actionlint`, which this
+estate's config runs as `language: system` hooks — they use the binary on
+`PATH` so the hook and CI cannot drift to different versions, which only works
+if the binaries are present. Installing them is the point; the config's `SKIP=`
+escape is for a laptop missing one, and normalising it would leave enforcement
+that is routinely skipped.
+
+Opt-in for two reasons: it is the only part of this script needing the Ubuntu
+archives, so an environment that cannot reach them keeps working by not asking;
+and the one line an environment carries should declare what kind of environment
+it is.
+
+**The hook is global, via `core.hooksPath`, not `pre-commit install` per repo.**
+This script runs from an environment setup script whose ordering against the
+session's clone it cannot rely on — the repository may not exist yet, and may
+not be the only one. A global hook is set once and applies however and whenever
+a repo arrives. The trade-off is real and worth knowing: `core.hooksPath`
+*replaces* a repo's own `.git/hooks` rather than adding to it, and
+`pre-commit install` will warn that it is being overridden. In this estate
+hooks come from pre-commit anyway.
+
+The hook exits 0 in a repo with no `.pre-commit-config.yaml`. Such a repo is
+not opting out of anything — it has no configuration to run, and blocking its
+commits would be the container inventing policy the repo never asked for.
+
+This is the vendor-neutral half of enforcement: git runs `.git/hooks` itself,
+so it needs no agent configuration and covers Claude, Codex and a human typing
+`git commit` identically. The harness-hook half — `home/hooks/hooks.json`,
+which feeds failures back into the agent's context — is tracked separately
+in #254, and is blocked on whether a container-created
+`~/.claude/settings.json` registers hooks at all.
 
 ## Which profile
 
