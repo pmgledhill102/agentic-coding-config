@@ -5,7 +5,7 @@
 # everything of substance stays here, versioned, instead of being pasted into a
 # vendor configuration field (ADR-0016, principle 5):
 #
-#   curl -sSL https://raw.githubusercontent.com/pmgledhill102/agentic-coding-config/<REF>/cloud/bootstrap.sh | sh -s -- <REF> [--with-gcloud] [--with-precommit] [--profile <name>]
+#   curl -sSL https://raw.githubusercontent.com/pmgledhill102/agentic-coding-config/<REF>/cloud/bootstrap.sh | sh -s -- <REF> [--with-gcloud] [--with-precommit] [--with-hooks] [--profile <name>]
 #
 # --with-gcloud installs the Google Cloud SDK as well. Opt-in, so that the one
 # line an environment carries declares what kind of environment it is.
@@ -15,6 +15,11 @@
 # container is covered. Opt-in for the same reason, and one more: it is the only
 # part of this script that needs the Ubuntu archives, so an environment that
 # cannot reach them keeps working by not asking for it.
+#
+# --with-hooks wires this estate's PreToolUse guards and PostToolUse terraform
+# hooks into ~/.claude/settings.json. Separate from --with-precommit because
+# they are different mechanisms: a git hook blocks the commit, a harness hook
+# returns the failure into the agent's context where it can act on it.
 #
 # --profile names the composed context profile to install, defaulting to
 # claude-cloud-sandbox. A Codex environment passes --profile codex-cloud-sandbox.
@@ -43,12 +48,14 @@ REF="${1:-main}"
 [ $# -gt 0 ] && shift
 WITH_GCLOUD=0
 WITH_PRECOMMIT=0
+WITH_HOOKS=0
 PROFILE=claude-cloud-sandbox
 
 while [ $# -gt 0 ]; do
     case "$1" in
         --with-gcloud) WITH_GCLOUD=1 ;;
         --with-precommit) WITH_PRECOMMIT=1 ;;
+        --with-hooks) WITH_HOOKS=1 ;;
         --profile)
             shift
             [ $# -gt 0 ] || die "--profile needs a value"
@@ -505,6 +512,72 @@ for skill in $SKILLS; do
     # /name a second time. Same reasoning as gcp-credentials above.
     rm -f "$HOME/.claude/commands/$skill.md"
 done
+
+# --- harness hooks, on request ------------------------------------------------
+#
+# The other half of enforcement. #256 ships the pre-commit framework and a
+# native git hook, which blocks a bad commit; these run inside the agent loop
+# and return the failure into its context, where it can read the message and
+# fix the cause rather than just being stopped. Both are worth having.
+#
+# Viable because a container-created ~/.claude/settings.json IS honoured --
+# measured 2026-08-18 by planting one and watching a PreToolUse hook fire eight
+# seconds later, with no session restart (#254). That is the third
+# documented-as-unavailable user-scope path to work from inside the container,
+# after ~/.claude/skills and ~/.claude/CLAUDE.md.
+#
+# The wiring is taken from home/settings.json rather than restated here. That
+# file is the workstation's, and it already invokes ~/.claude/bin/<hook>
+# directly -- the same paths this script installs to -- so the two surfaces run
+# identical hooks from one source instead of a copy that drifts.
+#
+# NOT via plugin-hook-dispatch. That dispatcher exists to stand down when a
+# ~/.claude/bin copy is present, because a plugin-enabled workstation would
+# otherwise run every hook twice. Here the bootstrap-written copy is the only
+# copy, so the settings file names it directly, exactly as chezmoi's does.
+
+if [ "$WITH_HOOKS" -eq 1 ]; then
+    command -v jq > /dev/null 2>&1 || die "--with-hooks needs jq to merge settings.json"
+
+    for script in prchecks-wait-claude-hook prepush-guard-claude-hook precommit-claude-hook; do
+        curl -sSfL "$RAW/home/bin/$script" -o "$TMP/$script" ||
+            die "could not fetch hook script $script from $REF"
+        head -1 "$TMP/$script" | grep -q '^#!' || die "fetched $script is not a script"
+        install -m 0755 "$TMP/$script" "$HOME/.claude/bin/$script"
+    done
+
+    curl -sSfL "$RAW/home/settings.json" -o "$TMP/settings.json" ||
+        die "could not fetch home/settings.json from $REF"
+    jq -e '.hooks' "$TMP/settings.json" > "$TMP/hooks.json" ||
+        die "home/settings.json has no .hooks block"
+
+    # Merge rather than overwrite. A container may already have a settings.json
+    # -- this script's own earlier run, or something the environment put there
+    # -- and replacing it wholesale would silently drop whatever else it holds.
+    # `*` deep-merges objects and replaces arrays, so the hook lists this repo
+    # owns are replaced while any other key survives untouched.
+    #
+    # Note ~/.claude/launcher-settings.json is a DIFFERENT file with its own
+    # hooks, written by the harness. Nothing here touches it, and both are read.
+    SETTINGS="$HOME/.claude/settings.json"
+    if [ -f "$SETTINGS" ]; then
+        jq -s '.[0] * {hooks: .[1]}' "$SETTINGS" "$TMP/hooks.json" > "$TMP/merged.json" ||
+            die "could not merge into existing $SETTINGS"
+        mv "$TMP/merged.json" "$SETTINGS"
+        log "hooks   -> $SETTINGS (merged into existing)"
+    else
+        jq -n --slurpfile h "$TMP/hooks.json" '{hooks: $h[0]}' > "$SETTINGS" ||
+            die "could not write $SETTINGS"
+        log "hooks   -> $SETTINGS (created)"
+    fi
+
+    # prepush-guard needs gh, which these containers do not have (#257), so it
+    # exits 0 here. precommit-claude-hook needs the pre-commit framework and is
+    # a no-op without --with-precommit. Both degrade rather than failing, which
+    # is why this flag has no hard dependency on that one -- but the pair is
+    # what makes it worth having.
+    log "hooks   :  prchecks-wait, prepush-guard (needs gh), precommit (needs --with-precommit)"
+fi
 
 # --- the manifest -------------------------------------------------------------
 #
