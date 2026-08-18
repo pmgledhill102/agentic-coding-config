@@ -42,6 +42,58 @@ with any coding agent, on any surface** — a provider-neutral content core
 (policy, skills, hooks) plus thin per-provider adapters — with a small,
 explicitly machine-local residue still delivered by chezmoi/dotfiles.
 
+## 2a. Why cloud-first at all (addendum, 2026-08-18)
+
+This review treats "most work now happens in cloud sandboxes" as an
+observed fact and never says why. The premise is load-bearing — every
+delivery decision since follows from it — so the reasons are recorded
+here rather than left implicit.
+
+- **Resilience to a dropped connection.** A cloud session is not running
+  on the laptop, so losing wifi or cellular does not lose the work. It
+  keeps going while disconnected and is still there on reconnect. This
+  matters most on trains and tethered connections, and most of all during
+  a long setup script: a 10–15 minute environment build that a local
+  session would abandon at the first drop simply continues.
+
+  This is not an edge case here. Regular travel is roughly **three hours
+  most weeks** — 40 minutes each way to Manchester, two or three times a
+  week — plus a **four-hour round trip every three to four weeks**. That
+  is a standing fraction of working time spent on connections that drop
+  by design, in tunnels and between masts. A surface that loses a session
+  when the signal goes cannot be used for that time at all; a cloud
+  session merely stops being watched.
+
+  It is the reason easiest to overlook when comparing the two at a desk
+  with good wifi, and the one that decides it in practice.
+- **Blast radius.** The session runs in an isolated, single-tenant,
+  disposable VM. A destructive mistake costs a container, not a
+  workstation, and credentials are handled by a proxy rather than sitting
+  in the sandbox.
+- **A different, and lower, permissions risk model.** §4.5 demotes the
+  granular allowlist honestly: it is bypassed in cloud sessions, and the
+  reason that is acceptable is that the thing it protects — a durable
+  machine with the user's own files and keys — is not what the agent is
+  running on.
+- **Parallelism, and not tying up the machine.** Several sessions run at
+  once, none of them competing for the laptop's CPU, network, or
+  attention.
+- **Monitorable from anywhere.** A session can be checked and steered
+  from a phone, which only makes sense because it is not tied to a
+  terminal.
+
+The costs are real and tracked, not hidden: sandboxes have no user-level
+config (#245), miss tools the work needs (#240), and sit behind an egress
+policy that blocks documentation and registries (#241). The first two of
+those are what this repo exists to close.
+
+**Where this is recorded, and why not in `home/`.** This is rationale, not
+policy — it explains a choice rather than instructing an agent. Under
+ADR-0018 principle 2 it therefore belongs in repo-meta documentation,
+which never deploys and costs no context, rather than in
+`home/ephemeral-first.md` where it would load on every turn of every
+session forever without changing what any agent does.
+
 ## 3. What changed since January (evidence)
 
 Full research is in #136 and its comments; the load-bearing facts:
