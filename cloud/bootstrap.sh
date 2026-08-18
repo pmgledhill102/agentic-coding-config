@@ -5,10 +5,16 @@
 # everything of substance stays here, versioned, instead of being pasted into a
 # vendor configuration field (ADR-0016, principle 5):
 #
-#   curl -sSL https://raw.githubusercontent.com/pmgledhill102/agentic-coding-config/<REF>/cloud/bootstrap.sh | sh -s -- <REF> [--with-gcloud] [--profile <name>]
+#   curl -sSL https://raw.githubusercontent.com/pmgledhill102/agentic-coding-config/<REF>/cloud/bootstrap.sh | sh -s -- <REF> [--with-gcloud] [--with-precommit] [--profile <name>]
 #
 # --with-gcloud installs the Google Cloud SDK as well. Opt-in, so that the one
 # line an environment carries declares what kind of environment it is.
+#
+# --with-precommit installs the pre-commit framework and the binaries this
+# estate's hooks need, and points git at a global hook so every repo in the
+# container is covered. Opt-in for the same reason, and one more: it is the only
+# part of this script that needs the Ubuntu archives, so an environment that
+# cannot reach them keeps working by not asking for it.
 #
 # --profile names the composed context profile to install, defaulting to
 # claude-cloud-sandbox. A Codex environment passes --profile codex-cloud-sandbox.
@@ -36,11 +42,13 @@ die() { echo "[bootstrap] error: $*" >&2; exit 1; }
 REF="${1:-main}"
 [ $# -gt 0 ] && shift
 WITH_GCLOUD=0
+WITH_PRECOMMIT=0
 PROFILE=claude-cloud-sandbox
 
 while [ $# -gt 0 ]; do
     case "$1" in
         --with-gcloud) WITH_GCLOUD=1 ;;
+        --with-precommit) WITH_PRECOMMIT=1 ;;
         --profile)
             shift
             [ $# -gt 0 ] || die "--profile needs a value"
@@ -75,6 +83,12 @@ log "installing from ${REF}"
 # archives reachable, and bakes an assumption into a snapshot where nobody will
 # revisit it. A task that genuinely needs a package can install it, having
 # established that it is missing.
+#
+# --with-precommit does apt-get, which is not a reversal of that. The objection
+# above is to installing on a *guess*; a hook declared in a repo's committed
+# .pre-commit-config.yaml that cannot run without shellcheck is a demonstrated
+# dependency. It stays behind a flag so the archive requirement is opted into
+# rather than imposed on every environment.
 
 # --- gcloud, on request -------------------------------------------------------
 #
@@ -264,6 +278,94 @@ log "adapter -> $HOME/.claude/skills/gcp-credentials"
 # skill that already works from the neutral path. Remove it rather than leave
 # two sources for one command.
 rm -f "$HOME/.claude/commands/gcp-credentials.md"
+
+# --- pre-commit, on request ---------------------------------------------------
+#
+# Sandboxes bypassed the pre-commit framework entirely: the binary was absent
+# and no `.git/hooks/pre-commit` existed, so a repo's committed
+# .pre-commit-config.yaml did nothing here (#254). Four consecutive PRs on
+# 2026-08-18 were committed with markdownlint, shellcheck and actionlint
+# unenforced -- they passed only because a human-equivalent ran them by hand.
+#
+# This is the vendor-neutral half of enforcement, and the reason it is worth
+# doing before the harness-hook half: git runs .git/hooks itself, so nothing
+# here depends on agent configuration, on which harness is running, or on the
+# unsettled question of whether a container-created ~/.claude/settings.json is
+# honoured. It covers Codex, Claude, and a human typing `git commit`, all the
+# same way.
+
+if [ "$WITH_PRECOMMIT" -eq 1 ]; then
+    # Both linters are `language: system` hooks in this estate's config -- they
+    # run the binary on PATH rather than a pinned mirror, so the hook and CI
+    # cannot drift to different versions.
+    #
+    # (Written as "both linters" rather than naming the first one at the start
+    # of a comment line: `# shellcheck ...` is parsed as a shellcheck directive
+    # and fails the lint, which this script is itself subject to.) That only works if the
+    # binaries are here. Installing them is the whole point; SKIP= exists for a
+    # laptop missing one, and normalising it would leave enforcement that is
+    # routinely skipped, which is not enforcement.
+    if ! command -v shellcheck > /dev/null 2>&1; then
+        if ! apt-get update -qq > /dev/null 2>&1; then
+            die "apt-get update failed — are the Ubuntu archives reachable?"
+        fi
+        if ! DEBIAN_FRONTEND=noninteractive apt-get install -y -qq shellcheck > /dev/null 2>&1; then
+            die "could not install shellcheck"
+        fi
+    fi
+    log "shellck -> $(command -v shellcheck)"
+
+    # actionlint is not packaged in Ubuntu, so it comes from a pinned release.
+    # Note github.com answers 403 to this sandbox's curl while the release asset
+    # itself resolves fine through the redirect -- a naive reachability probe
+    # against github.com reads as an egress block and is not one.
+    if ! command -v actionlint > /dev/null 2>&1; then
+        AL_VER=1.7.7
+        curl -sSfL -o "$TMP/actionlint.tar.gz" \
+            "https://github.com/rhysd/actionlint/releases/download/v${AL_VER}/actionlint_${AL_VER}_linux_amd64.tar.gz" ||
+            die "could not download actionlint ${AL_VER}"
+        tar -xzf "$TMP/actionlint.tar.gz" -C "$TMP" actionlint || die "could not unpack actionlint"
+        install -m 0755 "$TMP/actionlint" /usr/local/bin/actionlint || die "could not install actionlint"
+    fi
+    log "actionl -> $(command -v actionlint)"
+
+    command -v pre-commit > /dev/null 2>&1 ||
+        pip install --quiet --no-input pre-commit > /dev/null 2>&1 ||
+        die "could not install pre-commit from PyPI"
+    log "precmit -> $(command -v pre-commit) ($(pre-commit --version))"
+
+    # A GLOBAL hook via core.hooksPath, not `pre-commit install` per repo.
+    #
+    # `pre-commit install` writes into an existing clone's .git/hooks, and this
+    # script runs from an environment setup script whose ordering against the
+    # session's clone is not something it can rely on -- the repository may not
+    # exist yet, and may not be the only one. core.hooksPath is set once and
+    # applies to every repo in the container however and whenever it arrives.
+    #
+    # The trade-off, stated because it is real: core.hooksPath REPLACES a repo's
+    # own .git/hooks rather than adding to it, and `pre-commit install` will warn
+    # that it is being overridden. In this estate hooks come from pre-commit
+    # anyway, so nothing is lost; a container that needed bespoke per-repo hooks
+    # would want the other mechanism.
+    HOOK_DIR="$HOME/.config/git/hooks"
+    mkdir -p "$HOOK_DIR"
+    cat > "$HOOK_DIR/pre-commit" << 'HOOK'
+#!/bin/sh
+# Installed by agentic-coding-config cloud/bootstrap.sh.
+#
+# Global pre-commit hook: runs the repo's own pre-commit configuration when it
+# has one, and gets out of the way when it does not. A repo with no
+# .pre-commit-config.yaml is not opting out of anything -- it simply has no
+# configuration to run, and blocking its commits would be this container
+# inventing policy the repo never asked for.
+[ -f .pre-commit-config.yaml ] || exit 0
+command -v pre-commit > /dev/null 2>&1 || exit 0
+exec pre-commit run --hook-stage pre-commit
+HOOK
+    chmod 0755 "$HOOK_DIR/pre-commit"
+    git config --global core.hooksPath "$HOOK_DIR"
+    log "githook -> $HOOK_DIR/pre-commit (core.hooksPath, all repos)"
+fi
 
 # --- the agent policy ---------------------------------------------------------
 #
