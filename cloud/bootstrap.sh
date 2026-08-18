@@ -506,6 +506,51 @@ for skill in $SKILLS; do
     rm -f "$HOME/.claude/commands/$skill.md"
 done
 
+# --- the manifest -------------------------------------------------------------
+#
+# Records what this run installed, so a later session can tell how old its
+# container is. Nothing else knows: a cloud environment re-runs its setup script
+# only when the script text changes, the allowed hosts change, or roughly seven
+# days pass, so pushing to a branch does not reach new sessions -- they keep
+# restoring the snapshot built the first time (#246).
+#
+# The credential helper solved its half server-side, by sending a version the
+# broker can refuse (#182). Skills, policy and helper scripts have no server on
+# the other end, so the skew is silent unless something writes down what it did.
+#
+# `git ls-remote` rather than the GitHub API: no token, no JSON parsing, and git
+# is already required to be here. A REF that is already a commit SHA will not
+# match a ref name, which is not a failure -- it is a pin, and pinned is the
+# recommended state. Recorded as `pin` so a reader can tell "pinned" from
+# "could not resolve".
+
+MANIFEST="$HOME/.agents/.bootstrap-manifest"
+mkdir -p "$HOME/.agents"
+
+resolved=$(git ls-remote "https://github.com/pmgledhill102/agentic-coding-config" "$REF" 2>/dev/null |
+    awk 'NR==1 {print $1}')
+if [ -z "$resolved" ]; then
+    case "$REF" in
+        [0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]*) resolved="$REF" ; kind=pin ;;
+        *) resolved="unresolved" ; kind=unresolved ;;
+    esac
+else
+    kind=ref
+fi
+
+{
+    echo "ref=$REF"
+    echo "ref_kind=$kind"
+    echo "sha=$resolved"
+    echo "installed_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    echo "profile=$PROFILE"
+    echo "skills=$SKILLS"
+    echo "helpers=$BIN_SCRIPTS"
+    echo "precommit=$WITH_PRECOMMIT"
+    echo "gcloud=$WITH_GCLOUD"
+} > "$MANIFEST"
+log "manifst -> $MANIFEST ($kind $(echo "$resolved" | cut -c1-12))"
+
 # --- report -------------------------------------------------------------------
 #
 # The pinned ref is logged because a cached cloud environment can serve an older

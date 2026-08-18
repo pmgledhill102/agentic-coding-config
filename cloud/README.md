@@ -137,6 +137,7 @@ Revocation levels and what to do about a possibly-exposed token or request key:
 | `~/.agents/AGENTS.md` | the composed policy profile |
 | `~/.claude/CLAUDE.md` | the Claude adapter profile (Claude profiles only) |
 | `~/.claude/bin/<script>` | the four session helper scripts |
+| `~/.agents/.bootstrap-manifest` | what this run installed: ref, SHA, profile, skills, helpers |
 | `~/.config/git/hooks/pre-commit` | global git hook, with `--with-precommit` |
 | `/usr/local/bin/pre-commit`, `/usr/bin/shellcheck`, `/usr/local/bin/actionlint` | with `--with-precommit` |
 
@@ -198,6 +199,32 @@ so it needs no agent configuration and covers Claude, Codex and a human typing
 which feeds failures back into the agent's context — is tracked separately
 in #254, and is blocked on whether a container-created
 `~/.claude/settings.json` registers hooks at all.
+
+## Knowing whether a container is stale
+
+The environment re-runs its setup script only when the script text changes, the
+allowed hosts change, or roughly seven days pass — so a push does not reach new
+sessions and a sandbox can be running week-old content with nothing saying so.
+The credential helper solved its half server-side, by sending a version the
+broker can refuse (#182); skills, policy and helper scripts have no server on
+the other end.
+
+So the bootstrap writes `~/.agents/.bootstrap-manifest` recording the ref, the
+resolved SHA, the timestamp, the profile, and what it installed. `start-session`
+reads it in its `bootstrap_currency` section and reports `current`, `behind`,
+`pinned`, `no-manifest` or `unknown`. On `behind` it gives the remedy, which is
+re-running the bootstrap — immediate, no restart.
+
+`git ls-remote` resolves the ref rather than the GitHub API: no token, no JSON
+parsing, and git is already required to be here.
+
+**What this guarantees, precisely.** Not that every session starts fresh. The
+check ships inside the thing it checks, so a container older than the check
+cannot report it — that self-heals after one cache cycle rather than
+immediately. And it runs only when `start-session` runs. It is advisory. The
+automatic version would be a `SessionStart` hook, which is blocked on whether
+hooks in a container-created `~/.claude/settings.json` are honoured at all
+(#254).
 
 ## Which profile
 
