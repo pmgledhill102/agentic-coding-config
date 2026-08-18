@@ -236,6 +236,23 @@ running it:
   POSIX `sh`, `curl` and `jq` are all present — and reached the broker
   through Codex's proxy.
 
+  **The runtime is Ubuntu 24.04, measured twice from different angles
+  (2026-08-18).** Its Dockerfile is `FROM ubuntu:24.04`; and a live Codex
+  session reports `ID=ubuntu`, `VERSION_ID=24.04`, `PRETTY_NAME=Ubuntu
+  24.04.4 LTS`, `x86_64`, with `/bin/sh` resolving to `/usr/bin/dash`. The
+  two are worth keeping separate: the Dockerfile gives the base-image tag,
+  which a running container cannot reveal, while the runtime check gives
+  the userland actually present, which a build recipe only implies. A
+  Claude sandbox measured the same day reports the same release, `Ubuntu
+  24.04.4 LTS`, and the same `/bin/sh` → dash.
+
+  So both cloud harnesses share one userland: GNU tools, dash as
+  `/bin/sh`. That is what makes "every non-macOS surface is Ubuntu 24.04"
+  a fact rather than a hope — and with Windows scoped to WSL Ubuntu, it
+  reduces the portability target to exactly two userlands. It is why
+  scripts here target POSIX `sh` with BSD fallbacks rather than one
+  vendor's tools.
+
 Two vendors, one mechanism, nothing committed to the repo being worked
 on. That is principle 1 demonstrated rather than asserted, and it is why
 this ADR is Accepted rather than Proposed.

@@ -105,7 +105,9 @@ stated rather than inferred from where it sits.
 
 ### Shell Scripts
 
-- **Target POSIX sh**: Avoid bash-only builtins (`mapfile`, `readarray`, `declare -A`). Be aware that `$(( expr ))` returns exit code 1 when the result is 0, which breaks `set -e`
+- **Target POSIX sh**, and know why. Scripts here run on exactly two userlands: **macOS** (BSD tools, and `/bin/sh` is bash in POSIX mode) and **Ubuntu 24.04** (GNU tools, and `/bin/sh` is dash) — the latter covering both cloud harnesses and WSL. The trap is the asymmetry: a bashism in a `#!/bin/sh` script runs happily on macOS, where you develop, and fails under dash, where it ships. Avoid bash-only builtins (`mapfile`, `readarray`, `declare -A`). Be aware that `$(( expr ))` returns exit code 1 when the result is 0, which breaks `set -e`. CI shellchecks by shebang, so declaring `#!/bin/sh` is what buys the POSIX check
+- **Where BSD and GNU differ, try both rather than picking one.** The established idiom here is GNU first with a BSD fallback: `stat -c %Y "$f" 2>/dev/null || stat -f %m "$f" 2>/dev/null`. The same care applies to `sed -i`, `readlink -f`, `date`, and `grep -P`
+- **If `bash` is genuinely required, it must run on bash 3.2**, which is what macOS ships. Prefer `#!/usr/bin/env bash` over `#!/bin/bash` so a newer interpreter is used when one is on `PATH`, but do not rely on one being there
 - **Verify CLI flags before using them — for both commands you run AND advice you give the user**: Run `<tool> --help` or `<tool> help <subcommand>` locally before committing or before recommending a flag in chat. `--no-lock`-style hallucinations waste a round-trip whether they fire in your own call or in the user's terminal after you suggest them
 - **Multi-step probe loops go in a script file, not inline**: For anything that loops over hosts/endpoints/cases, write a script to a scratch directory and run it, rather than composing the loop in a single shell call. Interactive shells differ from `sh` in ways that fail silently — see `local-machine.md` for the specific traps on this workstation
 - **Raw strings when patching file content via `python3` heredocs**: a regular triple-quoted payload turns `\n` in the *target* file's source (e.g. a Go or JSON string literal) into a real newline, producing a syntax error that surfaces a couple of tool calls later. Use `r'''…'''`, or better, use a surgical edit tool for source changes
@@ -185,20 +187,46 @@ the sandbox will still be here" is not one of the three.
 
 ## Machine-local guidance
 
-True only on a workstation. Nothing here applies in a cloud sandbox, and
-this file is deliberately not part of the portable core: a sandbox has no
-chezmoi, no `~/.claude/` to be overwritten, and a different shell.
+True only on a **macOS workstation running zsh**, with `~/.claude/` managed
+by chezmoi. Nothing here applies in a cloud sandbox, which has no chezmoi, a
+`~/.claude/` written by the bootstrap, and a different shell. This fragment is
+composed only into workstation profiles; the composition guard in
+`tests/compose-context.py` fails the build if it reaches a sandbox one.
 
-Imported by `CLAUDE.md`. Portable policy lives in `AGENTS.md`.
+### Windows is out of scope, via WSL
+
+Windows is not a target and no accommodation for it belongs anywhere in this
+repo — no PowerShell, no `cmd`, no Windows paths, no CRLF handling. **If
+Windows is ever needed it is via WSL running Ubuntu**, which is the same
+userland as the cloud sandboxes, so it costs a new environment fragment rather
+than a second dialect running through every script.
+
+That constraint is what keeps the surface count at two: **macOS and Ubuntu
+24.04**. Both cloud harnesses are Ubuntu 24.04 — Claude's sandbox and Codex's
+`codex-universal`, which is `FROM ubuntu:24.04`.
+
+Note for whoever adds that fragment: this file currently mixes two things that
+happen to correlate today — **persistence and delivery** (durable, chezmoi
+manages `~/.claude/`) and **OS and shell** (macOS, zsh, BSD userland). A WSL
+profile is the case that breaks the correlation, being durable and
+chezmoi-managed but Ubuntu and GNU. It would want the first half of this file
+and not the second. Splitting the environment axis into those two
+sub-dimensions is deliberately *not* done now, because nothing needs it; the
+seam is named so the split is a refactor rather than a rediscovery.
 
 ### `~/.claude/` is generated — do not edit it here
 
 **`~/.claude/` is chezmoi-managed from `pmgledhill102/agentic-coding-config`.**
 Do not edit these files directly — chezmoi will overwrite them on the next
-apply and the change is lost. This includes `~/.claude/CLAUDE.md` itself,
-`~/.claude/AGENTS.md`, this file, `~/.claude/settings.json`, slash commands
-under `~/.claude/commands/`, hooks, and scripts under `~/.claude/bin/` —
-everything sourced from the `home/` directory of that repo.
+apply and the change is lost. That covers `~/.claude/settings.json`, slash
+commands under `~/.claude/commands/`, hooks, and scripts under
+`~/.claude/bin/` — everything sourced from the `home/` directory of that repo.
+
+`~/.claude/CLAUDE.md` and `~/.claude/AGENTS.md`, including the text you are
+reading, are worse than merely deployed: they are **generated**, composed from
+fragments in `context/fragments/` by `tests/compose-context.py`. Editing one
+loses the change twice — chezmoi overwrites the file, and CI would have
+rejected it anyway for not matching its fragments. Edit the fragment.
 
 To change any of it, open an issue against `agentic-coding-config`; see
 "Changing agent config" in `AGENTS.md`. The same applies in reverse — an

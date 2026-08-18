@@ -13,6 +13,21 @@
         "home/CLAUDE.md": ["core", "ephemeral-first", "env-workstation", "provider-claude"]
       }
     },
+    "codex-workstation": {
+      "//": "Output path is provisional. Codex's user-level AGENTS.md location is not yet established (#176), so nothing delivers these yet — the profiles exist so CI composes them and the provider axis stays honest.",
+      "title": "Agent context — Codex on a workstation",
+      "environment": "env-workstation",
+      "outputs": {
+        "profiles/codex-workstation/AGENTS.md": ["core", "ephemeral-first", "env-workstation", "provider-codex"]
+      }
+    },
+    "codex-cloud-sandbox": {
+      "title": "Agent context — Codex in a cloud sandbox",
+      "environment": "env-cloud-sandbox",
+      "outputs": {
+        "profiles/codex-cloud-sandbox/AGENTS.md": ["core", "ephemeral-first", "env-cloud-sandbox", "provider-codex"]
+      }
+    },
     "claude-cloud-sandbox": {
       "title": "Agent context — Claude Code in a cloud sandbox",
       "environment": "env-cloud-sandbox",

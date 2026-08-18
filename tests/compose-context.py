@@ -124,6 +124,29 @@ def main():
             elif path.read_text() != expected:
                 failures.append(f"{output}: stale — fragments changed; run with --write")
 
+    # Check 5. Every file under profiles/ must be claimed by the manifest.
+    #
+    # Added after a real miss: a `git checkout context/manifest.json` during an
+    # unrelated test silently reverted two profiles, and the outputs they had
+    # already written stayed on disk and got committed. Nothing noticed —
+    # checks 1-4 only look at what the manifest declares, so a profile that
+    # vanishes from the manifest takes its own verification with it. An
+    # orphaned generated file is worse than a missing one: it looks current,
+    # and it is the surface nobody is watching that reads it.
+    declared = {
+        ROOT / output
+        for spec in manifest["profiles"].values()
+        for output in spec["outputs"]
+    }
+    profiles_dir = ROOT / "profiles"
+    if profiles_dir.is_dir():
+        for path in sorted(profiles_dir.rglob("*")):
+            if path.is_file() and path not in declared:
+                failures.append(
+                    f"{path.relative_to(ROOT)}: not declared by any profile — "
+                    f"delete it, or restore the manifest entry that produced it"
+                )
+
     if failures:
         print("\ncomposition failed:", file=sys.stderr)
         for f in failures:
