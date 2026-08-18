@@ -143,9 +143,8 @@ restructure that introduced `home/` is on top of that history.
 │   └── README.md              #   per-environment setup (script, domains, vars)
 └── home/                      # ← mounts at ~/.claude/ AND is the plugin root
     ├── .claude-plugin/        #   plugin.json — the plugin manifest
-    ├── AGENTS.md              → ~/.claude/AGENTS.md  (portable policy core — every provider)
-    ├── CLAUDE.md              → ~/.claude/CLAUDE.md  (Claude adapter; imports the other two)
-    ├── local-machine.md       → ~/.claude/local-machine.md  (workstation-only guidance)
+    ├── AGENTS.md              → ~/.claude/AGENTS.md  (GENERATED — composed from context/fragments/)
+    ├── CLAUDE.md              → ~/.claude/CLAUDE.md  (GENERATED — composed from context/fragments/)
     ├── settings.json          → ~/.claude/settings.json
     ├── settings.json.md       → ~/.claude/settings.json.md  (annotated companion, kept alongside)
     ├── commands/              → ~/.claude/commands/  (Claude slash commands)
@@ -339,7 +338,7 @@ deploys shrinks to the part a plugin structurally cannot carry:
 
 | Stays deployed | Why |
 | --- | --- |
-| `CLAUDE.md`, `AGENTS.md`, `ephemeral-first.md`, `local-machine.md` | Policy prose can't ride a plugin |
+| `CLAUDE.md`, `AGENTS.md` | Policy prose can't ride a plugin. Both are generated from `context/fragments/` — edit the fragment, run `python3 tests/compose-context.py --write` |
 | `settings.json`, `settings.json.md` | Permission allowlists can't ride a plugin |
 | `retired-paths` | Read by the pruner at `~/.claude/retired-paths` |
 | `bin/claude-prune-retired` | Invoked by dotfiles after each apply |
