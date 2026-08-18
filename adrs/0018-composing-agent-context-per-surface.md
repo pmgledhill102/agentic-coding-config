@@ -237,10 +237,18 @@ imports are available, they are an optimisation, not a change of shape.
 **Compose by import (`@fragment.md`).** Claude Code expands `@path`
 imports at launch, four hops deep, so a three-line `CLAUDE.md` could pull
 in core plus fragments with no generator at all. Rejected as the general
-mechanism because it is, as far as is known, Claude-only: an `AGENTS.md`
-containing `@agents-core.md` reaches Codex as literal text, and fails
-silently rather than loudly. Retained as a possible Claude-side
-simplification once the AGENTS.md question above is answered.
+mechanism because it is Claude-only, and that is established rather than
+assumed: the 2026-08-09 review records that Codex "rejects `$ARGUMENTS`,
+`$1..$n`, `` !`cmd` `` and `@file` templating as unsupported". An
+`AGENTS.md` containing `@agents-core.md` therefore reaches Codex as
+literal text, and the content it names is lost silently rather than
+loudly.
+
+This was not hypothetical. `home/AGENTS.md` carried `@ephemeral-first.md`
+— a Claude-only construct in the file every *other* agent reads — so
+every non-Claude agent lost 72 lines of policy until composition inlined
+it. Retained as a possible Claude-side simplification, never as the
+general mechanism.
 
 **Assemble at install time in each installer.** `bootstrap.sh` and the
 chezmoi path each concatenate fragments. Rejected: two implementations of

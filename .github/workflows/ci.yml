@@ -62,6 +62,22 @@ jobs:
       - name: Run the pre-commit hook classification tests
         run: sh tests/precommit-hook-test.sh
 
+  context-composition:
+    name: composed context profiles
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # ADR-0018 principle 7. Deterministic delivery trades runtime
+      # adaptability for build-time correctness, which is only a good trade if
+      # something checks the build: a mis-composed profile is wrong on one
+      # surface only, and a surface nobody used this week is a surface nobody
+      # is watching. Verifies committed outputs match their fragments, that no
+      # profile carries another environment's fragment, and reports the
+      # always-loaded line count against the budget.
+      - name: Composed profiles must match their fragments
+        run: python3 tests/compose-context.py
+
   skills-sync:
     name: skills ↔ commands sync
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository

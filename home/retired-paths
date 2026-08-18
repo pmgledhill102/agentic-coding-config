@@ -37,6 +37,16 @@ commands/bd-import-github-issues.md
 commands/bd-modernize.md
 bin/bd-push-safe
 
+# 2026-08-18 — policy files replaced by composed profiles (ADR-0018, #249)
+#
+# home/CLAUDE.md used to pull these in with Claude's @import syntax, so both
+# had to exist at ~/.claude/ as separate files. Composition inlines them into
+# the generated CLAUDE.md instead, so the standalone copies are now dead text
+# that no longer matches the fragments they came from. Their content lives in
+# context/fragments/{ephemeral-first,env-workstation}.md.
+ephemeral-first.md
+local-machine.md
+
 # === UNDEPLOYED: delivered by the plugin, no longer deployed by chezmoi ===
 #
 # WHY A SECOND SECTION: #48 made home/ double as the plugin root, so the paths
