@@ -1,20 +1,18 @@
 # Agent policy
 
-Portable working policy, in AGENTS.md format. Everything here holds for any
-agent on any surface — Claude Code, Codex, OpenCode, local machine or cloud
-sandbox.
+Portable working policy. Everything here holds for **any** agent, on any
+surface. Nothing in this fragment may name a provider's tools, a delivery
+mechanism, or a filesystem path that exists on only one surface.
 
-Companions:
+This is one fragment among several. Whatever is reading it has been composed
+from a portable core, a provider fragment naming that provider's tools, and an
+environment fragment true only of the machine or container it runs in. The
+composition happens at delivery, so a statement that is false here is false
+everywhere it lands.
 
-- `ephemeral-first.md` — portable too, kept separate because it is a coherent
-  set of principles rather than a rule list. Imported below.
-- `CLAUDE.md` — the Claude Code adapter: tool-name mappings and anything
-  meaningless to another provider. It imports this file.
-- `local-machine.md` — guidance that is only true on a workstation:
-  chezmoi, the interactive shell, macOS paths.
-
-Keep a statement in exactly one of these. If a rule is portable it belongs
-here, and the adapter should reference it rather than restate it.
+Keep a statement in exactly one fragment. If it holds everywhere it belongs
+here; if it names a tool or a path it belongs in a provider or environment
+fragment. See `adrs/0018-composing-agent-context-per-surface.md`.
 
 ## Git Workflow
 
@@ -32,7 +30,7 @@ here, and the adapter should reference it rather than restate it.
   - Create an issue before starting work; close it via `Closes #<n>` in the PR body
   - Hierarchy via sub-issues; dependencies via blocked-by
   - Priority labels `P0`–`P4`; type labels `type: epic|feature|task|bug` (issue types are org-only — labels ARE the convention on personal repos)
-  - Some repos (e.g. `lifeos`) declare their own label taxonomy in their repo CLAUDE.md — that wins over the defaults above
+  - Some repos (e.g. `lifeos`) declare their own label taxonomy in their repo's committed agent instructions — that wins over the defaults above
   - **Use issue listing or direct reads for anything time-sensitive — never issue search**: the search API is eventually consistent, so a just-created issue can be invisible to it for seconds to minutes. Deduplicate against a full list including closed issues, not search
 
 ## Decision records (ADR tiers)
