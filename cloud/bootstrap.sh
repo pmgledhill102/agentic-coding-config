@@ -449,7 +449,36 @@ esac
 # skill above predates that machinery and is still generated from its command
 # file at install time; when it joins `home/skills/` these two paths merge.
 
-SKILLS="retrospective"
+SKILLS="retrospective start-session end-session"
+
+# Helper scripts the session skills shell out to. They are NOT optional: the
+# skills invoke them by name, and a skill whose helper is missing fails at the
+# point of use rather than at install, which is the worst time to find out.
+#
+# start-session-claude-drift is here because start-session-gather-state runs it
+# as "$(dirname "$0")/start-session-claude-drift" -- a sibling dependency that
+# nothing in the skill text mentions, so it would be easy to omit and hard to
+# diagnose.
+#
+# They land in ~/.claude/bin because the skills spell their invocation
+# "${CLAUDE_PLUGIN_ROOT:-$HOME/.claude}/bin/<script>". Under a plugin install
+# that variable is set; delivered this way it is not, and the fallback resolves
+# here. That dual spelling is why these skills need no edit to work on this
+# surface.
+BIN_SCRIPTS="start-session-gather-state start-session-claude-drift end-session-gather-state end-session-squash-merged"
+
+# Defensive: the credential-helper section above already creates this, but the
+# dependency is invisible from here and a reordering would break it silently.
+mkdir -p "$HOME/.claude/bin"
+
+for script in $BIN_SCRIPTS; do
+    curl -sSfL "$RAW/home/bin/$script" -o "$TMP/$script" ||
+        die "could not fetch helper script $script from $REF"
+    head -1 "$TMP/$script" | grep -q '^#!' ||
+        die "fetched $script is not a script — check that $REF exists"
+    install -m 0755 "$TMP/$script" "$HOME/.claude/bin/$script"
+done
+log "helpers -> $HOME/.claude/bin/ ($(echo "$BIN_SCRIPTS" | wc -w | tr -d ' ') session scripts)"
 
 for skill in $SKILLS; do
     curl -sSfL "$RAW/home/skills/$skill/SKILL.md" -o "$TMP/$skill.SKILL.md" ||

@@ -23,3 +23,15 @@ or in the environment's setup script.
   about live GCP state"**.
 - **Skills delivered by the bootstrap**, listed in `cloud/README.md`.
   A command that exists on the workstation is not necessarily present here.
+
+## `gh` is not installed here
+
+GitHub work goes through the MCP tools. The `gh` CLI is absent from this
+container, so a step that shells out to it fails rather than degrading — and
+several do: `start-session` and `end-session` gather state through helper
+scripts that call `gh`, and those sections report `gh-unavailable` on this
+surface.
+
+Treat a `gh` command written into a skill as naming the *operation*, not the
+tool, and reach for the equivalent MCP call. Where a whole section depends on
+it, say what could not be gathered rather than reporting a clean result.

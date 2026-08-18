@@ -136,12 +136,26 @@ Revocation levels and what to do about a possibly-exposed token or request key:
 | `~/.claude/skills/<name>` | symlink to the above, for Claude Code |
 | `~/.agents/AGENTS.md` | the composed policy profile |
 | `~/.claude/CLAUDE.md` | the Claude adapter profile (Claude profiles only) |
+| `~/.claude/bin/<script>` | the four session helper scripts |
 | `~/.config/git/hooks/pre-commit` | global git hook, with `--with-precommit` |
 | `/usr/local/bin/pre-commit`, `/usr/bin/shellcheck`, `/usr/local/bin/actionlint` | with `--with-precommit` |
 
-Whitelisted today: `retrospective`. The 15 `setup-*` skills are held back
-pending a currency review — they are repo-scaffolding procedures a sandbox
-session rarely needs, and they predate this surface.
+Whitelisted today: `retrospective`, `start-session`, `end-session`. The 15
+`setup-*` skills are held back pending a currency review — they are
+repo-scaffolding procedures a sandbox session rarely needs, and they predate
+this surface.
+
+The session skills shell out to four helper scripts, delivered alongside them
+into `~/.claude/bin/`. They are not optional: the skills invoke them by name, so
+a missing helper fails at the point of use rather than at install.
+`start-session-claude-drift` is among them because
+`start-session-gather-state` runs it as a sibling — a dependency nothing in the
+skill text mentions.
+
+**`gh` is absent from these containers**, and three of `start-session`'s seven
+sections report `gh-unavailable` as a result: `main_ci`, `gh_ready`,
+`gh_assigned`. The sandbox policy fragment says so, and says to reach for the
+MCP equivalent. Closing the gap properly is tracked separately.
 
 ## Pre-commit enforcement
 
