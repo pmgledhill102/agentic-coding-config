@@ -139,6 +139,8 @@ Revocation levels and what to do about a possibly-exposed token or request key:
 | `~/.claude/bin/<script>` | the four session helper scripts |
 | `~/.agents/.bootstrap-manifest` | what this run installed: ref, SHA, profile, skills, helpers |
 | `~/.config/git/hooks/pre-commit` | global git hook, with `--with-precommit` |
+| `~/.claude/settings.json` | harness hook wiring, with `--with-hooks` (merged, not replaced) |
+| `~/.claude/bin/*-claude-hook` | the three harness hook scripts, with `--with-hooks` |
 | `/usr/local/bin/pre-commit`, `/usr/bin/shellcheck`, `/usr/local/bin/actionlint` | with `--with-precommit` |
 
 Whitelisted today: `retrospective`, `start-session`, `end-session`. The 15
@@ -199,6 +201,42 @@ so it needs no agent configuration and covers Claude, Codex and a human typing
 which feeds failures back into the agent's context — is tracked separately
 in #254, and is blocked on whether a container-created
 `~/.claude/settings.json` registers hooks at all.
+
+## Harness hooks
+
+`--with-precommit` gives you a native git hook, which blocks a bad commit.
+`--with-hooks` adds the harness layer, which runs inside the agent loop and
+returns the failure into its context — so the agent reads the message and fixes
+the cause rather than simply being stopped. Both are worth having; neither
+replaces the other.
+
+```sh
+  | sh -s -- <REF> --with-precommit --with-hooks
+```
+
+Viable because a container-created `~/.claude/settings.json` **is** honoured —
+measured 2026-08-18 by planting one and watching a `PreToolUse` hook fire eight
+seconds later, with no session restart. That is the third
+documented-as-unavailable user-scope path to work from inside a container, after
+`~/.claude/skills/` and `~/.claude/CLAUDE.md`.
+
+The wiring is taken from `home/settings.json` rather than restated in the
+script. That file is the workstation's, and it already invokes
+`~/.claude/bin/<hook>` directly — the same paths the bootstrap installs to — so
+both surfaces run identical hooks from one source instead of a copy that drifts.
+It is deliberately **not** routed through `plugin-hook-dispatch`: that dispatcher
+exists to stand down when a `~/.claude/bin` copy is present, and here that copy
+is the only one.
+
+**Merged, not overwritten.** A container may already have a `settings.json`, and
+replacing it wholesale would silently drop whatever else it holds. Note
+`~/.claude/launcher-settings.json` is a different file with its own hooks,
+written by the harness; nothing here touches it, and both are read.
+
+Two of the three degrade to no-ops in a sandbox rather than failing:
+`prepush-guard-claude-hook` needs `gh`, which is absent (#257), and
+`precommit-claude-hook` needs the pre-commit framework, so it does nothing
+without `--with-precommit`.
 
 ## Knowing whether a container is stale
 
