@@ -8,12 +8,12 @@ Run a retrospective on this session: draft a per-session journal entry into `pau
 - **Current branch + state**: `git status` (branch name, dirty/clean).
 - **Issue state**: list open issues assigned to me, so the retro knows what was already in flight — `mcp__github__list_issues` when connected, else `gh issue list --assignee @me --state open`.
 - **Memory dir**: list `~/.claude/projects/<project>/memory/` (path matches the cwd-derived project key) and read `MEMORY.md` so you know what's already captured and don't propose duplicates.
-- **Settings**: read `~/.claude/settings.json` for permission-related observations.
-- **Surface**: `command -v chezmoi`. Present = workstation; absent = cloud sandbox. This decides which dimensions run in step 2.
+- **Settings**: read `~/.claude/settings.json` for permission- and hook-related observations. **Present on both surfaces.** chezmoi writes it on a workstation; `cloud/bootstrap.sh --with-hooks` writes it in a sandbox, where hooks declared in it are honoured (measured 2026-08-18).
+- **Surface**: `command -v chezmoi`. Present = workstation; absent = cloud sandbox. Used to interpret findings, not to skip dimensions.
 
-**The last two reads are workstation-only.** A cloud sandbox has no `~/.claude/settings.json` and no `projects/<project>/memory/` — nothing is wrong, that state simply lives on the machine the session is not running on.
+**Only the memory dir is workstation-only.** Auto-memory is machine-local by design and is not shared into cloud environments, so `projects/<project>/memory/` is normally absent in a sandbox — note that `projects/<project>/` itself may well exist, so the presence of that directory proves nothing.
 
-**Degrade explicitly, don't skip silently.** When either is absent, say so in the retro output — `settings: n/a (sandbox)`, `memory: n/a (sandbox)` — and carry on. A retro that quietly omits a dimension reads identically to one that ran it and found nothing, and the difference matters: the first means "not checked here", the second means "checked, all good".
+**Degrade explicitly, don't skip silently.** When something is genuinely absent, say so in the retro output — `memory: n/a (sandbox)` — and carry on. A retro that quietly omits a dimension reads identically to one that ran it and found nothing, and the difference matters: the first means "not checked here", the second means "checked, all good".
 
 If we're not inside a git repo, treat the retro as cross-repo by default — every action becomes an Issue against `pmgledhill102/paul-context`.
 
@@ -23,10 +23,10 @@ Review the full conversation history and evaluate each of these dimensions. Skip
 
 **Two dimensions are surface-specific** — run whichever matches the surface detected in step 1, not both:
 
-- **Approval friction** — *workstation only*. Skip in a sandbox: the permission model there is the environment's, `~/.claude/settings.json` is not readable, and a recommendation to add an allow rule has nowhere to land.
+- **Approval friction** — *both surfaces*. It used to be workstation-only, on the belief that a sandbox has no readable `~/.claude/settings.json` and nowhere for an allow rule to land. Both halves of that are now false: the file is present and readable in a sandbox, and the bootstrap writes it. Interpret findings by surface rather than skipping the dimension.
 - **Missing sandbox config** — *sandbox only*. See below.
 
-- **Approval friction** (workstation only): Which tool calls required manual approval? Were any repeatedly approved and should be added to `allowedTools` in settings? Note the specific tool patterns.
+- **Approval friction** (both surfaces): Which tool calls required manual approval? Were any repeatedly approved and should be added to `allowedTools` in settings? Note the specific tool patterns. Also note **enforcement** that fired or was bypassed — a pre-commit hook, a `PreToolUse` guard — since both now exist in sandboxes and a bypass is worth recording.
 - **Missing sandbox config** (sandbox only): **what config, context or credentials were missing from this sandbox session?** This is the feedback loop that catches capability gaps, and it is the dimension most worth getting right, because a sandbox is the surface where a gap is invisible until it blocks something. Look for:
   - **Tools absent** that the work needed — was `gcloud`, a linter, a language runtime missing because the environment's setup script does not install it? Name the tool and the setup-script change.
   - **Credentials unavailable** — was GCP access needed and absent? The answer is the credential broker (`/gcp-credentials`), so the finding is usually "the broker was not configured for this environment", naming which of the request key, broker URL or allowed-domains entry was missing.
@@ -75,7 +75,7 @@ Review the full conversation history and evaluate each of these dimensions. Skip
   - A back-out/retry happened because a step was performed in the wrong order.
   - Investigation took disproportionate time relative to the eventual fix.
 
-  For each candidate, propose: a command name (kebab-case), a one-line description, the key pre-flight checks, and the gotchas the prompt must surface. Existing commands live in `agentic-coding-config/home/commands/` (deployed to `~/.claude/commands/`) — check there first to avoid duplicates.
+  For each candidate, propose: a command name (kebab-case), a one-line description, the key pre-flight checks, and the gotchas the prompt must surface. Existing ones live in `agentic-coding-config/home/skills/` — check there first to avoid duplicates. Note `home/commands/` still exists but is being retired in favour of skills (ADR-0018 principle 3), so propose a skill. In a sandbox they arrive as skills via the bootstrap whitelist; there is no `~/.claude/commands/`.
 
 - **Slash command improvements**: Did this session invoke any existing slash command (or manually perform work that an existing one should have handled)? For each:
   - Was a step missing, wrong, or stale?
@@ -104,13 +104,13 @@ For each finding, decide what kind of artifact it should produce:
 
 Both routes satisfy this, because both take the repo as an argument rather than inferring it from the working directory: `mcp__github__issue_write` with an explicit `owner`/`repo`, or `gh issue create --repo pmgledhill102/<target>`. Either works identically from a sandbox or a laptop.
 
-Prefer MCP when it is connected. Keep `gh` in mind for headless or sandbox runs, where a `gh` token is more reliably present than an interactively-authenticated MCP server — that portability is the reason the `gh` forms are still written out here.
+Prefer MCP when it is connected, and fall back to `gh` where it is not and `gh` is present. Which of the two exists is a property of the surface: **`gh` is absent from Claude cloud sandboxes**, where MCP is the only route, so the `gh` forms here are for workstations and headless runs that have it. They are written out because the *operation* is what matters, not the tool.
 
 ### 3b. Never edit settings.json — file an a-c-c Issue
 
-Permissions, hooks, env vars and everything else in `~/.claude/settings.json` are **managed centrally** by `pmgledhill102/agentic-coding-config` and applied to each machine by chezmoi. A retro's job is to *route* a settings finding, not to apply it:
+Permissions, hooks, env vars and everything else in `~/.claude/settings.json` are **managed centrally** by `pmgledhill102/agentic-coding-config` and delivered per surface — by chezmoi on a workstation, by `cloud/bootstrap.sh` in a sandbox. A retro's job is to *route* a settings finding, not to apply it:
 
-- **Do not edit `~/.claude/settings.json`.** chezmoi overwrites it on the next apply and the change is silently lost.
+- **Do not edit `~/.claude/settings.json`.** It is generated on both surfaces: chezmoi overwrites it on the next apply, and the bootstrap rewrites it on the next run. Either way the change is silently lost.
 - **Do not "helpfully" redirect the change into the current project's `.claude/settings.json` or `.claude/settings.local.json` instead.** A globally-useful permission parked in one project repo only works in that repo, is invisible to the a-c-c inbox, and diverges from the managed set. This substitution is the specific failure this section exists to prevent.
 - **Do not invoke `/update-config`** for managed settings — that skill edits settings files in place, which is exactly the wrong outcome here. (It remains the right tool when the user is deliberately configuring a project-local harness setting, unrelated to a retro finding.)
 - **Do** file an Issue against `pmgledhill102/agentic-coding-config` with the exact rule (e.g. `Bash(rg --json *)`), the friction observed this session, and whether it's read-only. Same body requirements as any other cross-repo Issue, including the journal cross-reference.
@@ -122,7 +122,7 @@ Permissions, hooks, env vars and everything else in `~/.claude/settings.json` ar
 When a finding clearly mentions a target, route there. Otherwise apply this default split:
 
 - **Brewfile / package lists / shell config / OS bootstrap / chezmoi machinery** → `dotfiles`
-- **Slash commands / hooks / `~/.claude/settings.json` / MCP server config / the policy files (`home/AGENTS.md` portable, `home/CLAUDE.md` Claude-specific, `home/local-machine.md` workstation-only)** → `agentic-coding-config`
+- **Skills / hooks / `~/.claude/settings.json` / MCP server config / agent policy** → `agentic-coding-config`. Policy now lives in `context/fragments/` (`core.md` portable, `provider-*.md` per provider, `env-*.md` per environment) and is composed into `home/AGENTS.md`, `home/CLAUDE.md` and `profiles/`. **Those outputs are generated — name the fragment, never the composed file.**
 - **Engineering principles / personal direction / repo registry / archive list / decisions** → `paul-context`
 - **Genuinely unsorted / "I had a thought"** → `paul-context` (default fallback)
 

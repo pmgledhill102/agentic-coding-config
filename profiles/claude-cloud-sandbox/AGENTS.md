@@ -76,7 +76,7 @@ stated rather than inferred from where it sits.
 ### Changing agent config
 
 - **To request a change to agent configuration, open a GitHub issue against `pmgledhill102/agentic-coding-config`.** Describe what should change and why; add acceptance criteria if useful. The user works the GH-issue inbox directly in a-c-c sessions, where the source actually lives
-- This is the route from **any** surface. A cloud sandbox has no agent config on disk to edit, and a local machine's copy is generated (see `local-machine.md`), so in both cases the issue is the change
+- This is the route from **any** surface. Whatever config is on disk here is *generated* — composed from fragments and delivered by chezmoi or the bootstrap — so editing it in place is lost on the next apply. The issue is the change
 
 ### Commit & PR Style
 
@@ -109,7 +109,7 @@ stated rather than inferred from where it sits.
 - **Where BSD and GNU differ, try both rather than picking one.** The established idiom here is GNU first with a BSD fallback: `stat -c %Y "$f" 2>/dev/null || stat -f %m "$f" 2>/dev/null`. The same care applies to `sed -i`, `readlink -f`, `date`, and `grep -P`
 - **If `bash` is genuinely required, it must run on bash 3.2**, which is what macOS ships. Prefer `#!/usr/bin/env bash` over `#!/bin/bash` so a newer interpreter is used when one is on `PATH`, but do not rely on one being there
 - **Verify CLI flags before using them — for both commands you run AND advice you give the user**: Run `<tool> --help` or `<tool> help <subcommand>` locally before committing or before recommending a flag in chat. `--no-lock`-style hallucinations waste a round-trip whether they fire in your own call or in the user's terminal after you suggest them
-- **Multi-step probe loops go in a script file, not inline**: For anything that loops over hosts/endpoints/cases, write a script to a scratch directory and run it, rather than composing the loop in a single shell call. Interactive shells differ from `sh` in ways that fail silently — see `local-machine.md` for the specific traps on this workstation
+- **Multi-step probe loops go in a script file, not inline**: For anything that loops over hosts/endpoints/cases, write a script to a scratch directory and run it, rather than composing the loop in a single shell call. Interactive shells differ from `sh` in ways that fail silently, and the traps are surface-specific — the environment fragment composed into this file names the ones that apply here
 - **Raw strings when patching file content via `python3` heredocs**: a regular triple-quoted payload turns `\n` in the *target* file's source (e.g. a Go or JSON string literal) into a real newline, producing a syntax error that surfaces a couple of tool calls later. Use `r'''…'''`, or better, use a surgical edit tool for source changes
 
 ## Ephemeral-first engineering
