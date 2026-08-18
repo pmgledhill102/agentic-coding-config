@@ -5,10 +5,16 @@
 # everything of substance stays here, versioned, instead of being pasted into a
 # vendor configuration field (ADR-0016, principle 5):
 #
-#   curl -sSL https://raw.githubusercontent.com/pmgledhill102/agentic-coding-config/<REF>/cloud/bootstrap.sh | sh -s -- <REF> [--with-gcloud]
+#   curl -sSL https://raw.githubusercontent.com/pmgledhill102/agentic-coding-config/<REF>/cloud/bootstrap.sh | sh -s -- <REF> [--with-gcloud] [--profile <name>]
 #
 # --with-gcloud installs the Google Cloud SDK as well. Opt-in, so that the one
 # line an environment carries declares what kind of environment it is.
+#
+# --profile names the composed context profile to install, defaulting to
+# claude-cloud-sandbox. A Codex environment passes --profile codex-cloud-sandbox.
+# The environment declares which harness it is rather than this script sniffing
+# for one: ADR-0018 principle 1 puts surface differences in the delivery, and
+# the caller is the only party that knows the answer without guessing.
 #
 # Pass the same <REF> twice on purpose: the first fetches this script, the
 # second is what it fetches everything else from, so a run cannot straddle two
@@ -24,13 +30,29 @@
 
 set -eu
 
-REF="${1:-main}"
-WITH_GCLOUD=0
-[ "${2:-}" = "--with-gcloud" ] && WITH_GCLOUD=1
-RAW="https://raw.githubusercontent.com/pmgledhill102/agentic-coding-config/${REF}"
-
 log() { echo "[bootstrap] $*"; }
 die() { echo "[bootstrap] error: $*" >&2; exit 1; }
+
+REF="${1:-main}"
+[ $# -gt 0 ] && shift
+WITH_GCLOUD=0
+PROFILE=claude-cloud-sandbox
+
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --with-gcloud) WITH_GCLOUD=1 ;;
+        --profile)
+            shift
+            [ $# -gt 0 ] || die "--profile needs a value"
+            PROFILE="$1"
+            ;;
+        --profile=*) PROFILE="${1#--profile=}" ;;
+        *) die "unknown argument: $1" ;;
+    esac
+    shift
+done
+
+RAW="https://raw.githubusercontent.com/pmgledhill102/agentic-coding-config/${REF}"
 
 command -v curl > /dev/null 2>&1 || die "curl is required"
 
@@ -242,6 +264,66 @@ log "adapter -> $HOME/.claude/skills/gcp-credentials"
 # skill that already works from the neutral path. Remove it rather than leave
 # two sources for one command.
 rm -f "$HOME/.claude/commands/gcp-credentials.md"
+
+# --- the agent policy ---------------------------------------------------------
+#
+# Until now a sandbox got no policy at all: `ls ~/.claude/*.md` was empty, and
+# the 200-odd lines of working policy reached workstations through chezmoi and
+# nowhere else. Every session on this surface ran on whatever the opened repo
+# happened to commit (#245).
+#
+# What lands here is a COMPOSED PROFILE, not the raw fragments. ADR-0018
+# resolves surface differences at delivery: the sandbox profile is built from
+# the portable core, the sandbox environment fragment, and the provider
+# fragment, and it deliberately excludes the workstation fragment. That is what
+# stops "run chezmoi apply" reaching a container with no chezmoi -- confidently
+# wrong policy, which is worse than none. CI fails the build if a workstation
+# fragment ever reaches a sandbox profile, so this fetch does not have to
+# check.
+#
+# The file is complete, with no @imports to resolve. That matters for Codex,
+# which rejects @file templating: an import here would arrive as literal text
+# and the content it named would be lost silently.
+
+PROFILE_DIR="$HOME/.agents"
+mkdir -p "$PROFILE_DIR"
+
+curl -sSfL "$RAW/profiles/$PROFILE/AGENTS.md" -o "$TMP/AGENTS.md" ||
+    die "could not fetch profile '$PROFILE' from $REF — check the name against profiles/ in the repo"
+
+# Same 404-as-content guard as everything else here: a bad ref or a mistyped
+# profile can return an HTML error page with a 200 from some proxies, and
+# policy whose first line is <!DOCTYPE reads as a broken agent rather than a
+# broken fetch.
+head -1 "$TMP/AGENTS.md" | grep -q "^<!-- GENERATED" ||
+    die "fetched profile is not a composed artefact — check that $REF and profile '$PROFILE' exist"
+
+cp "$TMP/AGENTS.md" "$PROFILE_DIR/AGENTS.md"
+log "policy  -> $PROFILE_DIR/AGENTS.md (profile: $PROFILE)"
+
+# Claude Code reads CLAUDE.md and does not read AGENTS.md, so the Claude
+# profiles ship a second composed file for it. A container-created
+# ~/.claude/CLAUDE.md is read: verified 2026-08-18 by planting a marker
+# mid-session and finding it in context on resume, announced as the user's
+# global instructions. The cloud docs list user-scope CLAUDE.md as
+# unavailable, but that is about your laptop's copy not being transferred,
+# which is a different claim -- the same distinction ADR-0016 already
+# established for ~/.claude/skills.
+#
+# Codex profiles ship AGENTS.md only. Where Codex reads user-level AGENTS.md is
+# still unestablished (#176), so ~/.agents/ is where it goes and nothing here
+# claims that path is the one Codex reads.
+case "$PROFILE" in
+    claude-*)
+        curl -sSfL "$RAW/profiles/$PROFILE/CLAUDE.md" -o "$TMP/CLAUDE.md" ||
+            die "could not fetch the Claude adapter for profile '$PROFILE' from $REF"
+        head -1 "$TMP/CLAUDE.md" | grep -q "^<!-- GENERATED" ||
+            die "fetched Claude adapter is not a composed artefact"
+        mkdir -p "$HOME/.claude"
+        cp "$TMP/CLAUDE.md" "$HOME/.claude/CLAUDE.md"
+        log "adapter -> $HOME/.claude/CLAUDE.md"
+        ;;
+esac
 
 # --- the workflow skills ------------------------------------------------------
 #

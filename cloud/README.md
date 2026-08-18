@@ -4,8 +4,8 @@ Everything a vendor's cloud sandbox needs to gain this repo's capabilities,
 without the repo you are working on carrying any of it.
 
 `bootstrap.sh` is the whole mechanism: an environment's setup script fetches it
-by ref and runs it, and it installs the credential helper and a named set of
-skills into the container. See
+by ref and runs it, and it installs the credential helper, a named set of
+skills, and the composed agent policy into the container. See
 [ADR-0016](../adrs/0016-capability-delivery-principles.md) for why the substance
 lives here rather than in the setup script itself.
 
@@ -134,10 +134,38 @@ Revocation levels and what to do about a possibly-exposed token or request key:
 | `/usr/local/bin/gcloud` | wrapper: prefers the broker token, renews it when stale |
 | `~/.agents/skills/<name>/SKILL.md` | each whitelisted skill, canonical |
 | `~/.claude/skills/<name>` | symlink to the above, for Claude Code |
+| `~/.agents/AGENTS.md` | the composed policy profile |
+| `~/.claude/CLAUDE.md` | the Claude adapter profile (Claude profiles only) |
 
 Whitelisted today: `retrospective`. The 15 `setup-*` skills are held back
 pending a currency review — they are repo-scaffolding procedures a sandbox
 session rarely needs, and they predate this surface.
+
+## Which profile
+
+`--profile <name>` selects the composed context profile, defaulting to
+`claude-cloud-sandbox`. A Codex environment passes `--profile
+codex-cloud-sandbox`:
+
+```sh
+curl -sSL https://raw.githubusercontent.com/pmgledhill102/agentic-coding-config/<REF>/cloud/bootstrap.sh \
+  | sh -s -- <REF> --profile codex-cloud-sandbox
+```
+
+The environment declares which harness it is rather than the script sniffing
+for one. Per ADR-0018 principle 1 surface differences are resolved at delivery,
+and the caller is the only party that knows the answer without guessing.
+
+Profiles are built and verified in CI by `tests/compose-context.py`, which also
+refuses to compose a sandbox profile that includes a workstation fragment. That
+is what stops "run `chezmoi apply`" reaching a container with no chezmoi, so
+this script does not have to check.
+
+Claude profiles ship two files, because Claude Code reads `CLAUDE.md` and not
+`AGENTS.md`. Codex profiles ship `AGENTS.md` only, and it lands in
+`~/.agents/`. **Where Codex actually reads user-level `AGENTS.md` is not yet
+established (#176)** — `~/.agents/` is the vendor-neutral location its skills
+are already read from, not a verified instruction path.
 
 ## Updating a running session
 
