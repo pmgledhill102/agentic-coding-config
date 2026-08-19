@@ -57,9 +57,9 @@ Output is a sectioned stream. Each section starts with `===<name> (exit=<N>)===`
 | `not_a_git_repo` | pre-flight | Only present when the gather ran outside a git repo, in which case it is the **only** section and the script exits 1. Print the line it contains and stop; every other step assumes a repo. |
 | `fetch` | 2 (folded in) | Body is empty on success (exit=0). Non-zero = network/auth issue — body contains the error; surface before proceeding. |
 | `local_state` | 3, 7 | Includes branch, dirty/clean, ahead/behind upstream, ahead/behind `origin/<default>`. |
-| `main_ci` | 4 | Content `jq-unavailable` = silent skip; `gh-unavailable` = recover via MCP (see exit-code rules). Otherwise: first line is `workflows=<N>`; subsequent lines are `<workflow-name>=<conclusion-or-status>@<short-sha>` (one per most-recent run per workflow on `<default>`). On `failure` / `cancelled` / `timed_out`, the line ends with a trailing space-separated run URL: `<workflow-name>=<conclusion>@<short-sha> <url>`. Non-zero with other content = real error. |
+| `main_ci` | 4 | Content `jq-unavailable` = silent skip; `gh-unavailable` / `gh-unauthorized` = recover via MCP (see exit-code rules). Otherwise: first line is `workflows=<N>`; subsequent lines are `<workflow-name>=<conclusion-or-status>@<short-sha>` (one per most-recent run per workflow on `<default>`). On `failure` / `cancelled` / `timed_out`, the line ends with a trailing space-separated run URL: `<workflow-name>=<conclusion>@<short-sha> <url>`. Non-zero with other content = real error. |
 | `recent_main_commits` | 5 | First line is `count=<N>` (commits that merged into `origin/<default>` since the previous local tip). When non-zero, subsequent lines are `<short-sha> <subject>`, capped at 10. Empty when caught up. |
-| `gh_ready` | 7 | Content `not-github` / `jq-unavailable` = silent skip; `gh-unavailable` = recover via MCP (see exit-code rules). Empty content = no ready work. Otherwise up to 10 pipe-separated rows: `#<n>\|P<pri>\|<title>` (priority `-` when the issue has no `P0`–`P4` label). Ready = open and not directly blocked (`gh issue list --search "is:open -is:blocked"`) — direct blocks only, no transitive query. Already pre-summarised — use rows directly in the brief without further parsing. |
+| `gh_ready` | 7 | Content `not-github` / `jq-unavailable` = silent skip; `gh-unavailable` / `gh-unauthorized` = recover via MCP (see exit-code rules). Empty content = no ready work. Otherwise up to 10 pipe-separated rows: `#<n>\|P<pri>\|<title>` (priority `-` when the issue has no `P0`–`P4` label). Ready = open and not directly blocked (`gh issue list --search "is:open -is:blocked"`) — direct blocks only, no transitive query. Already pre-summarised — use rows directly in the brief without further parsing. |
 | `gh_assigned` | 7 | Same skip convention as `gh_ready`. Empty content = nothing in flight. Otherwise pipe-separated rows: `#<n>\|P<pri>\|<title>` for open issues assigned to me (usually 0-3). Same row shape as `gh_ready`. |
 | `claude_drift` | 6b, 7 | `state=absent` (sandbox, no `~/.claude`) or `state=no-source` (not in an a-c-c checkout) = silent skip. `state=compared` gives `behind=<n>` and `modified=<n>`, then one `behind: <path>` / `modified: <path>` line each, plus `remedy_behind=` / `remedy_modified=` when non-zero. Both zero = silent. |
 | `bootstrap_currency` | 6b, 7 | `state=not-a-container` (a workstation) or `state=current` = silent skip. `state=no-manifest` = a container built before manifests existed; silent, and it self-heals when the snapshot next expires. `state=pinned` names the ref the environment froze to — report only if something else looks stale. `state=behind` gives `installed=`, `head=` and a `remedy=` line: surface it, because everything the container ships is that old. `state=unknown` = the ref could not be resolved (no network); mention once, do not retry. |
@@ -69,7 +69,11 @@ GitHub queries use `gh` and cannot use `mcp__github__*` — an MCP tool is not
 callable from a subprocess. That is a deliberate exception to the MCP-first
 preference, not an oversight. But `gh` is a property of the surface, not a
 constant: present on workstations, **absent from Claude cloud sandboxes**, where
-those sections return `gh-unavailable` and MCP is the only GitHub route. When
+those sections return `gh-unavailable` and MCP is the only GitHub route. A
+surface can also have `gh` installed yet policy-blocked from repo data — the
+sandbox egress proxy authenticates identity endpoints but 403s every
+repo-scoped API path (#273) — in which case the sections return
+`gh-unauthorized`, which means the same thing: MCP is the only route. When
 that happens, recover the data with the MCP equivalents rather than treating the
 gap as empty — see the exit-code rules below. Any GitHub op **this command**
 performs directly, outside the gather, should prefer MCP.
@@ -79,7 +83,7 @@ Rules for interpreting exit codes:
 - `exit=0` with empty content: clean result (no ready work, nothing assigned, etc.). Treat as "none".
 - `exit=0` with content: normal data — parse it for the relevant step.
 - `exit != 0` with content `not-github` or `jq-unavailable`: silent skip.
-- `exit != 0` with content `gh-unavailable`: **not silent.** Recover the section with the MCP equivalents when the GitHub MCP server is connected — `mcp__github__actions_list` for `main_ci`, `mcp__github__list_issues` for `gh_ready` / `gh_assigned` — and use the recovered data as if the gather had produced it. Only when MCP is also unavailable, report `n/a (gh absent)` in the brief, so a thin brief reads as "not gathered", never as "all clear".
+- `exit != 0` with content `gh-unavailable` or `gh-unauthorized`: **not silent.** Recover the section with the MCP equivalents when the GitHub MCP server is connected — `mcp__github__actions_list` for `main_ci`, `mcp__github__list_issues` for `gh_ready` / `gh_assigned` — and use the recovered data as if the gather had produced it. Only when MCP is also unavailable, report `n/a (gh absent)` in the brief, so a thin brief reads as "not gathered", never as "all clear".
 - `exit != 0` with other content: real error — surface it before continuing.
 
 ### 2. Surface fetch result (Tier 1)
@@ -117,7 +121,7 @@ From gather section `main_ci`. The script has already deduplicated to one most-r
 - **Any line where `<conclusion-or-status>` is `in_progress`**: list with the short-sha. (Elapsed time is no longer captured — gather doesn't track createdAt in the compact form. If you need it, run `gh run list` directly.)
 - **All `success`**: silent (the brief reports "green").
 
-If the content is `jq-unavailable` or the repo has no remote, report `n/a`. On `gh-unavailable`, recover via `mcp__github__actions_list` when connected; otherwise report `n/a (gh absent)` — never let an ungathered section read as "green".
+If the content is `jq-unavailable` or the repo has no remote, report `n/a`. On `gh-unavailable` / `gh-unauthorized`, recover via `mcp__github__actions_list` when connected; otherwise report `n/a (gh absent)` — never let an ungathered section read as "green".
 
 ### 5. Recent merges to `<default>` (Tier 1 — surface)
 
