@@ -25,13 +25,20 @@
 
 set -uo pipefail
 
+# Owner/repo slug for an explicit `gh -R` flag — repo inference is unreliable
+# behind the cloud sandbox's egress proxy (#257). Empty on a non-GitHub
+# remote, where no merged-PR record can exist anyway, so the gh fallback
+# below declines rather than guessing.
+REPO_SLUG=$(git remote get-url origin 2>/dev/null | sed -n 's#.*github\.com[:/]##p' | sed 's#\.git$##')
+
 # Returns 0 if GitHub records a merged PR whose head branch is $1.
 # Returns non-zero on no-match, missing gh, auth failure, or network error.
 gh_has_merged_pr() {
     local branch=$1
     command -v gh >/dev/null 2>&1 || return 1
+    [ -n "$REPO_SLUG" ] || return 1
     local count
-    count=$(gh pr list --state merged --head "$branch" --json number --jq 'length' 2>/dev/null) || return 1
+    count=$(gh pr list -R "$REPO_SLUG" --state merged --head "$branch" --json number --jq 'length' 2>/dev/null) || return 1
     [ "${count:-0}" -gt 0 ]
 }
 

@@ -33,6 +33,14 @@ exit 0
 Drop `--with-gcloud` for an environment that does no Google Cloud work; it
 saves a ~96 MB download and declares what kind of environment this is.
 
+Add `--with-gh` to install the GitHub CLI from a pinned release. Without it,
+three of `start-session`'s seven gather sections (and `end-session`'s GitHub
+sections) report `gh-unavailable` and every session pays for MCP recovery in
+conversation — the deterministic script path is the point of those gathers
+(#257). The sandbox proxy substitutes a real scoped credential for the
+container's `GH_TOKEN` sentinel, so the installed `gh` authenticates without
+holding a token.
+
 **The `Rev:` comment is load-bearing.** The environment snapshots the setup
 script's result and re-runs it only when the script text changes, the allowed
 domains change, or roughly seven days pass. Because `main` never changes *as a
@@ -142,6 +150,7 @@ Revocation levels and what to do about a possibly-exposed token or request key:
 | `~/.claude/settings.json` | harness hook wiring, with `--with-hooks` (merged, not replaced) |
 | `~/.claude/bin/*-claude-hook` | the three harness hook scripts, with `--with-hooks` |
 | `/usr/local/bin/pre-commit`, `/usr/bin/shellcheck`, `/usr/local/bin/actionlint` | with `--with-precommit` |
+| `/usr/local/bin/gh` | the GitHub CLI, pinned release, with `--with-gh` |
 
 Whitelisted today: `retrospective`, `start-session`, `end-session`. The 15
 `setup-*` skills are held back pending a currency review — they are

@@ -30,6 +30,14 @@ git fetch --all --prune --tags >"$TMP/fetch.out" 2>&1
 FETCH_EXIT=$?
 progress "fetch exit=$FETCH_EXIT"
 
+# Owner/repo slug for explicit `gh -R` flags — same reasoning as
+# start-session-gather-state: repo inference is unreliable behind the cloud
+# sandbox's egress proxy (#257), and an explicit -R is deterministic
+# everywhere. Empty on a non-GitHub remote; the ${REPO_SLUG:+...} expansions
+# then collapse and gh falls back to inference.
+REPO_SLUG=$(git remote get-url origin 2>/dev/null | sed -n 's#.*github\.com[:/]##p' | sed 's#\.git$##')
+export REPO_SLUG
+
 # --- Phase 2: parallel fan-out of independent reads ---
 # Each helper runs the command, captures stdout+stderr into <name>.out and
 # the exit code into <name>.exit. The subshell backgrounds with &.
@@ -74,18 +82,20 @@ run_sh merged_brs "
       | grep -vE '^(main|master|HEAD)\$' || true
 "
 
+# shellcheck disable=SC2016  # Intentional single quotes: expansion happens inside `sh -c`.
 run_sh main_ci '
     if command -v gh >/dev/null 2>&1; then
-        gh run list --branch main --limit 10 \
+        gh run list ${REPO_SLUG:+-R "$REPO_SLUG"} --branch main --limit 10 \
             --json status,conclusion,name,headSha,createdAt,url
     else
         echo "gh-unavailable"
     fi
 '
 
+# shellcheck disable=SC2016  # Intentional single quotes: expansion happens inside `sh -c`.
 run_sh open_prs '
     if command -v gh >/dev/null 2>&1; then
-        gh pr list --author @me --state open \
+        gh pr list ${REPO_SLUG:+-R "$REPO_SLUG"} --author @me --state open \
             --json number,title,isDraft,mergeable,statusCheckRollup,reviewDecision,url
     else
         echo "gh-unavailable"
@@ -111,7 +121,7 @@ run_sh gh_assigned '
         echo "jq-unavailable"
         exit 1
     fi
-    gh issue list --assignee @me --state open --limit 20 \
+    gh issue list ${REPO_SLUG:+-R "$REPO_SLUG"} --assignee @me --state open --limit 20 \
         --json number,title \
       | jq -r '\''.[] | "#\(.number) \(.title)"'\''
 '
