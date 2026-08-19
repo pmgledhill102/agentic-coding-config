@@ -49,7 +49,7 @@ this command makes **no standalone Bash calls before the gather**.
 
 ### 1. Gather state (Tier 1 — one tool call)
 
-Run the parallel gather script. It does `git fetch --all --prune --tags` first, resolves the repo's default branch, then fans out all read-only queries (local branch state, `main` CI, ready/assigned GitHub issues) in parallel. The script compacts each section's output to keep model-visible context cost low: `fetch`'s body is suppressed on success, and `main_ci` is parsed in-script to one line per workflow.
+Run the parallel gather script. It does `git fetch --all --prune --tags` first, resolves the repo's default branch, then fans out all read-only queries (local branch state, ready/assigned GitHub issues) in parallel. The script compacts each section's output to keep model-visible context cost low: `fetch`'s body is suppressed on success. Default-branch CI is deliberately **not** gathered here — see step 4 for why, and for the on-demand alternative.
 
 ```sh
 ${CLAUDE_PLUGIN_ROOT:-$HOME/.claude}/bin/start-session-gather-state
@@ -62,7 +62,6 @@ Output is a sectioned stream. Each section starts with `===<name> (exit=<N>)===`
 | `not_a_git_repo` | pre-flight | Only present when the gather ran outside a git repo, in which case it is the **only** section and the script exits 1. Print the line it contains and stop; every other step assumes a repo. |
 | `fetch` | 2 (folded in) | Body is empty on success (exit=0). Non-zero = network/auth issue — body contains the error; surface before proceeding. |
 | `local_state` | 3, 7 | Includes branch, dirty/clean, ahead/behind upstream, ahead/behind `origin/<default>`. |
-| `main_ci` | 4 | Content `jq-unavailable` = silent skip; `gh-unavailable` / `gh-unauthorized` = recover via MCP (see exit-code rules). Otherwise: first line is `workflows=<N>`; subsequent lines are `<workflow-name>=<conclusion-or-status>@<short-sha>` (one per most-recent run per workflow on `<default>`). On `failure` / `cancelled` / `timed_out`, the line ends with a trailing space-separated run URL: `<workflow-name>=<conclusion>@<short-sha> <url>`. Non-zero with other content = real error. |
 | `recent_main_commits` | 5 | First line is `count=<N>` (commits that merged into `origin/<default>` since the previous local tip). When non-zero, subsequent lines are `<short-sha> <subject>`, capped at 10. Empty when caught up. |
 | `gh_ready` | 7 | Content `not-github` / `jq-unavailable` = silent skip; `gh-unavailable` / `gh-unauthorized` = recover via MCP (see exit-code rules). Empty content = no ready work. Otherwise up to 10 pipe-separated rows: `#<n>\|P<pri>\|<title>` (priority `-` when the issue has no `P0`–`P4` label). Ready = open and not directly blocked (`gh issue list --search "is:open -is:blocked"`) — direct blocks only, no transitive query. Already pre-summarised — use rows directly in the brief without further parsing. |
 | `gh_assigned` | 7 | Same skip convention as `gh_ready`. Empty content = nothing in flight. Otherwise pipe-separated rows: `#<n>\|P<pri>\|<title>` for open issues assigned to me (usually 0-3). Same row shape as `gh_ready`. |
@@ -88,7 +87,7 @@ Rules for interpreting exit codes:
 - `exit=0` with empty content: clean result (no ready work, nothing assigned, etc.). Treat as "none".
 - `exit=0` with content: normal data — parse it for the relevant step.
 - `exit != 0` with content `not-github` or `jq-unavailable`: silent skip.
-- `exit != 0` with content `gh-unavailable` or `gh-unauthorized`: **not silent.** Recover the section with the MCP equivalents when the GitHub MCP server is connected — `mcp__github__actions_list` for `main_ci`, `mcp__github__list_issues` for `gh_ready` / `gh_assigned` — and use the recovered data as if the gather had produced it. Only when MCP is also unavailable, report `n/a (gh absent)` in the brief, so a thin brief reads as "not gathered", never as "all clear".
+- `exit != 0` with content `gh-unavailable` or `gh-unauthorized`: **not silent.** Recover the section with `mcp__github__list_issues` (for `gh_ready` / `gh_assigned`) when the GitHub MCP server is connected, and use the recovered data as if the gather had produced it. Only when MCP is also unavailable, report `n/a (gh absent)` in the brief, so a thin brief reads as "not gathered", never as "all clear".
 - `exit != 0` with other content: real error — surface it before continuing.
 
 ### 2. Surface fetch result (Tier 1)
@@ -118,15 +117,14 @@ Read `local_state`, including the `upstream_status` line (`alive` / `gone` / `no
 
 Don't switch branches outside of the auto-switch case above.
 
-### 4. `main` CI status (Tier 1 — surface)
+### 4. CI status — on demand, not gathered (Tier 1)
 
-From gather section `main_ci`. The script has already deduplicated to one most-recent run per workflow on `<default>` and emitted compact lines: `<workflow-name>=<conclusion-or-status>@<short-sha>`. Failing runs include the URL on the same line: `<workflow-name>=<conclusion>@<short-sha> <url>`.
+**Default-branch CI is deliberately not fetched at session start (#273).** It was the least-actionable line in the brief — a gated default branch is rarely red, and a push surfaces a break within one cycle anyway — yet the most expensive to gather: the only route on a surface without `gh` is `mcp__github__actions_list`, which dumps every workflow run unreduced (~104K tokens, enough to overflow context) because it has no server-side field selection. Paying that every session to pre-answer a question nobody usually acts on is the opposite of what this gather is for.
 
-- **Any line where `<conclusion-or-status>` is `failure` / `cancelled` / `timed_out`**: flag in the session brief with workflow name + short-sha + run URL (the URL is on the same line — surface it inline so the user can click straight through). A red default branch is the loudest "not clean" signal — call it out before the user starts new work.
-- **Any line where `<conclusion-or-status>` is `in_progress`**: list with the short-sha. (Elapsed time is no longer captured — gather doesn't track createdAt in the compact form. If you need it, run `gh run list` directly.)
-- **All `success`**: silent (the brief reports "green").
+So the brief carries no CI line. When CI status actually matters — you are about to build on the default branch and want to know it is green, or you are checking a PR you just pushed — query it **scoped, on demand**:
 
-If the content is `jq-unavailable` or the repo has no remote, report `n/a`. On `gh-unavailable` / `gh-unauthorized`, recover via `mcp__github__actions_list` when connected; otherwise report `n/a (gh absent)` — never let an ungathered section read as "green".
+- **A specific PR** (the common case): `mcp__github__pull_request_read` with method `get_check_runs` (GitHub Actions report as check runs, not the legacy combined status, so `get_status` shows `total_count: 0` and is the wrong call here). One PR's check runs are a few KB — summarise to pass/fail counts and surface only failures.
+- **The default branch with no PR**: the head commit's checks via the same tool against the relevant PR, or `mcp__github__actions_list` filtered to a single workflow if you genuinely need the repo-wide picture — but reach for that only when asked, given its cost.
 
 ### 5. Recent merges to `<default>` (Tier 1 — surface)
 
@@ -220,7 +218,6 @@ Always print, even when everything is clean. This is the user-facing payoff — 
 Repo:     <repo>             Branch: <branch> (<clean|dirty>)
 Sync:     <default> <ahead/behind/even>   upstream <ahead/behind/even/gone/n/a>
           [auto-switched <feature> → <default> (upstream gone)]    (only when Step 3 auto-switched)
-CI:       <green / N failing / N in-progress / n/a>
 
 Recent merges:                                      (omit when count=0)
   <short-sha>  <commit subject>
@@ -235,7 +232,6 @@ Ready to pick up next:
 
 Needs attention:
   • <pending journal drafts: N>    (omit when 0 / not paul-context)
-  • <main CI red on workflow X>    (omit when green)
   • <feature branch behind main by N>          (omit when on default, even, or auto-switched)
   • <branch upstream gone but tree dirty>      (omit unless that case fires)
   • ~/.claude is behind the repo on N file(s): <paths> — run `chezmoi apply --refresh-externals`

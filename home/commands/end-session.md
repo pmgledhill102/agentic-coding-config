@@ -50,7 +50,7 @@ lost rather than waiting. Surface it as usual, and say so.
 
 ### 1. Gather state (Tier 1 — one tool call)
 
-Run the parallel gather script. It does `git fetch --all --prune --tags` first, then fans out all read-only queries (status/branch/log, stashes, worktrees, merged branches, `main` CI, open PRs, assigned GitHub issues) in parallel.
+Run the parallel gather script. It does `git fetch --all --prune --tags` first, then fans out all read-only queries (status/branch/log, stashes, worktrees, merged branches, open PRs, assigned GitHub issues) in parallel. Default-branch CI is deliberately not gathered — see step 3.
 
 ```sh
 ${CLAUDE_PLUGIN_ROOT:-$HOME/.claude}/bin/end-session-gather-state
@@ -65,8 +65,7 @@ Output is a sectioned stream. Each section starts with `===<name> (exit=<N>)===`
 | `stashes` | 9 | Exit 0 even when empty. |
 | `worktrees` | 13 | Exit 0 even when empty. |
 | `merged_brs` | 6 Batch A | Script appends `\|\| true` — exit 0 even if no matches. |
-| `main_ci` | 3 | Content `gh-unavailable` / `gh-unauthorized` = recover via MCP (see exit-code rules). Non-zero with other content = real error. |
-| `open_prs` | 8 | Same skip convention as `main_ci`. |
+| `open_prs` | 8 | Content `gh-unavailable` / `gh-unauthorized` = recover via MCP (see exit-code rules). Empty content = no open PRs. |
 | `gh_assigned` | 10 | Content `not-github` / `jq-unavailable` = silent skip; `gh-unavailable` / `gh-unauthorized` = recover via MCP (see exit-code rules). Empty content = nothing in flight. Otherwise one `#<n> <title>` line per open issue assigned to me. |
 | `stale_claude_files` | 11 | Content `chezmoi-unavailable` = silent skip. Empty body (exit=0) = nothing stale. Otherwise: one path per line under `.claude/commands/` or `.claude/bin/` that's present locally but not tracked by chezmoi. |
 
@@ -103,7 +102,6 @@ Apply when **all** of the following hold (single-pass check over already-collect
 - `stashes` is empty
 - `gh_assigned` is empty (or content is `not-github` / `gh-unavailable` / `gh-unauthorized`)
 - `open_prs` is empty (or content is `gh-unavailable` / `gh-unauthorized`)
-- `main_ci` has no `failure` / `cancelled` / `timed_out` line (an `in_progress` workflow is allowed — summary still surfaces it)
 - `stale_claude_files` is empty (or content is `chezmoi-unavailable`)
 - `worktrees` has exactly one entry (just the primary)
 
@@ -124,15 +122,17 @@ If **any** predicate fails, run every step as before — a messy session's narra
 
 Folded into step 1's gather. The `fetch` section contains the output. If its exit code is non-zero, stop and surface before proceeding.
 
-### 3. Check `main` CI status (Tier 1 — surface)
+### 3. Check CI on the PRs you touched — on demand (Tier 1 — surface)
 
-From gather section `main_ci`. Parse the most recent run per workflow:
+**Repo-wide default-branch CI is deliberately not gathered (#273):** the only route without `gh` is `mcp__github__actions_list`, which dumps every run unreduced (~104K tokens, overflows context), to answer a question `/end-session` rarely acts on. What matters at walk-away is whether the PR(s) you pushed this session are green — a scoped, cheap query.
 
-- **Failed**: flag loudly with `<workflow name>: <full run URL>` on its own line so the user can click straight through. The gather script already returns the URL in `main_ci` — print it inline; don't make the user chase it with a follow-up `gh run view`. A red `main` is the loudest "not clean" signal.
-- **In progress**: list with elapsed time. Means a deploy / long check is mid-flight.
-- **All green**: silent.
+For each PR you created or pushed to this run, check it with `mcp__github__pull_request_read` method `get_check_runs` (Actions report as check runs; `get_status` returns `total_count: 0` and is the wrong call). Summarise to pass/fail:
 
-If the repo has no remote, skip. On `gh-unavailable` / `gh-unauthorized`, recover via `mcp__github__actions_list` when connected; otherwise carry the state forward as **unknown**, not clean — this result gates the Phase 2 prompt, and an unchecked CI state should read as unchecked, never as green.
+- **Failed**: flag loudly with `<workflow name>: <run URL>` on its own line. This gates the Phase 2 prompt and the walk-away summary — a red PR you own is unfinished work, not a clean exit.
+- **In progress**: note it as running; the PR isn't confirmed green yet.
+- **All green**: say so.
+
+If no PR was touched this session, skip. Never carry an unchecked CI state forward as clean — an unqueried PR reads as **unknown**, not green.
 
 ### 4. Handle uncommitted or unpushed work (Tier 3)
 
@@ -251,7 +251,7 @@ Print a concise summary. Each line says "none" loudly when clean, so noise scale
 - Branches pruned (squash-merged): `<list or "none">`
 - Stashed/committed work this run: `<describe or "none">`
 - Main rebased: `<yes/no, behind/ahead counts>`
-- `main` CI status: `<green / running: N (<workflow names>) / FAILED: <workflow name + run URL>>`
+- CI on PRs touched this run: `<per-PR: green / running / FAILED: <workflow name + run URL>, or "no PR touched">`
 - Open PRs needing action: `<count by category, or "none">`
 - Stashes outstanding: `<count, or "none">`
 - Open issues assigned to you: `<count, or "none">`

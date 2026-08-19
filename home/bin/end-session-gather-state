@@ -95,19 +95,11 @@ run_sh merged_brs "
       | grep -vE '^(main|master|HEAD)\$' || true
 "
 
-# shellcheck disable=SC2016  # Intentional single quotes: expansion happens inside `sh -c`.
-run_sh main_ci '
-    if ! command -v gh >/dev/null 2>&1; then
-        echo "gh-unavailable"
-        exit 1
-    fi
-    if [ "$GH_REPO_API" != "ok" ]; then
-        echo "gh-unauthorized"
-        exit 1
-    fi
-    gh run list ${REPO_SLUG:+-R "$REPO_SLUG"} --branch main --limit 10 \
-        --json status,conclusion,name,headSha,createdAt,url
-'
+# NOTE: main_ci was removed here deliberately (#273). Eager repo-wide CI
+# status cost ~104K tokens via the MCP fallback and answered a question
+# /end-session rarely acts on. CI now belongs on-demand, scoped to the PR(s)
+# actually touched this session, via the harness's GitHub tools. See
+# docs/end-session-design.md.
 
 # shellcheck disable=SC2016  # Intentional single quotes: expansion happens inside `sh -c`.
 run_sh open_prs '
@@ -192,6 +184,6 @@ printf '===fetch (exit=%s)===\n' "$FETCH_EXIT"
 cat "$TMP/fetch.out"
 printf '\n'
 
-for s in local_state stashes worktrees merged_brs main_ci open_prs gh_assigned stale_claude_files; do
+for s in local_state stashes worktrees merged_brs open_prs gh_assigned stale_claude_files; do
     [ -f "$TMP/$s.exit" ] && emit "$s"
 done
