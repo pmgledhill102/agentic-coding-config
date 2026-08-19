@@ -82,7 +82,11 @@ Rules for interpreting exit codes:
 - `exit=0` with empty content: clean result (no ready work, nothing assigned, etc.). Treat as "none".
 - `exit=0` with content: normal data — parse it for the relevant step.
 - `exit != 0` with content `not-github` or `jq-unavailable`: silent skip.
-- `exit != 0` with content `gh-unavailable` or `gh-unauthorized`: **not silent.** Recover the section with `mcp__github__list_issues` (for `gh_ready` / `gh_assigned`) when the GitHub MCP server is connected, and use the recovered data as if the gather had produced it. Only when MCP is also unavailable, report `n/a (gh absent)` in the brief, so a thin brief reads as "not gathered", never as "all clear".
+- `exit != 0` with content `gh-unavailable` or `gh-unauthorized`: **not silent.** Recover each surviving section with its MCP equivalent when the GitHub MCP server is connected, and use the recovered data as if the gather had produced it — mappings verified on a live cloud sandbox 2026-08-19 (see [#257](https://github.com/pmgledhill102/agentic-coding-config/issues/257)):
+  - `gh_ready` → `mcp__github__list_issues` with `state: OPEN` and `fields: ["number","title","labels","state"]` — verified to work cleanly. One gap: the tool cannot express `-is:blocked`, so the recovered list is **unfiltered for blocked issues**. The brief must say so (see step 7) rather than presenting it as the ready list.
+  - `gh_assigned` → **no MCP recovery exists**: `mcp__github__list_issues` cannot filter by assignee. Report `n/a (assignee filter not available via MCP)` in the brief — an honest gap, never an empty "nothing in flight".
+
+  Only when MCP is also unavailable, report `n/a (gh absent)` in the brief, so a thin brief reads as "not gathered", never as "all clear".
 - `exit != 0` with other content: real error — surface it before continuing.
 
 ### 2. Surface fetch result (Tier 1)
@@ -239,8 +243,8 @@ Needs attention:
 Rules:
 
 - Sections with nothing to say collapse to a single `none` line; "Needs attention" is omitted entirely when empty.
-- "Ready to pick up next" is sourced from gather section `gh_ready`. Each row is already pipe-separated `#<n>|P<pri>|<title>` — split on `|`, sort by priority label (P0 first, `-` last), and emit the top 5. Ready = open and not directly blocked; the filter is direct-blocks-only, so eyeball the blocked icon before claiming work.
-- "In progress" is sourced from gather section `gh_assigned`. Same `#<n>|P<pri>|<title>` row shape; no cap (usually 0–3 items).
+- "Ready to pick up next" is sourced from gather section `gh_ready`. Each row is already pipe-separated `#<n>|P<pri>|<title>` — split on `|`, sort by priority label (P0 first, `-` last), and emit the top 5. Ready = open and not directly blocked; the filter is direct-blocks-only, so eyeball the blocked icon before claiming work. When the section was MCP-recovered, no blocked filter was applied at all — retitle it `Open issues (blocked filter unavailable):` so the reader knows some rows may be blocked.
+- "In progress" is sourced from gather section `gh_assigned`. Same `#<n>|P<pri>|<title>` row shape; no cap (usually 0–3 items). When the gather reported `gh-unavailable`, this line is `n/a (assignee filter not available via MCP)` — MCP cannot recover this section.
 - "Recent merges" is sourced from gather section `recent_main_commits`. Omit the entire section when `count=0`.
 - If the repo has no GitHub origin (`gh_ready` / `gh_assigned` report `not-github` or are skipped), drop both issue sections silently (the brief still shows git/CI lines).
 - Truncate any title to ~78 columns to keep rows on one line.
