@@ -66,7 +66,6 @@ fixed commands, so parallelising it would buy nothing.
     │                        ├── stashes
     │                        ├── worktrees
     │                        ├── merged_brs
-    │                        ├── main_ci       (gh run list)
     │                        ├── open_prs      (gh pr list)
     │                        ├── gh_assigned   (gh issue list)
     │                        └── stale_claude_files (~/.claude drift scan)
@@ -87,7 +86,9 @@ fixed commands, so parallelising it would buy nothing.
 <section stdout+stderr>
 ```
 
-Sections, in emission order: `fetch`, `local_state`, `stashes`, `worktrees`, `merged_brs`, `main_ci`, `open_prs`, `gh_assigned`, `stale_claude_files`.
+Sections, in emission order: `fetch`, `local_state`, `stashes`, `worktrees`, `merged_brs`, `open_prs`, `gh_assigned`, `stale_claude_files`.
+
+CI status is deliberately absent from the gather (#273): eager repo-wide CI cost ~104K tokens via the `actions_list` MCP fallback (no server-side reduction, overflows context) to answer a question `/end-session` rarely acts on. It is now queried on demand, scoped to the PR(s) actually touched, via `pull_request_read` `get_check_runs` — see step 3 in the command.
 
 Progress pings go to stderr (`[gather] …`) so a human watching sees something move without polluting the parseable stream on stdout.
 

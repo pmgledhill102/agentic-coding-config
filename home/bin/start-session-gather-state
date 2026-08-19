@@ -138,42 +138,14 @@ run_sh local_state '
     git remote get-url origin 2>&1
 '
 
-# shellcheck disable=SC2016
-run_sh main_ci '
-    if ! command -v gh >/dev/null 2>&1; then
-        echo "gh-unavailable"
-        exit 1
-    fi
-    if [ "$GH_REPO_API" != "ok" ]; then
-        echo "gh-unauthorized"
-        exit 1
-    fi
-    if ! command -v jq >/dev/null 2>&1; then
-        echo "jq-unavailable"
-        exit 1
-    fi
-    # Parse to most-recent run per workflow on $DEFAULT_BRANCH.
-    # Output:
-    #   workflows=<N>
-    #   <name>=<conclusion-or-status>@<short-sha>           (success / in_progress / queued)
-    #   <name>=<conclusion>@<short-sha> <url>                (failure / cancelled / timed_out)
-    # The URL on failing runs lets the brief link the failing job inline; on
-    # clean-and-green sessions this is still 1-3 lines instead of a JSON dump.
-    gh run list ${REPO_SLUG:+-R "$REPO_SLUG"} --branch "$DEFAULT_BRANCH" --limit 20 \
-        --json status,conclusion,name,headSha,createdAt,url \
-      | jq -r '\''
-          group_by(.name)
-          | map(sort_by(.createdAt) | last)
-          | sort_by(.name) as $w
-          | "workflows=\($w | length)",
-            ($w[] | (
-                if (.conclusion == "failure" or .conclusion == "cancelled" or .conclusion == "timed_out")
-                then "\(.name)=\(.conclusion)@\(.headSha[0:7]) \(.url)"
-                else "\(.name)=\(.conclusion // .status)@\(.headSha[0:7])"
-                end
-            ))
-        '\''
-'
+# NOTE: main_ci was removed here deliberately (#273). Eager CI status cost
+# ~104K tokens via the MCP fallback (`actions_list` dumps every run unreduced
+# and overflows context), to answer "is the default branch red before I
+# branch?" — the least-actionable line in the brief, since a gated default
+# branch is rarely red and a push surfaces it anyway. CI is now queried
+# on-demand, scoped to the PR actually being worked, via the harness's GitHub
+# tools (a single PR's check runs, ~50-2500 tokens). See start-session.md
+# step 4 and docs/end-session-design.md.
 
 # shellcheck disable=SC2016
 run_sh gh_ready '
@@ -347,6 +319,6 @@ if [ "$FETCH_EXIT" -ne 0 ]; then
 fi
 printf '\n'
 
-for s in local_state main_ci recent_main_commits gh_ready gh_assigned claude_drift bootstrap_currency; do
+for s in local_state recent_main_commits gh_ready gh_assigned claude_drift bootstrap_currency; do
     [ -f "$TMP/$s.exit" ] && emit "$s"
 done
