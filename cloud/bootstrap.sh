@@ -5,7 +5,7 @@
 # everything of substance stays here, versioned, instead of being pasted into a
 # vendor configuration field (ADR-0016, principle 5):
 #
-#   curl -sSL https://raw.githubusercontent.com/pmgledhill102/agentic-coding-config/<REF>/cloud/bootstrap.sh | sh -s -- <REF> [--with-gcloud] [--with-precommit] [--with-hooks] [--profile <name>]
+#   curl -sSL https://raw.githubusercontent.com/pmgledhill102/agentic-coding-config/<REF>/cloud/bootstrap.sh | sh -s -- <REF> [--with-gcloud] [--with-precommit] [--with-hooks] [--with-gh] [--profile <name>]
 #
 # --with-gcloud installs the Google Cloud SDK as well. Opt-in, so that the one
 # line an environment carries declares what kind of environment it is.
@@ -20,6 +20,15 @@
 # hooks into ~/.claude/settings.json. Separate from --with-precommit because
 # they are different mechanisms: a git hook blocks the commit, a harness hook
 # returns the failure into the agent's context where it can act on it.
+#
+# --with-gh installs the GitHub CLI from a pinned release tarball. Opt-in like
+# the rest, but it exists for a different reason: the session skills' gather
+# scripts call gh six ways, and without it three of start-session's seven
+# sections report gh-unavailable and push every session into per-conversation
+# MCP recovery — token, latency and determinism costs a script call does not
+# have (#257). On Claude's cloud surface the sandbox proxy substitutes the
+# real credential for the GH_TOKEN sentinel these containers carry, so the
+# installed gh authenticates without ever holding a token.
 #
 # --profile names the composed context profile to install, defaulting to
 # claude-cloud-sandbox. A Codex environment passes --profile codex-cloud-sandbox.
@@ -49,6 +58,7 @@ REF="${1:-main}"
 WITH_GCLOUD=0
 WITH_PRECOMMIT=0
 WITH_HOOKS=0
+WITH_GH=0
 PROFILE=claude-cloud-sandbox
 
 while [ $# -gt 0 ]; do
@@ -56,6 +66,7 @@ while [ $# -gt 0 ]; do
         --with-gcloud) WITH_GCLOUD=1 ;;
         --with-precommit) WITH_PRECOMMIT=1 ;;
         --with-hooks) WITH_HOOKS=1 ;;
+        --with-gh) WITH_GH=1 ;;
         --profile)
             shift
             [ $# -gt 0 ] || die "--profile needs a value"
@@ -374,6 +385,35 @@ HOOK
     log "githook -> $HOOK_DIR/pre-commit (core.hooksPath, all repos)"
 fi
 
+# --- gh, on request -----------------------------------------------------------
+#
+# From a pinned release tarball, exactly like actionlint above: no
+# Ubuntu-archive dependency, so an environment that cannot reach the archives
+# can still have it, and the version is a decision rather than whatever the
+# distro froze. The same 403-vs-redirect note as actionlint applies — a naive
+# reachability probe against github.com reads as an egress block and is not
+# one.
+#
+# No auth step, deliberately. These containers carry a GH_TOKEN sentinel that
+# the egress proxy substitutes with a real scoped credential on api.github.com
+# requests, so gh authenticates without a token ever existing inside the
+# container (#257, measured 2026-08-19). The gather scripts pass -R explicitly
+# rather than trusting repo inference behind that proxy.
+
+if [ "$WITH_GH" -eq 1 ] && ! command -v gh > /dev/null 2>&1; then
+    GH_VER=2.97.0
+    curl -sSfL -o "$TMP/gh.tar.gz" \
+        "https://github.com/cli/cli/releases/download/v${GH_VER}/gh_${GH_VER}_linux_amd64.tar.gz" ||
+        die "could not download gh ${GH_VER}"
+    tar -xzf "$TMP/gh.tar.gz" -C "$TMP" "gh_${GH_VER}_linux_amd64/bin/gh" ||
+        die "could not unpack gh"
+    install -m 0755 "$TMP/gh_${GH_VER}_linux_amd64/bin/gh" /usr/local/bin/gh ||
+        die "could not install gh"
+    log "gh      -> $(gh --version 2> /dev/null | head -1 || echo 'installed')"
+elif [ "$WITH_GH" -eq 1 ]; then
+    log "gh      : already present, left alone"
+fi
+
 # --- the agent policy ---------------------------------------------------------
 #
 # Until now a sandbox got no policy at all: `ls ~/.claude/*.md` was empty, and
@@ -571,12 +611,12 @@ if [ "$WITH_HOOKS" -eq 1 ]; then
         log "hooks   -> $SETTINGS (created)"
     fi
 
-    # prepush-guard needs gh, which these containers do not have (#257), so it
-    # exits 0 here. precommit-claude-hook needs the pre-commit framework and is
-    # a no-op without --with-precommit. Both degrade rather than failing, which
-    # is why this flag has no hard dependency on that one -- but the pair is
-    # what makes it worth having.
-    log "hooks   :  prchecks-wait, prepush-guard (needs gh), precommit (needs --with-precommit)"
+    # prepush-guard needs gh, which these containers lack unless --with-gh was
+    # given (#257), so without it it exits 0 here. precommit-claude-hook needs
+    # the pre-commit framework and is a no-op without --with-precommit. Both
+    # degrade rather than failing, which is why this flag has no hard
+    # dependency on those -- but the trio is what makes it worth having.
+    log "hooks   :  prchecks-wait, prepush-guard (needs --with-gh), precommit (needs --with-precommit)"
 fi
 
 # --- the manifest -------------------------------------------------------------
@@ -621,6 +661,7 @@ fi
     echo "helpers=$BIN_SCRIPTS"
     echo "precommit=$WITH_PRECOMMIT"
     echo "gcloud=$WITH_GCLOUD"
+    echo "gh=$WITH_GH"
 } > "$MANIFEST"
 log "manifst -> $MANIFEST ($kind $(echo "$resolved" | cut -c1-12))"
 
