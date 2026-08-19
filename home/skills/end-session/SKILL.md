@@ -72,7 +72,7 @@ Output is a sectioned stream. Each section starts with `===<name> (exit=<N>)===`
 | `merged_brs` | 6 Batch A | Script appends `\|\| true` — exit 0 even if no matches. |
 | `main_ci` | 3 | Content `gh-unavailable` = recover via MCP (see exit-code rules). Non-zero with other content = real error. |
 | `open_prs` | 8 | Same skip convention as `main_ci`. |
-| `gh_assigned` | 10 | Content `not-github` / `jq-unavailable` = silent skip; `gh-unavailable` = recover via MCP (see exit-code rules). Empty content = nothing in flight. Otherwise one `#<n> <title>` line per open issue assigned to me. |
+| `gh_assigned` | 10 | Content `not-github` / `jq-unavailable` = silent skip; `gh-unavailable` = no MCP recovery exists — report `n/a` (see exit-code rules). Empty content = nothing in flight. Otherwise one `#<n> <title>` line per open issue assigned to me. |
 | `stale_claude_files` | 11 | Content `chezmoi-unavailable` = silent skip. Empty body (exit=0) = nothing stale. Otherwise: one path per line under `.claude/commands/` or `.claude/bin/` that's present locally but not tracked by chezmoi. |
 
 **On `gh` inside the gather script.** The gather runs as a shell script, so its
@@ -89,7 +89,7 @@ Rules for interpreting exit codes:
 
 - `exit=0` with empty content: clean result (no stashes, no merged branches, no in-progress issues, etc.). Treat as "none".
 - `exit=0` with content: normal data — parse it for the relevant step.
-- `exit != 0` with content `gh-unavailable`: **not silent.** Recover with the MCP equivalents when connected — `mcp__github__list_pull_requests` for PR state, `mcp__github__list_issues` for assigned issues — else note `n/a (gh absent)` so the walk-away summary shows what was not checked.
+- `exit != 0` with content `gh-unavailable`: **not silent.** Recover the section with the MCP equivalents when the GitHub MCP server is connected, and use the recovered data as if the gather had produced it — `mcp__github__actions_list` for `main_ci` (step 3 has the exact call shape), `mcp__github__list_pull_requests` for `open_prs` (step 8 names the one filter it cannot express). `gh_assigned` has **no MCP equivalent** — `mcp__github__list_issues` cannot filter by assignee — so that section is an honest `n/a (gh absent)`, never an empty list. Wherever MCP is also unavailable, note `n/a (gh absent)` so the walk-away summary shows what was not checked.
 - `exit != 0` with other content: real error — surface it before continuing Phase 1.
 
 ### 1.5. Fast-path when state is fully clean (Tier 1 — narration optimisation)
@@ -103,14 +103,14 @@ Apply when **all** of the following hold (single-pass check over already-collect
 - `merged_brs` is empty
 - `stashes` is empty
 - `gh_assigned` is empty (or content is `not-github` / `gh-unavailable`)
-- `open_prs` is empty (or content is `gh-unavailable`)
+- `open_prs` is empty (or content is `gh-unavailable` **and** MCP recovery per step 1's exit-code rules also came back empty or unavailable — run the recovery before evaluating this predicate)
 - `main_ci` has no `failure` / `cancelled` / `timed_out` line (an `in_progress` workflow is allowed — summary still surfaces it)
 - `stale_claude_files` is empty (or content is `chezmoi-unavailable`)
 - `worktrees` has exactly one entry (just the primary)
 
 If the predicate holds:
 
-1. Emit step 14's summary directly. Every actionable line says "none"; static lines (main rebased) reflect the already-clean state.
+1. Emit step 14's summary directly. Every actionable line says "none"; static lines (main rebased) reflect the already-clean state. A line whose section was `gh-unavailable` with no MCP recovery says `n/a (gh absent)` instead — the fast-path is a narration optimisation, not permission to report an unchecked section as clean.
 2. Do **not** narrate steps 2–13 individually. No "Step 4 — pass", no "Step 6 — nothing to prune", no per-step status lines. The summary IS the output.
 3. Phase 2's retrospective prompt still fires as today.
 
@@ -133,7 +133,7 @@ From gather section `main_ci`. Parse the most recent run per workflow:
 - **In progress**: list with elapsed time. Means a deploy / long check is mid-flight.
 - **All green**: silent.
 
-If the repo has no remote, skip. On `gh-unavailable`, recover via `mcp__github__actions_list` when connected; otherwise carry the state forward as **unknown**, not clean — this result gates the Phase 2 prompt, and an unchecked CI state should read as unchecked, never as green.
+If the repo has no remote, skip. On `gh-unavailable`, recover via `mcp__github__actions_list` when connected: method `list_workflow_runs` with `workflow_runs_filter: {"branch": "main"}` and a **small `per_page` (e.g. 5)** — the default page size returns a very large payload for no extra signal. If MCP is also unavailable, carry the state forward as **unknown**, not clean — this result gates the Phase 2 prompt, and an unchecked CI state should read as unchecked, never as green.
 
 ### 4. Handle uncommitted or unpushed work (Tier 3)
 
@@ -175,7 +175,9 @@ For each batch:
 
 If a `[gone]` branch has a non-empty diff vs `main` AND no merged PR is found via `gh`, surface it by name ("`feat/x` — upstream gone but diffs against `main` and no merged PR found, left alone") so the user can decide manually. Don't roll it into Batch B — the safety net protects the auto-delete path too.
 
-For remote-tracking refs, `git fetch --prune` in step 2 already handled stale `origin/*` refs. Don't delete anything on the remote itself.
+Where `gh` is absent (cloud sandbox), the script's merged-PR fallback silently never fires, so a squash-merged branch with post-squash drift lands in that surfaced pile instead of Batch B. Before presenting it as unresolved, check the same signal via MCP: `mcp__github__list_pull_requests` with `state: "closed"` and `head: "<owner>:<branch>"`, treating a returned PR with `merged_at` set as the merged-PR signal. On a hit, the branch joins Batch B under the usual single y/n; on a miss (or MCP unavailable), surface it by name as above.
+
+For remote-tracking refs, `git fetch --prune` in step 2 already handled stale `origin/*` refs. Don't delete anything on the remote itself — prefer deletion to happen server-side at merge time (`delete_branch: true` on the merge call), so no session ever pushes a ref deletion. In a cloud sandbox that preference is a hard limit: **the git proxy refuses remote ref deletion** — `git push origin --delete <branch>` dies with a generic `unexpected disconnect` that looks like a network blip, and the GitHub MCP server has no delete-branch tool either (see [pmgledhill102/agentic-coding-config#252](https://github.com/pmgledhill102/agentic-coding-config/issues/252)). If a remote branch genuinely needs deleting on that surface, put it in the step 14 summary as "could not prune: `<branch>` — ref deletion refused by sandbox git proxy (#252)" and leave it for the user. Never retry until it "works", and never report the prune as done.
 
 ### 7. Push main if ahead (Tier 2 — prompt)
 
@@ -189,7 +191,7 @@ If main is ahead of origin/main (shouldn't normally happen, but catches the case
 
 ### 8. Open PRs needing your action (Tier 3 — surface only)
 
-From gather section `open_prs`. If the section content is `gh-unavailable`, either skip or fall back to `mcp__github__list_pull_requests` (state=open, head filter) — the MCP path doesn't need `gh` on PATH.
+From gather section `open_prs`. On `gh-unavailable`, recover via `mcp__github__list_pull_requests` (`state: "open"`) when the GitHub MCP server is connected — the MCP path doesn't need `gh` on PATH. One honest difference: the gather filters to `--author @me`, and `list_pull_requests` has no author filter, so the recovery lists **all** open PRs on the repo — equivalent on a personal repo, worth a caveat line anywhere it isn't. If MCP is also unavailable, report `n/a (gh absent)` rather than skipping silently.
 
 Categorise and present:
 
@@ -207,9 +209,9 @@ From gather section `stashes`. If non-empty, surface count + entries. Don't drop
 
 ### 10. Open issues assigned to you (Tier 3 — surface)
 
-From gather section `gh_assigned` (silently skipped when the repo has no github.com origin or `gh` / `jq` is unavailable). Each line is `#<n> <title>` — an open GitHub issue assigned to you. Surface count + numbers/titles. User decides which to close — common forgetfulness pattern.
+From gather section `gh_assigned` (silently skipped when the repo has no github.com origin or `jq` is unavailable). On `gh-unavailable` there is **no MCP recovery**: `mcp__github__list_issues` cannot filter by assignee, so this line is an honest `n/a (gh absent)` — an unchecked list must never read as "nothing assigned". Otherwise each line is `#<n> <title>` — an open GitHub issue assigned to you. Surface count + numbers/titles. User decides which to close — common forgetfulness pattern.
 
-Issues whose work merged this session via a `Closes #<n>` reference in the PR body are closed automatically by GitHub on merge, so they won't appear here. Anything listed is genuinely still outstanding — if a listed issue actually shipped without the `Closes #<n>` trailer, suggest `gh issue close <n> --comment "Shipped in #<pr>"`.
+Issues whose work merged this session via a `Closes #<n>` reference in the PR body are closed automatically by GitHub on merge, so they won't appear here. Anything listed is genuinely still outstanding — if a listed issue actually shipped without the `Closes #<n>` trailer, suggest closing it: `gh issue close <n> --comment "Shipped in #<pr>"`, or where `gh` is absent, `mcp__github__add_issue_comment` followed by `mcp__github__issue_write` (method `update`, `state: "closed"`, `state_reason: "completed"`).
 
 ### 11. Stale Claude commands/bin files (Tier 1 — surface)
 
@@ -252,10 +254,10 @@ Print a concise summary. Each line says "none" loudly when clean, so noise scale
 - Branches pruned (squash-merged): `<list or "none">`
 - Stashed/committed work this run: `<describe or "none">`
 - Main rebased: `<yes/no, behind/ahead counts>`
-- `main` CI status: `<green / running: N (<workflow names>) / FAILED: <workflow name + run URL>>`
-- Open PRs needing action: `<count by category, or "none">`
+- `main` CI status: `<green / running: N (<workflow names>) / FAILED: <workflow name + run URL> / unknown (gh absent)>`
+- Open PRs needing action: `<count by category, "none", or "n/a (gh absent)">`
 - Stashes outstanding: `<count, or "none">`
-- Open issues assigned to you: `<count, or "none">`
+- Open issues assigned to you: `<count, "none", or "n/a (gh absent)">`
 - Stale `~/.claude/` files: `<count, or "none" / "n/a (no chezmoi)">`
 - Other worktrees: `<count, or "none">`
 - Background processes (reaped): `<count>`
@@ -280,7 +282,7 @@ On `n`: stop. The session is tidied; the user can run `retrospective` later if t
 
 ## Guardrails
 
-- **`-D` (force delete) is allowed only for Batch B of step 6** — branches that are `[upstream: gone]` AND have an empty `git diff` against `main` (or a merged PR via `gh`). Everywhere else: always `-d`. If `-d` refuses, that's signal — surface it, don't override.
+- **`-D` (force delete) is allowed only for Batch B of step 6** — branches that are `[upstream: gone]` AND have an empty `git diff` against `main` (or a merged PR, found via `gh` in the script or via the step 6 MCP recovery). Everywhere else: always `-d`. If `-d` refuses, that's signal — surface it, don't override.
 - **Never `git push --force` or `git reset --hard`.** Those aren't session-tidy operations; if they're needed, the user should drive them.
 - **Never auto-merge PRs, auto-close issues, or auto-drop stashes.** Per-item judgment lives with the user (Tier 3).
 - **Ask before every Tier 2 destructive action** (branch deletes, force-pushing). One y/n per batch is fine — don't ask per-branch if a single list is presented. There is no way to skip the prompt: a repo that wants different behaviour states it in its own `CLAUDE.md`.
