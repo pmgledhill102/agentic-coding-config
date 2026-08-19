@@ -1,109 +1,103 @@
 ---
 name: retrospective
-description: 'Run an end-of-session retrospective: draft a per-session journal entry into paul-context/_incoming/ (or a journal-draft-labelled Issue when the local clone is unavailable), route actionable findings into GitHub Issues same-repo and cross-repo, and capture durable lessons as memories. Use when a work session is wrapping up, when the user asks for a retro or retrospective, or when end-session hands off to one.'
+description: 'Run an end-of-session retrospective: close the loop on past retro output, name the biggest costs of the session, propose at most three tier-priced changes (removals co-equal with additions), draft a per-session journal entry into paul-context/_incoming/ (or a journal-draft-labelled Issue when the local clone is unavailable), and route findings into GitHub Issues same-repo and cross-repo. Use when a work session is wrapping up, when the user asks for a retro or retrospective, or when end-session hands off to one.'
 ---
 
 # Run a session retrospective
 
+## Shape of this retro
+
+This command was redesigned by #263 around one measurement: the owner accepted 2–3 of every 7–8 proposals the old shape generated. Sessions are cheap and frequent now; the scarce resources are **the owner's review attention** and the **always-loaded context budget**, so the retro spends candidate-generation effort sparingly and prices everything it proposes. Four rules follow, and every step below serves one of them:
+
+- **There is no dimension checklist.** The old 16-dimension scan is deleted, deliberately — do not reconstruct it, in whole or in part. Costs are found by working backward from what this session actually paid, not by walking a taxonomy of things to look for. A concern that never shows up as a cost was not worth a proposal.
+- **Hard cap: at most 3 proposals**, each fully priced (step 5). The cap is the rationing mechanism — it cannot be satisfied with prose.
+- **Subtraction is co-equal with addition, and instrument-driven.** No mandatory "what shall we remove?" question — a compulsory question breeds the standing answer "nothing this session". No one-in-one-out displacement rule — displacement rules invite token sacrifices. Instead, read the instruments that already produce removal evidence (step 4) and route what they surface.
+- **The loop is closed.** The retro reads its own past output first, reports what was accepted and rejected, and stops proposing categories with a persistent rejection record.
+
 ## Steps
 
-### 1. Read context
+### 1. Close the loop (always first)
 
-- **Current repo**: `git rev-parse --show-toplevel` to identify which repo we're in (if any).
+Before analysing this session, read what the last few retros produced and what became of it:
+
+- **Recent journal entries** — the last 3–5. On a workstation, read `~/dev/paul-context/journal/` (newest by filename date) plus any drafts still in `~/dev/paul-context/_incoming/`. In a sandbox with no clone, list recent `journal-draft`-labeled Issues on `pmgledhill102/paul-context` — `mcp__github__list_issues` when connected, else `gh issue list --repo pmgledhill102/paul-context --label journal-draft --state all`.
+- **Retro-filed Issues** — their bodies carry the `From retro: paul-context/journal/...` backlink. Check the repos the recent journals routed to, listing both open and closed Issues. These are historical, so body-text search is acceptable here (the never-search rule guards *time-sensitive* reads; a week-old issue is safely indexed).
+
+Report a short fate summary before proposing anything new:
+
+- **Accepted** — merged or closed-completed. Did they pay off? Say so where the evidence exists ("the allow rule from #241 fired this session"), and say "no evidence yet" where it doesn't.
+- **Rejected** — closed not-planned, or open and untouched across several sessions.
+- **Pending** — filed recently, no verdict yet.
+
+**A persistently rejected category is closed, twice over.** Stop proposing it — and record the category itself as a subtraction candidate for step 4, because the skill text or apparatus that keeps generating it is what should go.
+
+### 2. Read context
+
+Keep this lean — it feeds interpretation, not candidate generation:
+
+- **Current repo**: `git rev-parse --show-toplevel` (if any). Not in a git repo → treat the retro as cross-repo by default; every action becomes an Issue against `pmgledhill102/paul-context`.
 - **Current branch + state**: `git status` (branch name, dirty/clean).
-- **Issue state**: list open issues assigned to me, so the retro knows what was already in flight — `mcp__github__list_issues` when connected, else `gh issue list --assignee @me --state open`.
-- **Memory dir**: list `~/.claude/projects/<project>/memory/` (path matches the cwd-derived project key) and read `MEMORY.md` so you know what's already captured and don't propose duplicates.
-- **Settings**: read `~/.claude/settings.json` for permission- and hook-related observations. **Present on both surfaces.** chezmoi writes it on a workstation; `cloud/bootstrap.sh --with-hooks` writes it in a sandbox, where hooks declared in it are honoured (measured 2026-08-18).
-- **Surface**: `command -v chezmoi`. Present = workstation; absent = cloud sandbox. Used to interpret findings, not to skip dimensions.
+- **Surface**: `command -v chezmoi`. Present = workstation; absent = cloud sandbox. Used to pick the lever column in step 5 and the durable-lesson route in step 6 — nothing else branches on it.
 
-**Only the memory dir is workstation-only.** Auto-memory is machine-local by design and is not shared into cloud environments, so `projects/<project>/memory/` is normally absent in a sandbox — note that `projects/<project>/` itself may well exist, so the presence of that directory proves nothing.
+### 3. Name the costs — impact first
 
-**Degrade explicitly, don't skip silently.** When something is genuinely absent, say so in the retro output — `memory: n/a (sandbox)` — and carry on. A retro that quietly omits a dimension reads identically to one that ran it and found nothing, and the difference matters: the first means "not checked here", the second means "checked, all good".
+Identify the **at most 3 biggest costs** this session paid: time lost, wrong turns, rework, context burned on things that didn't matter. For each:
 
-If we're not inside a git repo, treat the retro as cross-repo by default — every action becomes an Issue against `pmgledhill102/paul-context`.
+- **The cost**, with one line of evidence from the transcript ("40 minutes on a CI round-trip a local lint would have caught", "three approval stalls on the same read-only call").
+- **The one lever pull that would have prevented it** — a single, concrete change, named against the lever table in step 5.
 
-### 2. Analyse the session
+Work strictly backward from impact. If the session paid no notable costs, say so — that finding is the whole of step 3, and the retro will end with a journal entry and no proposals. Do not go looking for candidate categories to fill the gap; that is the deleted scan reasserting itself.
 
-Review the full conversation history and evaluate each of these dimensions. Skip any that aren't relevant.
+### 4. Read the subtraction instruments
 
-**Two dimensions are surface-specific** — run whichever matches the surface detected in step 1, not both:
+Removal candidates come from **evidence the instruments already produce**, never from a ritual question. Check each instrument; report `nothing surfaced` explicitly where that is the answer, so a silent skip can't masquerade as a clean read:
 
-- **Approval friction** — *both surfaces*. It used to be workstation-only, on the belief that a sandbox has no readable `~/.claude/settings.json` and nowhere for an allow rule to land. Both halves of that are now false: the file is present and readable in a sandbox, and the bootstrap writes it. Interpret findings by surface rather than skipping the dimension.
-- **Missing sandbox config** — *sandbox only*. See below.
+- **The compose budget.** `tests/compose-context.py` prints every composed artifact's line count on every CI build and flags `OVER BUDGET` when an always-loaded output exceeds the budget. An over-budget line is a standing removal invitation: find the paragraph in the offending fragment that earns its keep least.
+- **The rejection record** from step 1. A proposal category the owner persistently rejects is itself a removal candidate — the text generating it, not just the proposals.
+- **Conformance failures and contradicted claims.** Any platform assumption a conformance run (#260) reports broken, and any documented claim this very session contradicted — a rule violated repeatedly without incident, a rationale that doesn't apply on this surface, a behaviour that didn't hold when exercised.
+- **Grep-for-siblings.** When any claim was corrected this session, grep the estate's config and docs for its uncorrected copies — one fixed instance implies unfixed siblings, and each sibling is a candidate.
 
-- **Approval friction** (both surfaces): Which tool calls required manual approval? Were any repeatedly approved and should be added to `allowedTools` in settings? Note the specific tool patterns. Also note **enforcement** that fired or was bypassed — a pre-commit hook, a `PreToolUse` guard — since both now exist in sandboxes and a bypass is worth recording.
-- **Missing sandbox config** (sandbox only): **what config, context or credentials were missing from this sandbox session?** This is the feedback loop that catches capability gaps, and it is the dimension most worth getting right, because a sandbox is the surface where a gap is invisible until it blocks something. Look for:
-  - **Tools absent** that the work needed — was `gcloud`, a linter, a language runtime missing because the environment's setup script does not install it? Name the tool and the setup-script change.
-  - **Credentials unavailable** — was GCP access needed and absent? The answer is the credential broker (`/gcp-credentials`), so the finding is usually "the broker was not configured for this environment", naming which of the request key, broker URL or allowed-domains entry was missing.
-  - **Context that only exists on a workstation** — did the session need a runbook, a decision record, or a policy statement that lives in `~/.claude/` or a private repo and is therefore unreachable from here? That is a portability gap, and the fix is usually to move the content into a public, fetched, or repo-committed home.
-  - **Guidance a local session would have had** — anything you had to work out that a `CLAUDE.md`/`AGENTS.md` on a laptop would simply have told you.
+Whatever these surface enters step 5 with **equal standing** to any addition. A removal pays every future session — context freed, one less claim to go stale, one less rule to contradict a surface — the same compounding curve as an addition's cost, with the sign flipped.
 
-  Route every finding as an Issue against `pmgledhill102/agentic-coding-config` — that is where the environment definition, the bootstrap and the policy core all live. Be specific enough to action without re-running the session: name the tool or setting, what failed without it, and where it should be configured.
-- **Shell-friction patterns**: Did Bash tool calls use shell shapes that a file-import alternative would replace? These shapes hide multi-line content on the rendered command line, can trigger the harness's re-prompt heuristic even with the bare command allow-listed, and break on quoting edge cases. Scan the transcript for these patterns:
-  - `--description="$(cat PATH)"` / `--body="$(cat PATH)"` / `--message="$(cat PATH)"` — propose the tool's file flag (e.g. `gh issue create --body-file=PATH`, `gh pr create --body-file=PATH`).
-  - Heredocs (`tool <<'EOF' … EOF`) — already banned in the user's CLAUDE.md, but spot any that leaked in. Propose `Write` to `/tmp/<slug>.md` followed by the tool's file flag.
-  - Inline JSON / multi-line flag values (`tool --metadata '{"k":"v",…}'`) — propose `tool --metadata @file.json` (or equivalent `@`-prefix file syntax).
-  - Long pipelines that re-derive content already on disk (`cat foo.md | tool --read-stdin`) — propose `tool --file=foo.md` when supported.
+### 5. Propose — at most three
 
-  For each match, **verify the file alternative actually exists** before suggesting it (run `<tool> --help`, search docs, or rely on the known patterns above) — do not speculate. Surface findings as a concrete before/after snippet, and persist durable insights via Claude Code auto-memory (the harness handles it) or the repo's docs so future sessions default to the file form. Example: *"The 3 `gh issue create` calls in this session used `--body=\"$(cat …)\"`. Switch to `--body-file=` for cleaner shell and fewer re-prompts."*
-- **CI round-trips**: How many push-then-fix cycles happened? What caused each failure? Could any have been caught locally first?
-- **Errors and debugging**: What errors were encountered? How long did each take to resolve? Were any red herrings?
-- **Approach pivots**: Where did the initial approach fail and require a different strategy? What was learned?
-- **Prompt clarity**: Were instructions clear enough, or did ambiguity cause wasted work?
-- **Tool gaps**: Were there tasks that no available tool handled well?
-- **Missing tools**: Were any CLI tools, SDK components, or binaries expected but not installed or not at the required version? For each:
-  - What was attempted and what error or fallback occurred?
-  - Is the tool installable via Homebrew, apt, pip, npm, or a component manager (e.g., `gcloud components install alpha`)?
-  - Should the tool be added to the dotfiles repo (e.g., Brewfile, chezmoi scripts) so it's provisioned across all workstations?
-- **MCP opportunities**: Were CLI tools used via Bash where an MCP server could provide safer, more granular access? Look for:
-  - **Approval friction from dual-use CLIs**: Commands used read-only (e.g., `gh api` to query releases) but couldn't be auto-approved because the same command can also perform destructive actions. An MCP server with scoped, read-only tools would eliminate this friction.
-  - **Repeated Bash commands for API queries**: Chains of `gh`, `gcloud`, `aws`, `kubectl`, or similar CLI calls that could be replaced by a dedicated MCP server offering structured, auto-approvable tools.
-  - **Already-connected MCP servers that went unused**: Check if configured MCP servers had tools that could have replaced Bash commands used in this session.
-  - For each opportunity, name the specific MCP server (if one exists) or note that one should be found/built.
-- **Claude addon opportunities**: Did this session manually perform work that an official Claude skill, plugin, or Anthropic-published MCP server already handles? Distinct from the MCP bullet above (that one targets read-only CLI friction); this one targets procedural automation that's already packaged. Prefer official/Anthropic-published addons over community equivalents and over hand-rolled slash commands.
-  - **Skills**: A repeated procedure that overlaps with an installed or marketplace skill. Check `~/.claude/skills/` and the in-session "available skills" list before proposing a new slash command.
-  - **Plugins**: A coherent bundle (skill + commands + hooks) a published Claude Code plugin would provide in one install. Check `claude plugin marketplace` before bundling something in-house.
-  - **Anthropic-published MCP servers**: Was a third-party/community MCP (or a raw CLI in Bash) used where Anthropic now ships a first-party equivalent?
-- **Agent opportunities**: Did this session do work in the main thread that should have been delegated to a subagent — or do work that recurs often enough to warrant a custom agent definition? Two distinct cases:
-  - **Built-in subagents under-used**: Broad codebase research that could have gone to `Explore` (read-only, parallel-safe), open-ended multi-step work better suited to `general-purpose`, or design/architecture choices that should have used `Plan`. Look for: serial Read+Grep chains in the main thread, large tool-result bodies that bloated context, or heavy investigation done before any code was written.
-  - **Custom agent candidates**: A repeated investigation/synthesis pattern that has its own prompt shape — distinct from a slash command (which is procedural) and from a skill (which encodes user-facing workflow). Strong signals: the same multi-step research recipe ran more than once this session or across recent sessions; the work needs a specialised system prompt or tool restriction; the output is a structured report rather than file edits. Custom agents live in `~/.claude/agents/` (mirror to `agentic-coding-config/home/agents/`). For each, propose: agent name (kebab-case), one-line purpose, the tool subset it should be limited to, and the recurring trigger.
-- **Memory candidates**: What durable lessons should travel across sessions? Look for:
-  - Validated patterns confirmed in this session ("X approach worked, keep doing it").
-  - Anti-patterns to avoid ("Don't Y because Z").
-  - User preferences expressed or implied ("the user prefers terse summaries").
-  - Non-obvious facts about the user's repos, systems, or workflow.
-- **Issue hygiene**: Were GitHub Issues created before work started? Were they closed properly (`Closes #<n>` in the PR body, or `gh issue close <n>` with a comment)?
-- **Slash command opportunities**: Did this session perform a procedure that's likely to be repeated — either across other projects, or periodically in this one? Strong signals:
-  - The user explicitly mentioned having other projects/contexts that need the same treatment.
-  - The procedure had non-obvious ordering, workarounds, or gotchas that would be easy to forget on a re-run.
-  - Five-plus coherent sequential steps completed a single logical task.
-  - A back-out/retry happened because a step was performed in the wrong order.
-  - Investigation took disproportionate time relative to the eventual fix.
+Merge the step-3 levers and step-4 candidates into **at most 3 proposals, ranked by impact**. Every proposal must state all four of:
 
-  For each candidate, propose: a command name (kebab-case), a one-line description, the key pre-flight checks, and the gotchas the prompt must surface. Existing ones live in `agentic-coding-config/home/skills/` — check there first to avoid duplicates. Note `home/commands/` still exists but is being retired in favour of skills (ADR-0018 principle 3), so propose a skill. In a sandbox they arrive as skills via the bootstrap whitelist; there is no `~/.claude/commands/`.
+1. **What it would have changed *this* session** — concretely, pointing at the transcript.
+2. **Expected recurrence** — every session, weekly, only in repos like this one.
+3. **Tier price under ADR-0018** — which tier the change lands in: **always-loaded** policy (highest, permanent, paid every turn of every session), a **skill description line** (low, but multiplied by skill count), or an **on-invoke skill body** (~zero until used). A removal states the same tier with the sign flipped — what it frees. A proposal that wants the always-loaded tier carries the burden of proof.
+4. **Its lever**, from this table — name the cell, per the surface the change targets:
 
-- **Slash command improvements**: Did this session invoke any existing slash command (or manually perform work that an existing one should have handled)? For each:
-  - Was a step missing, wrong, or stale?
-  - Did instructions cause a wrong decision via ambiguity?
-  - Did we deviate from the command's plan? Why — and should the command codify the deviation?
+   | Lever | Cloud sandbox | macOS terminal |
+   | --- | --- | --- |
+   | Installs | bootstrap flags (`--with-gcloud/-precommit/-hooks`), setup script, egress allowlist | Brewfile / dotfiles |
+   | Skills | bootstrap `SKILLS` whitelist | chezmoi (until #142) |
+   | Context | fragments → composed profiles | same fragments, workstation profile |
+   | Permissions/hooks | bootstrap-written `settings.json` | chezmoi-managed allowlist |
+   | Memory | **none — dies with the container** | machine-local memory dir |
 
-  Recommend the specific edit (file path + which section).
+**A finding that cannot state all four is a journal observation, not a proposal.** Do not weaken a criterion to promote it. Equally, do not pad to three: zero or one well-priced proposal is a better retro than three padded ones, and the cap is a ceiling, not a target.
 
-### 3. Categorise findings
+### 6. Categorise and route
 
-For each finding, decide what kind of artifact it should produce:
+For each proposal and observation, decide what artifact it produces:
 
 | Kind | When to use | How to produce |
 | --- | --- | --- |
-| **Journal entry** | Always (unless the session was uneventful — then skip and stop). Captures the narrative thread, Continue items, and Observations that don't fit into actionable artifacts | Draft via the inbox/promote pattern. **Filesystem path** (preferred when `~/dev/paul-context/_incoming/` is writeable): `Write` to `~/dev/paul-context/_incoming/<YYYY-MM-DD>-<source-repo-slug>-<topic-slug>.md` — **no git ops against `paul-context`**. **GitHub Issue fallback** (sandbox / remote VM / no local clone): `gh issue create --repo pmgledhill102/paul-context --label journal-draft --title="journal: <filename-without-.md>" --body-file=/tmp/<filename>`. Tight format: H1 title, project/duration metadata, Continue / Stop / Created / Observations sections, ~30-50 lines. Promoted into `paul-context/journal/` later by `/promote-journal-inbox` |
-| **Same-repo Issue** | Action whose subject is the **current cwd's repo** | Create an issue in the current repo with a `type: <task/bug/feature>` label and a `P0`–`P4` priority (P2 is "do this soon", P3 is "next time we touch this", P4 is "backlog") — `mcp__github__issue_write` when connected, else `gh issue create --title=... --label "type: <type>,P<n>"`. **Body MUST include**: "From retro: paul-context/journal/<file>.md" |
-| **Cross-repo Issue** | Action whose subject is a *different* personal repo from cwd | Create an issue against `pmgledhill102/<target>` — `mcp__github__issue_write` with an explicit `owner`/`repo`, else `gh issue create --repo pmgledhill102/<target>`. Picked up by `start-session` there. **Body MUST include** the journal cross-reference |
+| **Journal entry** | Always (unless the session was uneventful — then skip and stop). Carries the narrative, the closed-loop fate summary, and every observation that didn't make the proposal cap | Draft via the inbox/promote pattern — see step 8 |
+| **Same-repo Issue** | Proposal whose subject is the **current cwd's repo** | Create an issue in the current repo with a `type: <task/bug/feature>` label and a `P0`–`P4` priority (P2 is "do this soon", P3 is "next time we touch this", P4 is "backlog") — `mcp__github__issue_write` when connected, else `gh issue create --title=... --label "type: <type>,P<n>"`. **Body MUST include**: "From retro: paul-context/journal/<file>.md" |
+| **Cross-repo Issue** | Proposal whose subject is a *different* personal repo from cwd | Create an issue against `pmgledhill102/<target>` — `mcp__github__issue_write` with an explicit `owner`/`repo`, else `gh issue create --repo pmgledhill102/<target>`. Picked up by `start-session` there. **Body MUST include** the journal cross-reference |
 | **paul-context Issue** | Cross-cutting or no-clear-home findings | Create an issue against `pmgledhill102/paul-context`, same two routes as above. **Body MUST include** the journal cross-reference |
-| **Memory write** | Durable lesson that should auto-load on future sessions | `Write` to `~/.claude/projects/<project>/memory/<slug>.md` with frontmatter, then `Edit` `MEMORY.md` index |
-| **Settings change** | Permission to add/move, hook to register, env var to set | File an Issue against `pmgledhill102/agentic-coding-config` describing the change and why — same routing as any other a-c-c finding. **Never edit a `settings.json` directly** (see 3b) |
-| **Observation only** | Something noted but not actionable ("everything went smoothly") | No artifact; mention in the journal's Observations section |
+| **Durable lesson** | A lesson that should reach future sessions | **Surface-dependent — see below** |
+| **Settings change** | Permission to add or remove, hook to register, env var to set | File an Issue against `pmgledhill102/agentic-coding-config` describing the change and why — same routing as any other a-c-c finding. **Never edit a `settings.json` directly** (see 6b) |
+| **Observation only** | Noted but below the proposal bar | No artifact; mention in the journal's Observations section |
 
-### 3a. No cd-shortcut
+**The durable-lesson route depends on the surface**, and the difference is the memory row of the lever table:
+
+- **Workstation**: `Write` to `~/.claude/projects/<project>/memory/<slug>.md` with frontmatter (`name`, `description`, `type` of `user|feedback|project|reference`), then `Edit` `MEMORY.md` to add a one-line index entry, following the auto-memory conventions in the global CLAUDE.md.
+- **Cloud sandbox**: **there is no memory route — memory writes are machine-local and die with the container.** Do not write one; it would silently evaporate. The durable route here is **journal + Issue**: the lesson goes in the journal entry, and if it needs to change behaviour rather than just be remembered, it also becomes an Issue against the repo whose lever applies (usually `agentic-coding-config`, whose fragments and bootstrap are how a lesson reaches every future sandbox).
+
+#### 6a. No cd-shortcut
 
 **Always name the target repo explicitly. Never `cd` into it.** Even when the target repo is checked out at a known path locally, do NOT change into it to file the issue from there. Retros run from a remote sandbox don't have target repos cloned — the command must be portable.
 
@@ -111,7 +105,7 @@ Both routes satisfy this, because both take the repo as an argument rather than 
 
 Prefer MCP when it is connected, and fall back to `gh` where it is not and `gh` is present. Which of the two exists is a property of the surface: **`gh` is absent from Claude cloud sandboxes**, where MCP is the only route, so the `gh` forms here are for workstations and headless runs that have it. They are written out because the *operation* is what matters, not the tool.
 
-### 3b. Never edit settings.json — file an a-c-c Issue
+#### 6b. Never edit settings.json — file an a-c-c Issue
 
 Permissions, hooks, env vars and everything else in `~/.claude/settings.json` are **managed centrally** by `pmgledhill102/agentic-coding-config` and delivered per surface — by chezmoi on a workstation, by `cloud/bootstrap.sh` in a sandbox. A retro's job is to *route* a settings finding, not to apply it:
 
@@ -122,7 +116,7 @@ Permissions, hooks, env vars and everything else in `~/.claude/settings.json` ar
 
 **The one exception**: a setting that is genuinely specific to the *current* repo and belongs to it permanently — a project-scoped hook, or a permission for a tool only this repo uses. That still goes in the repo's **checked-in** `.claude/settings.json` via the normal branch/PR flow, never as an untracked local edit. If the rule would be useful in any other repo, it isn't this case — file the a-c-c Issue.
 
-### 4. Routing heuristics for "which repo?"
+#### 6c. Routing heuristics for "which repo?"
 
 When a finding clearly mentions a target, route there. Otherwise apply this default split:
 
@@ -131,20 +125,21 @@ When a finding clearly mentions a target, route there. Otherwise apply this defa
 - **Engineering principles / personal direction / repo registry / archive list / decisions** → `paul-context`
 - **Genuinely unsorted / "I had a thought"** → `paul-context` (default fallback)
 
-### 5. Propose
+### 7. Propose to the user
 
-Show the user a single table of proposed artifacts. **Do not create anything yet.** The journal entry is **always row 1** unless the session was uneventful (in which case the table has just one observation row and the flow stops). Format:
+Show the user a single table of proposed artifacts. **Do not create anything yet.** The journal entry is **always row 1** unless the session was uneventful (in which case the table has just one observation row and the flow stops). At most 3 rows are proposals; each names its lever and tier price. Format:
 
 ```text
+Closed loop: 4 accepted (2 paid off, 2 no evidence yet), 3 rejected, 1 pending.
+Rejection record: MCP-opportunity findings 0/4 accepted — category retired this retro.
+
 Proposed retrospective output:
 
-#  Kind        Where                                Title / Memory key / Slug                 Priority
-1  journal     paul-context/journal/                2026-05-03-personal-infra-split.md         —
-2  memory      feedback                             chezmoi-externals-git-repo-vs-archive      —
-3  issue       <current repo>                       Fix pre-commit + terraform fmt hook race   P3 task
-4  issue       pmgledhill102/dotfiles               Document chezmoi-update lag for externals  —
-5  settings    pmgledhill102/agentic-coding-config  Allow `Bash(rg --json *)` (read-only)      —
-6  observation —                                    Session was clean overall                  —
+#  Kind        Where                                Title / Slug                               Lever / Tier                     Priority
+1  journal     paul-context/journal/                2026-08-19-acc-retro-redesign.md           —                                —
+2  issue       pmgledhill102/agentic-coding-config  Remove stale heredoc rationale (core.md)   Context / always-loaded (frees)  P2 task
+3  issue       <current repo>                       Cache lint deps in setup script            Installs / on-invoke             P3 task
+4  observation —                                    CI green first try; no friction            —                                —
 
 Reply 'yes' to create all, override per-item ('3: priority=2, type=bug'),
 'skip <n>' to drop, or 'cancel' to abort.
@@ -152,7 +147,7 @@ Reply 'yes' to create all, override per-item ('3: priority=2, type=bug'),
 
 Wait for explicit confirmation. Don't proceed on ambiguous input.
 
-### 6. Execute
+### 8. Execute
 
 **Order matters**: write the journal **first** so subsequent issues can reference its path. Then create everything else.
 
@@ -179,14 +174,14 @@ Wait for explicit confirmation. Don't proceed on ambiguous input.
        The `journal-draft` label and the `journal:` (with trailing space) title prefix are how `/promote-journal-inbox` finds the draft. Promotion infers the eventual filename by stripping `journal:` (with trailing space) from the Issue title and appending `.md`, so the filename is stable from draft → committed.
      - **Both unreachable** (rare — offline AND no local clone): print the full draft to the session log with clear `===BEGIN JOURNAL===` / `===END JOURNAL===` delimiters and stop. Don't silently discard content. Tell the user to save it manually.
    - Capture `paul-context/journal/<filename>` (the eventual post-promotion path) for cross-references in subsequent issues. The path is stable across both inbox paths because both preserve `<filename>` exactly.
-2. **memory**: Write the memory file with proper frontmatter (`name`, `description`, `type` of `user|feedback|project|reference`), then Edit `MEMORY.md` to add a one-line index entry. Follow the conventions in the parent CLAUDE.md auto-memory section.
-3. **issue** (same-repo): create it against the current repo, with a `type:` label and a `P<n>` priority — `mcp__github__issue_write`, else `gh issue create --title="..." --body-file=... --label "type: <type>,P<n>"` from the **current cwd**. Body **MUST** include `From retro: paul-context/journal/<file>.md` near the top. Capture the issue number for the summary.
-4. **issue** (cross-repo): create it against `pmgledhill102/<repo>`, naming the repo explicitly — `mcp__github__issue_write` with `owner`/`repo`, else `gh issue create --repo pmgledhill102/<repo>`. Filed from wherever the retro runs; never `cd` into the target repo (see step 3a). Body **MUST** include `From retro: paul-context/journal/<file>.md`. Capture the URL.
-5. **settings**: file it as an Issue against `pmgledhill102/agentic-coding-config`, by either route — exactly as for any other cross-repo finding. Include the precise rule string, the friction it removes, and whether the command is read-only. **Do not apply the change to any `settings.json`** (see 3b); a single-line permission addition is still an Issue, not an edit.
+2. **durable lesson**: on a workstation, write the memory file and update the `MEMORY.md` index as described in step 6. In a sandbox, this row was already folded into the journal and (where behaviour-changing) an Issue — there is nothing separate to execute.
+3. **issue** (same-repo): create it against the current repo, with a `type:` label and a `P<n>` priority — `mcp__github__issue_write`, else `gh issue create --title="..." --body-file=... --label "type: <type>,P<n>"` from the **current cwd**. Body **MUST** include `From retro: paul-context/journal/<file>.md` near the top, and the proposal's lever and tier price — the closed loop in step 1 reads these back later. Capture the issue number for the summary.
+4. **issue** (cross-repo): create it against `pmgledhill102/<repo>`, naming the repo explicitly — `mcp__github__issue_write` with `owner`/`repo`, else `gh issue create --repo pmgledhill102/<repo>`. Filed from wherever the retro runs; never `cd` into the target repo (see 6a). Body **MUST** include `From retro: paul-context/journal/<file>.md`, plus lever and tier price. Capture the URL.
+5. **settings**: file it as an Issue against `pmgledhill102/agentic-coding-config`, by either route — exactly as for any other cross-repo finding. Include the precise rule string, the friction it removes, and whether the command is read-only. **Do not apply the change to any `settings.json`** (see 6b); a single-line permission addition is still an Issue, not an edit.
 
 If any single create fails, surface the error and continue with the rest. Don't roll back successful artifacts on partial failure.
 
-### 6a. Journal entry format
+#### 8a. Journal entry format
 
 ```markdown
 # YYYY-MM-DD — <session summary>
@@ -195,69 +190,66 @@ If any single create fails, surface the error and continue with the rest. Don't 
 **Duration**: <approximate>
 **Issues created/closed this session**: <list, or "none">
 
-## Continue
-- <validated patterns — what worked, worth repeating>
+## Closed loop
+- <fate of prior retro output: accepted / rejected / paid off; categories retired>
 
-## Stop
-- <anti-patterns observed — what to avoid next time>
-- (cite existing memory if already captured: `feedback_xxx.md`)
+## Costs this session
+- <the ≤3 biggest costs and the lever pull for each — including ones that
+  didn't clear the proposal bar>
 
 ## Created from this retro
-- Memory: `<slug>.md` — <one-line summary>
-- Issue: <repo> — <issue title> (<priority> / <URL>)
+- Issue: <repo> — <issue title> (<lever> / <tier price> / <priority> / <URL>)
+- Memory: `<slug>.md` — <one-line summary> (workstation only)
 
 ## Observations
-- <session-level notes that don't fit the above — design decisions made,
-  pivots that landed well, things that surprised>
+- <findings that couldn't state all four proposal criteria, durable lessons
+  on the sandbox surface, and anything else worth remembering>
 ```
 
-Tight is good — aim for 30-50 lines. Skip sections that are empty (don't write `## Continue\n(none)`, just omit).
+Tight is good — aim for 30-50 lines. Skip sections that are empty (don't write `## Costs this session\n(none)`, just omit).
 
-### 7. Do NOT write to retros.md
+### 9. Do NOT write to retros.md
 
 The file is retired. If `~/.claude/retros.md` still exists locally from before, leave it alone — the user can `rm` it. Don't read from it, don't append to it, don't reference it in artifacts.
 
-### 8. Brief summary
+### 10. Brief summary
 
 Print a compact wrap-up:
 
 ```text
 Retrospective complete.
 
-  Journal:                    paul-context/journal/2026-05-03-agentic-coding-config-foo.md (drafted to _incoming/; pending /promote-journal-inbox)
-  Issues created (here):      3 — #41, #42, #43
-  Issues raised cross-repo:   2 — github.com/.../issues/14, github.com/.../issues/15
-  Memories saved:             1 — feedback_xyz.md
-  Settings changes:           1 — filed as agentic-coding-config#<n> (not applied locally)
+  Closed loop:                4 accepted / 3 rejected / 1 pending; MCP-opportunity category retired
+  Journal:                    paul-context/journal/2026-08-19-agentic-coding-config-foo.md (drafted to _incoming/; pending /promote-journal-inbox)
+  Proposals:                  2 of 3 cap used — 1 removal, 1 addition
+  Issues created (here):      1 — #41
+  Issues raised cross-repo:   1 — github.com/.../issues/14
+  Durable lessons:            1 — journal + issue (sandbox; no memory on this surface)
 
 Next /start-session in the cross-repo'd repos will surface the new Issues as ready work.
 ```
+
+## First run: dispositions carried from #263
+
+The redesign itself surfaced two subtraction candidates, by instrument rather than by asking — #263's requirement 3 demonstrated before the first run. **The first execution of this command must disposition them as its opening output** (they enter step 5 alongside anything the session surfaces, subject to the same cap and pricing), rather than rediscover them:
+
+1. **The heredoc ban's rationale is workstation-specific text in the portable core.** The ban itself may stand, but its stated justification — heredocs defeat prefix-matched permission rules — describes the workstation permission model, an ADR-0018 §1 violation in the file the principle governs. Instrument: contradicted claims — a cloud session violated the ban ~20 times without incident. Disposition: file (or confirm, if already filed) an Issue against `pmgledhill102/agentic-coding-config` to move the rationale to the workstation environment fragment or re-justify it portably. Lever: Context (fragments). Tier price: always-loaded, freed.
+2. **The approval-friction dimension and the allowlist apparatus around it are a dissolving category.** The cloud permission model removed the loop they served, and the strategic review §4.5 already froze the allowlist as residue. The redesign has deleted the dimension from this command; the first run records that removal in its journal and greps for siblings — other skills, fragments or docs still instructing allowlist growth. Instrument: the owner's observation of where friction went. Lever: Context. Tier price: on-invoke, freed.
+
+Dimensions suspected of persistent rejection records (shell-friction and MCP-opportunity are the likely candidates) are **to be confirmed by the first closed-loop pass, not assumed** — if step 1's fate summary bears them out, retire them explicitly in the journal.
 
 ## Guidelines
 
 - Be specific and actionable — not "improve error handling" but "add `google_project_service` explicit depends_on to prevent 403 race conditions".
 - Use exact tool patterns for permission recommendations, e.g., `Bash(chezmoi apply)`.
-- For missing tools, include **both** the immediate install command (e.g., `brew install foo`) **and** the dotfiles change needed to provision it everywhere (e.g., "add `foo` to `home/Brewfile.tmpl`"). Recommend the user install the tool now AND raise the dotfiles issue so it persists across machines.
-- For MCP recommendations, explain the **specific friction being solved** (e.g., "spent 5 approval prompts on read-only `gh api` calls"). Include the MCP server name/repo if known, and note whether it should be project-level or user-level config.
-- For Claude addon recommendations, **name the specific skill/plugin/MCP and mark it official vs community**, and cite the manual work or hand-rolled slash command it would replace. Default to suggesting an existing official addon before proposing a new in-house slash command.
-- For new slash command proposals, include the **proposed name**, a **one-sentence description**, and the **most important gotcha or pre-flight check** the command must encode.
-- For slash command improvement recommendations, reference the **command file path** and cite the **specific deviation or failure mode** observed this session.
-- Memory writes should follow the auto-memory conventions in the global CLAUDE.md: lead with the rule/fact, then `**Why:**` and `**How to apply:**` lines for `feedback` and `project` types.
-- For Issue descriptions, cross-reference the relevant decision record or principle in `paul-context` if the action is implementing a decided direction (e.g. "see paul-context/decisions/2026-05-03-...md").
-- If the session was uneventful with no notable friction, say so briefly in step 5's table as a single observation row, and stop. Don't manufacture artifacts.
 - Reference specific errors, file paths, and issue numbers in artifact descriptions where relevant.
+- For Issue descriptions, cross-reference the relevant decision record or principle in `paul-context` if the action is implementing a decided direction (e.g. "see paul-context/decisions/2026-05-03-...md").
+- If the session was uneventful with no notable friction, say so briefly in step 7's table as a single observation row, and stop. Don't manufacture artifacts — an empty retro is a valid retro.
 
 ## What changed from the previous versions
 
-This command used to append a markdown entry to `~/.claude/retros.md` (the original flow), then was rewritten to output tracker items only without any journal (rev 1 of the new flow), then revised to include a per-session journal in `paul-context` (current). A later revision (2026-05-06) added the **Shell-friction patterns** dimension to Section 2 so each retro proactively surfaces command-shape friction (`$(cat …)`, heredocs, inline JSON) and proposes verified file-flag alternatives. A subsequent revision (2026-05-06) replaced the direct-write-to-`journal/` flow with an **inbox/promote** pattern: drafts land in `paul-context/_incoming/` (or as a `journal-draft`-labeled Issue when the local clone isn't available), and `/promote-journal-inbox` (run from `~/dev/paul-context/`) drains both inboxes into `journal/`. Filename convention gained a `<source-repo-slug>` prefix so cross-project drafts can't clobber each other. The skill no longer performs git operations against `paul-context` from arbitrary projects — see `paul-context/decisions/2026-05-05-journal-inbox-promotion.md` for the rationale. The final shape:
+This command used to append a markdown entry to `~/.claude/retros.md` (the original flow), then was rewritten to output tracker items only without any journal (rev 1 of the new flow), then revised to include a per-session journal in `paul-context`. A 2026-05-06 revision replaced the direct-write-to-`journal/` flow with the **inbox/promote** pattern: drafts land in `paul-context/_incoming/` (or as a `journal-draft`-labeled Issue when the local clone isn't available), and `/promote-journal-inbox` (run from `~/dev/paul-context/`) drains both inboxes into `journal/` — see `paul-context/decisions/2026-05-05-journal-inbox-promotion.md`. A 2026-07 revision retired the `bd` tracker in favour of GitHub Issues; a 2026-08 revision (now 6b) made settings findings route as `agentic-coding-config` Issues only, after a near-miss where a managed permission was almost applied as a project-local edit.
 
-- **Sandbox-agent reachable**: GitHub Issues are network-reachable, and journal drafts fall back to a `journal-draft`-labeled Issue against `paul-context` when the local `_incoming/` directory isn't present. Sandbox runs surface as Issues; local runs surface as filesystem drafts; promotion is invisible to the eventual journal entry.
-- **Per-entry, not single-master**: each retro produces a dated, slugged file in `paul-context/journal/`. The original `retros.md` decayed because it was one file containing everything. Per-entry files survive long-term scrolling.
-- **Privacy gives candour**: `paul-context` is private, so retros can be honest ("got stuck", "almost shipped a broken design") without self-censorship that public agentic-coding-config would force.
-- **Different layers**: agentic-coding-config is *what I configure*; the journal is *how I reflected on using it*. Reflections live with personal context, not tool config.
-- **Cross-repo actions land in the right tracker**: an action surfaced during a `dotfiles` retro that affects `agentic-coding-config` becomes an Issue *there*, with a backlink to the journal entry in `paul-context`.
-- **paul-context has no branch protection**: `/promote-journal-inbox` commits + pushes to `main` directly. No PR overhead per retro.
+The plumbing built by those revisions survives intact because it works: per-entry journal files (the single-master `retros.md` decayed), privacy-gives-candour (`paul-context` is private, so retros can be honest), cross-repo Issues with journal backlinks, and no git operations against `paul-context` from arbitrary projects.
 
-A 2026-08 revision (§3b) made settings findings route as `agentic-coding-config` Issues only. The previous wording — "invoke `/update-config`; or, if simple, propose the exact edit" — invited applying a globally-managed permission as a local `settings.json` edit, which chezmoi then overwrites; in one session it was nearly redirected into a project's `.claude/settings.json` instead, where it would have been invisible to the a-c-c inbox.
-
-A 2026-07 revision retired the `bd` tracker entirely: same-repo findings now file as GitHub Issues in the current repo, matching the cross-repo path. See `agentic-coding-config` `docs/github-issues-workflow.md` for the work-tracking conventions, and `paul-context/decisions/2026-05-03-personal-infra-public-private-split.md` for the wider three-repo layout this fits into.
+**A 2026-08-19 revision (#263) replaced the generator.** The old shape scanned 16 dimensions, each prompting "look for X" — an accumulation engine that only ever proposed additions, never priced them against ADR-0018's tiers, never read back what became of past proposals, and produced 7–8 candidates per session of which the owner accepted 2–3. The redesign works backward from at most 3 session costs, caps output at 3 fully-priced proposals, gives instrument-driven subtraction equal standing with addition, opens with a closed loop over prior retro output, names the exact per-surface lever for every proposal, and states the sandbox durable-lesson route explicitly (journal + Issue; memory dies with the container). An interim draft that would have *added* four dimensions was withdrawn as wrong-shaped — those concerns survive only as cost categories the impact-first opening surfaces when they matter.
