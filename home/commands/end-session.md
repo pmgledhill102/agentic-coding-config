@@ -1,6 +1,6 @@
 End-of-session tidy-up: leave git, GitHub, and Claude Code state at a verifiable "clean walk-away" point, then optionally run the retrospective.
 
-This command runs in two phases. Phase 1 is the tidy-up (mix of auto-actions and confirmations). Phase 2 is a prompt to kick off the retrospective. The retrospective itself is read-only — it only updates `~/.claude/retros.md` — so all repo-state changes must happen in Phase 1.
+This command runs in two phases. Phase 1 is the tidy-up (mix of auto-actions and confirmations). Phase 2 is a prompt to kick off the retrospective. The retrospective makes no changes to any repo — it files journal drafts and issues — so all repo-state changes must happen in Phase 1.
 
 ## Action tiers
 
@@ -65,24 +65,26 @@ Output is a sectioned stream. Each section starts with `===<name> (exit=<N>)===`
 | `stashes` | 9 | Exit 0 even when empty. |
 | `worktrees` | 13 | Exit 0 even when empty. |
 | `merged_brs` | 6 Batch A | Script appends `\|\| true` — exit 0 even if no matches. |
-| `main_ci` | 3 | Content `gh-unavailable` = silent skip. Non-zero with other content = real error. |
+| `main_ci` | 3 | Content `gh-unavailable` = recover via MCP (see exit-code rules). Non-zero with other content = real error. |
 | `open_prs` | 8 | Same skip convention as `main_ci`. |
-| `gh_assigned` | 10 | Content `not-github` / `gh-unavailable` / `jq-unavailable` = silent skip. Empty content = nothing in flight. Otherwise one `#<n> <title>` line per open issue assigned to me. |
+| `gh_assigned` | 10 | Content `not-github` / `jq-unavailable` = silent skip; `gh-unavailable` = recover via MCP (see exit-code rules). Empty content = nothing in flight. Otherwise one `#<n> <title>` line per open issue assigned to me. |
 | `stale_claude_files` | 11 | Content `chezmoi-unavailable` = silent skip. Empty body (exit=0) = nothing stale. Otherwise: one path per line under `.claude/commands/` or `.claude/bin/` that's present locally but not tracked by chezmoi. |
 
 **On `gh` inside the gather script.** The gather runs as a shell script, so its
 GitHub queries use `gh` and cannot use `mcp__github__*` — an MCP tool is not
 callable from a subprocess. That is a deliberate exception to the MCP-first
-preference, not an oversight: it is also what makes the gather work unchanged in
-a headless or sandbox run, where a `gh` token is more reliably present than an
-interactively-authenticated MCP server. Any GitHub op **this command** performs
-directly, outside the gather, should prefer MCP.
+preference, not an oversight. But `gh` is a property of the surface, not a
+constant: present on workstations, **absent from Claude cloud sandboxes**, where
+those sections return `gh-unavailable` and MCP is the only GitHub route. When
+that happens, recover the data with the MCP equivalents rather than treating the
+gap as empty — see the exit-code rules below. Any GitHub op **this command**
+performs directly, outside the gather, should prefer MCP.
 
 Rules for interpreting exit codes:
 
 - `exit=0` with empty content: clean result (no stashes, no merged branches, no in-progress issues, etc.). Treat as "none".
 - `exit=0` with content: normal data — parse it for the relevant step.
-- `exit != 0` with content equal to `gh-unavailable`: silent skip (step 3 / step 8 degrade gracefully).
+- `exit != 0` with content `gh-unavailable`: **not silent.** Recover with the MCP equivalents when connected — `mcp__github__list_pull_requests` for PR state, `mcp__github__list_issues` for assigned issues — else note `n/a (gh absent)` so the walk-away summary shows what was not checked.
 - `exit != 0` with other content: real error — surface it before continuing Phase 1.
 
 ### 1.5. Fast-path when state is fully clean (Tier 1 — narration optimisation)
@@ -126,7 +128,7 @@ From gather section `main_ci`. Parse the most recent run per workflow:
 - **In progress**: list with elapsed time. Means a deploy / long check is mid-flight.
 - **All green**: silent.
 
-If the section content is `gh-unavailable` or the repo has no remote, skip silently. Carry the result forward — it gates the Phase 2 prompt.
+If the repo has no remote, skip. On `gh-unavailable`, recover via `mcp__github__actions_list` when connected; otherwise carry the state forward as **unknown**, not clean — this result gates the Phase 2 prompt, and an unchecked CI state should read as unchecked, never as green.
 
 ### 4. Handle uncommitted or unpushed work (Tier 3)
 
