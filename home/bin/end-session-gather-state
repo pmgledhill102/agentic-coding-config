@@ -38,6 +38,19 @@ progress "fetch exit=$FETCH_EXIT"
 REPO_SLUG=$(git remote get-url origin 2>/dev/null | sed -n 's#.*github\.com[:/]##p' | sed 's#\.git$##')
 export REPO_SLUG
 
+# One repo-scoped auth probe for the gh sections below — same reasoning as
+# start-session-gather-state: gh can be installed yet policy-blocked from repo
+# data (the Claude cloud sandbox proxy authenticates identity endpoints but
+# 403s every repo-scoped API path, #273), and one gh-unauthorized sentinel
+# beats three separate 403 dumps. Costs one API round-trip when healthy.
+GH_REPO_API=unavailable
+if command -v gh >/dev/null 2>&1 && [ -n "$REPO_SLUG" ]; then
+    if gh api "repos/$REPO_SLUG" --jq .id >/dev/null 2>&1; then
+        GH_REPO_API=ok
+    fi
+fi
+export GH_REPO_API
+
 # --- Phase 2: parallel fan-out of independent reads ---
 # Each helper runs the command, captures stdout+stderr into <name>.out and
 # the exit code into <name>.exit. The subshell backgrounds with &.
@@ -84,22 +97,30 @@ run_sh merged_brs "
 
 # shellcheck disable=SC2016  # Intentional single quotes: expansion happens inside `sh -c`.
 run_sh main_ci '
-    if command -v gh >/dev/null 2>&1; then
-        gh run list ${REPO_SLUG:+-R "$REPO_SLUG"} --branch main --limit 10 \
-            --json status,conclusion,name,headSha,createdAt,url
-    else
+    if ! command -v gh >/dev/null 2>&1; then
         echo "gh-unavailable"
+        exit 1
     fi
+    if [ "$GH_REPO_API" != "ok" ]; then
+        echo "gh-unauthorized"
+        exit 1
+    fi
+    gh run list ${REPO_SLUG:+-R "$REPO_SLUG"} --branch main --limit 10 \
+        --json status,conclusion,name,headSha,createdAt,url
 '
 
 # shellcheck disable=SC2016  # Intentional single quotes: expansion happens inside `sh -c`.
 run_sh open_prs '
-    if command -v gh >/dev/null 2>&1; then
-        gh pr list ${REPO_SLUG:+-R "$REPO_SLUG"} --author @me --state open \
-            --json number,title,isDraft,mergeable,statusCheckRollup,reviewDecision,url
-    else
+    if ! command -v gh >/dev/null 2>&1; then
         echo "gh-unavailable"
+        exit 1
     fi
+    if [ "$GH_REPO_API" != "ok" ]; then
+        echo "gh-unauthorized"
+        exit 1
+    fi
+    gh pr list ${REPO_SLUG:+-R "$REPO_SLUG"} --author @me --state open \
+        --json number,title,isDraft,mergeable,statusCheckRollup,reviewDecision,url
 '
 
 # shellcheck disable=SC2016
@@ -115,6 +136,10 @@ run_sh gh_assigned '
     fi
     if ! command -v gh >/dev/null 2>&1; then
         echo "gh-unavailable"
+        exit 1
+    fi
+    if [ "$GH_REPO_API" != "ok" ]; then
+        echo "gh-unauthorized"
         exit 1
     fi
     if ! command -v jq >/dev/null 2>&1; then

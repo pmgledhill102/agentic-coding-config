@@ -33,13 +33,16 @@ exit 0
 Drop `--with-gcloud` for an environment that does no Google Cloud work; it
 saves a ~96 MB download and declares what kind of environment this is.
 
-Add `--with-gh` to install the GitHub CLI from a pinned release. Without it,
-three of `start-session`'s seven gather sections (and `end-session`'s GitHub
-sections) report `gh-unavailable` and every session pays for MCP recovery in
-conversation — the deterministic script path is the point of those gathers
-(#257). The sandbox proxy substitutes a real scoped credential for the
-container's `GH_TOKEN` sentinel, so the installed `gh` authenticates without
-holding a token.
+`--with-gh` installs the GitHub CLI from a pinned release — but **do not add
+it to Anthropic-hosted environments**. Measured 2026-08-19: the egress proxy
+authenticates `gh` for identity endpoints (`user`, `rate_limit`) yet 403s
+every repo-scoped API path, and GraphQL serves only a pinned PR-review set —
+so the session skills' gather sections come back `gh-unauthorized` rather
+than populated (lane map on #257, cleanup on #273). The flag exists for
+surfaces whose egress genuinely reaches the GitHub API, e.g. self-hosted
+environments. On Anthropic-hosted sandboxes the GitHub MCP server remains the
+only repo-data route, and the skills' documented MCP recovery is the working
+path.
 
 **The `Rev:` comment is load-bearing.** The environment snapshots the setup
 script's result and re-runs it only when the script text changes, the allowed

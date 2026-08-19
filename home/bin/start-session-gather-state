@@ -64,6 +64,22 @@ export DEFAULT_BRANCH
 REPO_SLUG=$(git remote get-url origin 2>/dev/null | sed -n 's#.*github\.com[:/]##p' | sed 's#\.git$##')
 export REPO_SLUG
 
+# One repo-scoped auth probe for the gh sections below, run once. A surface
+# can have gh installed yet policy-blocked from repo data: the Claude cloud
+# sandbox proxy authenticates identity endpoints (user, rate_limit) but 403s
+# every repo-scoped API path — measured 2026-08-19 (#273, lane map on #257).
+# Without this probe each section fails with its own multi-line 403, which
+# reads as three separate problems; with it they emit one gh-unauthorized
+# sentinel that the skill maps to the same MCP recovery as gh-unavailable.
+# Costs one API round-trip on healthy surfaces.
+GH_REPO_API=unavailable
+if command -v gh >/dev/null 2>&1 && [ -n "$REPO_SLUG" ]; then
+    if gh api "repos/$REPO_SLUG" --jq .id >/dev/null 2>&1; then
+        GH_REPO_API=ok
+    fi
+fi
+export GH_REPO_API
+
 # --- Phase 2: parallel fan-out of independent reads ---
 
 run_section() {
@@ -128,6 +144,10 @@ run_sh main_ci '
         echo "gh-unavailable"
         exit 1
     fi
+    if [ "$GH_REPO_API" != "ok" ]; then
+        echo "gh-unauthorized"
+        exit 1
+    fi
     if ! command -v jq >/dev/null 2>&1; then
         echo "jq-unavailable"
         exit 1
@@ -170,6 +190,10 @@ run_sh gh_ready '
         echo "gh-unavailable"
         exit 1
     fi
+    if [ "$GH_REPO_API" != "ok" ]; then
+        echo "gh-unauthorized"
+        exit 1
+    fi
     if ! command -v jq >/dev/null 2>&1; then
         echo "jq-unavailable"
         exit 1
@@ -193,6 +217,10 @@ run_sh gh_assigned '
     fi
     if ! command -v gh >/dev/null 2>&1; then
         echo "gh-unavailable"
+        exit 1
+    fi
+    if [ "$GH_REPO_API" != "ok" ]; then
+        echo "gh-unauthorized"
         exit 1
     fi
     if ! command -v jq >/dev/null 2>&1; then

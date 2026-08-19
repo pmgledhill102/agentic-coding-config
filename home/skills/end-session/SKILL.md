@@ -70,9 +70,9 @@ Output is a sectioned stream. Each section starts with `===<name> (exit=<N>)===`
 | `stashes` | 9 | Exit 0 even when empty. |
 | `worktrees` | 13 | Exit 0 even when empty. |
 | `merged_brs` | 6 Batch A | Script appends `\|\| true` — exit 0 even if no matches. |
-| `main_ci` | 3 | Content `gh-unavailable` = recover via MCP (see exit-code rules). Non-zero with other content = real error. |
+| `main_ci` | 3 | Content `gh-unavailable` / `gh-unauthorized` = recover via MCP (see exit-code rules). Non-zero with other content = real error. |
 | `open_prs` | 8 | Same skip convention as `main_ci`. |
-| `gh_assigned` | 10 | Content `not-github` / `jq-unavailable` = silent skip; `gh-unavailable` = recover via MCP (see exit-code rules). Empty content = nothing in flight. Otherwise one `#<n> <title>` line per open issue assigned to me. |
+| `gh_assigned` | 10 | Content `not-github` / `jq-unavailable` = silent skip; `gh-unavailable` / `gh-unauthorized` = recover via MCP (see exit-code rules). Empty content = nothing in flight. Otherwise one `#<n> <title>` line per open issue assigned to me. |
 | `stale_claude_files` | 11 | Content `chezmoi-unavailable` = silent skip. Empty body (exit=0) = nothing stale. Otherwise: one path per line under `.claude/commands/` or `.claude/bin/` that's present locally but not tracked by chezmoi. |
 
 **On `gh` inside the gather script.** The gather runs as a shell script, so its
@@ -80,7 +80,11 @@ GitHub queries use `gh` and cannot use `mcp__github__*` — an MCP tool is not
 callable from a subprocess. That is a deliberate exception to the MCP-first
 preference, not an oversight. But `gh` is a property of the surface, not a
 constant: present on workstations, **absent from Claude cloud sandboxes**, where
-those sections return `gh-unavailable` and MCP is the only GitHub route. When
+those sections return `gh-unavailable` and MCP is the only GitHub route. A
+surface can also have `gh` installed yet policy-blocked from repo data — the
+sandbox egress proxy authenticates identity endpoints but 403s every
+repo-scoped API path (#273) — in which case the sections return
+`gh-unauthorized`, which means the same thing: MCP is the only route. When
 that happens, recover the data with the MCP equivalents rather than treating the
 gap as empty — see the exit-code rules below. Any GitHub op **this command**
 performs directly, outside the gather, should prefer MCP.
@@ -89,7 +93,7 @@ Rules for interpreting exit codes:
 
 - `exit=0` with empty content: clean result (no stashes, no merged branches, no in-progress issues, etc.). Treat as "none".
 - `exit=0` with content: normal data — parse it for the relevant step.
-- `exit != 0` with content `gh-unavailable`: **not silent.** Recover with the MCP equivalents when connected — `mcp__github__list_pull_requests` for PR state, `mcp__github__list_issues` for assigned issues — else note `n/a (gh absent)` so the walk-away summary shows what was not checked.
+- `exit != 0` with content `gh-unavailable` or `gh-unauthorized`: **not silent.** Recover with the MCP equivalents when connected — `mcp__github__list_pull_requests` for PR state, `mcp__github__list_issues` for assigned issues — else note `n/a (gh absent)` so the walk-away summary shows what was not checked.
 - `exit != 0` with other content: real error — surface it before continuing Phase 1.
 
 ### 1.5. Fast-path when state is fully clean (Tier 1 — narration optimisation)
@@ -102,8 +106,8 @@ Apply when **all** of the following hold (single-pass check over already-collect
 - `local_state.unpushed` is empty (no unpushed commits — covers steps 4 and 7)
 - `merged_brs` is empty
 - `stashes` is empty
-- `gh_assigned` is empty (or content is `not-github` / `gh-unavailable`)
-- `open_prs` is empty (or content is `gh-unavailable`)
+- `gh_assigned` is empty (or content is `not-github` / `gh-unavailable` / `gh-unauthorized`)
+- `open_prs` is empty (or content is `gh-unavailable` / `gh-unauthorized`)
 - `main_ci` has no `failure` / `cancelled` / `timed_out` line (an `in_progress` workflow is allowed — summary still surfaces it)
 - `stale_claude_files` is empty (or content is `chezmoi-unavailable`)
 - `worktrees` has exactly one entry (just the primary)
@@ -133,7 +137,7 @@ From gather section `main_ci`. Parse the most recent run per workflow:
 - **In progress**: list with elapsed time. Means a deploy / long check is mid-flight.
 - **All green**: silent.
 
-If the repo has no remote, skip. On `gh-unavailable`, recover via `mcp__github__actions_list` when connected; otherwise carry the state forward as **unknown**, not clean — this result gates the Phase 2 prompt, and an unchecked CI state should read as unchecked, never as green.
+If the repo has no remote, skip. On `gh-unavailable` / `gh-unauthorized`, recover via `mcp__github__actions_list` when connected; otherwise carry the state forward as **unknown**, not clean — this result gates the Phase 2 prompt, and an unchecked CI state should read as unchecked, never as green.
 
 ### 4. Handle uncommitted or unpushed work (Tier 3)
 
@@ -189,7 +193,7 @@ If main is ahead of origin/main (shouldn't normally happen, but catches the case
 
 ### 8. Open PRs needing your action (Tier 3 — surface only)
 
-From gather section `open_prs`. If the section content is `gh-unavailable`, either skip or fall back to `mcp__github__list_pull_requests` (state=open, head filter) — the MCP path doesn't need `gh` on PATH.
+From gather section `open_prs`. If the section content is `gh-unavailable` or `gh-unauthorized`, either skip or fall back to `mcp__github__list_pull_requests` (state=open, head filter) — the MCP path doesn't need `gh` on PATH.
 
 Categorise and present:
 

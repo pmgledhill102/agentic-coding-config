@@ -21,14 +21,13 @@
 # they are different mechanisms: a git hook blocks the commit, a harness hook
 # returns the failure into the agent's context where it can act on it.
 #
-# --with-gh installs the GitHub CLI from a pinned release tarball. Opt-in like
-# the rest, but it exists for a different reason: the session skills' gather
-# scripts call gh six ways, and without it three of start-session's seven
-# sections report gh-unavailable and push every session into per-conversation
-# MCP recovery — token, latency and determinism costs a script call does not
-# have (#257). On Claude's cloud surface the sandbox proxy substitutes the
-# real credential for the GH_TOKEN sentinel these containers carry, so the
-# installed gh authenticates without ever holding a token.
+# --with-gh installs the GitHub CLI from a pinned release tarball, for the
+# session skills' gather scripts. NOT for Anthropic-hosted web sandboxes:
+# there the egress proxy authenticates gh for identity endpoints only and
+# 403s every repo-scoped API path, so the gather sections come back
+# gh-unauthorized rather than populated — measured 2026-08-19, lane map on
+# #257, cleanup on #273. The flag exists for surfaces whose egress genuinely
+# reaches the GitHub API, e.g. self-hosted environments.
 #
 # --profile names the composed context profile to install, defaulting to
 # claude-cloud-sandbox. A Codex environment passes --profile codex-cloud-sandbox.
@@ -394,11 +393,13 @@ fi
 # reachability probe against github.com reads as an egress block and is not
 # one.
 #
-# No auth step, deliberately. These containers carry a GH_TOKEN sentinel that
-# the egress proxy substitutes with a real scoped credential on api.github.com
-# requests, so gh authenticates without a token ever existing inside the
-# container (#257, measured 2026-08-19). The gather scripts pass -R explicitly
-# rather than trusting repo inference behind that proxy.
+# No auth step, deliberately. These containers carry a GH_TOKEN sentinel the
+# egress proxy substitutes with a real credential — but on Anthropic-hosted
+# web sandboxes only for identity endpoints (user, rate_limit); every
+# repo-scoped API path 403s by policy, which is why the flag is not for that
+# surface (#257 lane map, #273). The gather scripts probe once and degrade to
+# a gh-unauthorized sentinel there, and pass -R explicitly everywhere rather
+# than trusting repo inference behind a proxy.
 
 if [ "$WITH_GH" -eq 1 ] && ! command -v gh > /dev/null 2>&1; then
     GH_VER=2.97.0
