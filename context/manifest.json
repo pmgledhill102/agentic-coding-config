@@ -2,7 +2,9 @@
   "//": "Source of truth for composed agent context. See adrs/0018-composing-agent-context-per-surface.md.",
   "//fragments": "Fragments are authored standalone with their own H1. The generator demotes every heading one level and emits a single H1 per output, so composed files satisfy MD025.",
   "//outputs": "Output paths differ by delivery route, deliberately: the workstation profile writes to home/, which chezmoi deploys unchanged; other profiles write to profiles/, which is repo-meta and is fetched by cloud/bootstrap.sh.",
+  "//skills": "Skill bodies compose the same way, one tier down (#265). A fragment is one section of the skill; a section whose content differs by surface has a -workstation and a -sandbox variant, and every output names exactly one of the pair. The first fragment is the head: head-skill carries frontmatter and the H1, head-command carries the one-line description its home/commands/ twin needs until the #48 cutover. Both cloud profiles take the same sandbox fragments — what varies for these skills is the environment (no usable gh), not the provider.",
   "fragment_dir": "context/fragments",
+  "skill_fragment_dir": "context/skills",
   "environment_fragments": ["env-workstation", "env-cloud-sandbox"],
   "profiles": {
     "claude-workstation": {
@@ -34,6 +36,72 @@
       "outputs": {
         "profiles/claude-cloud-sandbox/AGENTS.md": ["core", "ephemeral-first"],
         "profiles/claude-cloud-sandbox/CLAUDE.md": ["core", "ephemeral-first", "env-cloud-sandbox", "provider-claude"]
+      }
+    }
+  },
+  "skills": {
+    "start-session": {
+      "outputs": {
+        "home/commands/start-session.md": [
+          "00-head-command", "01-intro", "02-action-tiers", "03-surface-workstation", "04-phase-1",
+          "05-gather-workstation", "06-fetch-result", "07-sync-default-branch", "08-ci-on-demand",
+          "09-recent-merges", "10-config-drift-workstation", "11-journal-inbox",
+          "12-session-brief-workstation", "13-guardrails"
+        ],
+        "home/skills/start-session/SKILL.md": [
+          "00-head-skill", "01-intro", "02-action-tiers", "03-surface-workstation", "04-phase-1",
+          "05-gather-workstation", "06-fetch-result", "07-sync-default-branch", "08-ci-on-demand",
+          "09-recent-merges", "10-config-drift-workstation", "11-journal-inbox",
+          "12-session-brief-workstation", "13-guardrails"
+        ],
+        "profiles/claude-cloud-sandbox/skills/start-session/SKILL.md": [
+          "00-head-skill", "01-intro", "02-action-tiers", "03-surface-sandbox", "04-phase-1",
+          "05-gather-sandbox", "06-fetch-result", "07-sync-default-branch", "08-ci-on-demand",
+          "09-recent-merges", "10-config-drift-sandbox", "11-journal-inbox",
+          "12-session-brief-sandbox", "13-guardrails"
+        ],
+        "profiles/codex-cloud-sandbox/skills/start-session/SKILL.md": [
+          "00-head-skill", "01-intro", "02-action-tiers", "03-surface-sandbox", "04-phase-1",
+          "05-gather-sandbox", "06-fetch-result", "07-sync-default-branch", "08-ci-on-demand",
+          "09-recent-merges", "10-config-drift-sandbox", "11-journal-inbox",
+          "12-session-brief-sandbox", "13-guardrails"
+        ]
+      }
+    },
+    "end-session": {
+      "outputs": {
+        "home/commands/end-session.md": [
+          "00-head-command", "01-intro", "02-action-tiers", "03-pre-flight", "04-surface-workstation",
+          "05-phase-1", "06-gather-workstation", "07-fast-path-workstation", "08-fetch-prune",
+          "09-ci-on-demand", "10-uncommitted-work", "11-return-to-main", "12-prune-branches-workstation",
+          "13-push-main", "14-open-prs-workstation", "15-stashes", "16-assigned-issues-workstation",
+          "17-stale-claude-files-workstation", "18-worktrees", "19-background-processes",
+          "20-summary-workstation", "21-phase-2", "22-guardrails-workstation"
+        ],
+        "home/skills/end-session/SKILL.md": [
+          "00-head-skill", "01-intro", "02-action-tiers", "03-pre-flight", "04-surface-workstation",
+          "05-phase-1", "06-gather-workstation", "07-fast-path-workstation", "08-fetch-prune",
+          "09-ci-on-demand", "10-uncommitted-work", "11-return-to-main", "12-prune-branches-workstation",
+          "13-push-main", "14-open-prs-workstation", "15-stashes", "16-assigned-issues-workstation",
+          "17-stale-claude-files-workstation", "18-worktrees", "19-background-processes",
+          "20-summary-workstation", "21-phase-2", "22-guardrails-workstation"
+        ],
+        "profiles/claude-cloud-sandbox/skills/end-session/SKILL.md": [
+          "00-head-skill", "01-intro", "02-action-tiers", "03-pre-flight", "04-surface-sandbox",
+          "05-phase-1", "06-gather-sandbox", "07-fast-path-sandbox", "08-fetch-prune",
+          "09-ci-on-demand", "10-uncommitted-work", "11-return-to-main", "12-prune-branches-sandbox",
+          "13-push-main", "14-open-prs-sandbox", "15-stashes", "16-assigned-issues-sandbox",
+          "17-stale-claude-files-sandbox", "18-worktrees", "19-background-processes",
+          "20-summary-sandbox", "21-phase-2", "22-guardrails-sandbox"
+        ],
+        "profiles/codex-cloud-sandbox/skills/end-session/SKILL.md": [
+          "00-head-skill", "01-intro", "02-action-tiers", "03-pre-flight", "04-surface-sandbox",
+          "05-phase-1", "06-gather-sandbox", "07-fast-path-sandbox", "08-fetch-prune",
+          "09-ci-on-demand", "10-uncommitted-work", "11-return-to-main", "12-prune-branches-sandbox",
+          "13-push-main", "14-open-prs-sandbox", "15-stashes", "16-assigned-issues-sandbox",
+          "17-stale-claude-files-sandbox", "18-worktrees", "19-background-processes",
+          "20-summary-sandbox", "21-phase-2", "22-guardrails-sandbox"
+        ]
       }
     }
   }

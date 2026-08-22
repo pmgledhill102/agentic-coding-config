@@ -1,0 +1,1 @@
+This command runs in a single phase. It mirrors `end-session`'s shape — parallel state-gather, three-tier action model — but inverted: where `end-session` leaves things tidy at walk-away, `start-session` brings local state forward to "ready to work" and prints a one-screen session brief.

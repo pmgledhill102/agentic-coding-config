@@ -18,7 +18,7 @@
 # the agent is running inside.
 #
 # Output protocol (stdout, one key=value or list line per row):
-#   state=absent          no deployed tree (a sandbox) -- nothing to compare
+#   state=absent          nothing chezmoi-managed here -- nothing to compare
 #   state=no-source       not in an agentic-coding-config checkout
 #   state=compared        a file-by-file comparison ran
 #   behind=<n>            deployed file differs and the repo copy is newer
@@ -34,11 +34,24 @@ set -u
 CLAUDE_DIR="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
 MAX_LIST=10
 
-# A cloud sandbox has no deployed tree and no chezmoi. Say so and stop, rather
-# than reporting a scary-looking zero.
-if [ ! -d "$CLAUDE_DIR" ]; then
+# Nothing to compare unless a chezmoi-managed tree is what is deployed here.
+#
+# Both halves of that matter. The directory test alone was the original guard,
+# on the premise that a sandbox has no ~/.claude at all -- true when this was
+# written, false since cloud/bootstrap.sh started writing one. What the
+# bootstrap installs is a deliberate subset (a whitelist of skills, a composed
+# CLAUDE.md), so comparing it file-by-file against the repo's home/ reports
+# every unshipped file as "never deployed" and the composed policy as
+# "modified": a wall of drift, none of it real, with a remedy naming a program
+# the container does not have. Measured on a live sandbox: behind=50,
+# modified=1, all of it noise.
+#
+# So the test is chezmoi, not the directory. This check is about chezmoi drift
+# specifically -- its remedy is `chezmoi apply` -- and where chezmoi is not the
+# delivery route there is no such thing as being behind it.
+if [ ! -d "$CLAUDE_DIR" ] || ! command -v chezmoi > /dev/null 2>&1; then
     echo "state=absent"
-    echo "note=no ~/.claude on this surface (sandbox); nothing is deployed to drift"
+    echo "note=nothing chezmoi-managed at $CLAUDE_DIR on this surface; no deployed tree to drift"
     exit 0
 fi
 

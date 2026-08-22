@@ -1,0 +1,1 @@
+This command runs in two phases. Phase 1 is the tidy-up (mix of auto-actions and confirmations). Phase 2 is a prompt to kick off the retrospective. The retrospective makes no changes to any repo — it files journal drafts and issues — so all repo-state changes must happen in Phase 1.

@@ -138,6 +138,12 @@ restructure that introduced `home/` is on top of that history.
 ├── .github/, .pre-commit-config.yaml, .markdownlint.yaml, .gitignore
 ├── .claude-plugin/            # repo-meta: marketplace.json (the plugin catalog)
 ├── tests/                     # repo-meta: behavioural tests for home/bin/
+├── context/                   # repo-meta: the SOURCE for everything marked GENERATED below
+│   ├── manifest.json          #   which fragments compose into which output
+│   ├── fragments/             #   policy fragments (core, provider, environment)
+│   └── skills/                #   skill-body fragments, one dir per composed skill
+├── profiles/                  # repo-meta: composed artefacts for non-workstation surfaces
+│   └── <profile>/             #   AGENTS.md, CLAUDE.md, skills/ — fetched by cloud/bootstrap.sh
 ├── cloud/                     # ← fetched over the network into cloud sandboxes
 │   ├── bootstrap.sh           #   installs the helper + skill into a container
 │   └── README.md              #   per-environment setup (script, domains, vars)
@@ -151,6 +157,14 @@ restructure that introduced `home/` is on top of that history.
     ├── skills/                → ~/.claude/skills/    (Agent Skills — provider-neutral)
     └── bin/                   → ~/.claude/bin/  (helper executables)
 ```
+
+Anything with a `GENERATED` banner at the top of the file is composed by
+`python3 tests/compose-context.py --write` and verified in CI — edit the
+fragment, not the artefact. That now covers the two session skills as well as
+the policy files: `start-session` and `end-session` ship a workstation body and
+a cloud-sandbox body composed from one shared fragment set, so the sandbox text
+calls the GitHub MCP server where the workstation text reads what `gh` put in
+the gather output ([ADR-0018](adrs/0018-composing-agent-context-per-surface.md)).
 
 ## Design principle
 
