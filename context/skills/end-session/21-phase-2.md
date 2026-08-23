@@ -1,15 +1,12 @@
 ## Phase 2 — Retrospective
 
-If `main` CI is **failing** or **currently running** (per step 3), pre-prompt:
+**Runs every time, unprompted.** When Phase 1 finishes, invoke the `retrospective` skill via the Skill tool. Do not ask first, and do not perform the retrospective inline — let the skill own its contract.
 
-> `main` CI is `<failing|running>`. Defer the retrospective? (y/n)
+Why it is not opt-in: the retro is the step that generates the context every later session spends. A prompt turns that into a thing to decline at the exact moment the session feels finished, which is the moment it is least likely to be accepted, and the redesign in #263/#270 already cut what it costs to run.
 
-On `y`: stop here. Re-run `end-session` later or run `retrospective` directly when ready.
+Two things this deliberately does **not** gate on:
 
-Otherwise (or after the pre-prompt is dismissed with `n`), ask:
+- **A red PR.** The retro is repo-read-only — it files journal drafts and Issues and changes no repo state — so a failing check is not a reason to defer it. Report the failure in the Phase 1 summary and run the retro anyway.
+- **A short session.** A session with little in it produces a short retro, which costs little and still closes the loop on whatever the last one filed.
 
-> Proceed to retrospective? (y/n)
-
-On `y`: invoke the `retrospective` skill via the Skill tool. Do not perform the retrospective inline — let the skill own its contract.
-
-On `n`: stop. The session is tidied; the user can run `retrospective` later if they change their mind.
+The user can always interrupt. What has changed is the default: running is what happens if nobody says otherwise.
