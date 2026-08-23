@@ -4,10 +4,10 @@
 
 1. **journal** (always first):
    - **Derive the filename.** `<source-repo-slug>` = sanitised basename of `git remote get-url origin` from the current cwd (lowercase, `[a-z0-9-]+`). If no git remote, use `basename "$PWD"`. `<topic-slug>` = kebab-cased session summary, ≤5 words. `<filename>` = `<YYYY-MM-DD>-<source-repo-slug>-<topic-slug>.md`.
-   - **Resolve same-project same-day collisions** at write-time: if the target already exists, append `-2`, `-3`, … before `.md` until unique. Filesystem path checks `~/dev/paul-context/_incoming/<filename>`; Issue path checks for an open Issue with the same title (rare in practice — same project, same day, same topic — but the suffix prevents silent merge of two distinct retros).
+   - **Resolve same-project same-day collisions** at write-time: if the target already exists, append `-2`, `-3`, … before `.md` until unique. Filesystem path checks `<pc>/_incoming/<filename>`; Issue path checks for an open Issue with the same title (rare in practice — same project, same day, same topic — but the suffix prevents silent merge of two distinct retros).
    - **Pick the inbox path:**
-     - **Filesystem inbox** (preferred): if `[ -d ~/dev/paul-context/_incoming ] && [ -w ~/dev/paul-context/_incoming ]`, `Write` the journal markdown to `~/dev/paul-context/_incoming/<filename>`. **No git operations against `paul-context`.**
-     - **GitHub Issue fallback** (no reachable clone — the test above failed): stage the journal markdown with the `Write` tool to `/tmp/<filename>` (`Edit(/tmp/**)` is auto-allowed, and `Edit` rules cover the `Write` tool), then file as a labeled Issue:
+     - **Filesystem inbox** (preferred): if `<pc>` resolved and `[ -w "<pc>/_incoming" ]`, `Write` the journal markdown to `<pc>/_incoming/<filename>`. **No git operations against `paul-context`.**
+     - **GitHub Issue fallback** (`<pc>` unset, or its `_incoming/` is not writable): stage the journal markdown with the `Write` tool to `/tmp/<filename>` (`Edit(/tmp/**)` is auto-allowed, and `Edit` rules cover the `Write` tool), then file as a labeled Issue:
 
        Create the issue on `pmgledhill102/paul-context` with the
        `journal-draft` label and the title `journal: <filename-without-.md>`,
