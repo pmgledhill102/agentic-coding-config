@@ -1,4 +1,9 @@
-Drain the journal-draft inbox for `paul-context`: move filesystem drafts from `~/dev/paul-context/_incoming/` to `journal/`, drain GitHub Issues labeled `journal-draft` from `pmgledhill102/paul-context` into `journal/`, commit each, push once, then close the drained Issues with back-links. Run from `~/dev/paul-context/` (the slash command lives in `agentic-coding-config` per the slash-commands-in-dotfiles convention; the work happens in `paul-context`).
+---
+name: promote-journal-inbox
+description: 'Drain the journal-draft inbox for paul-context: move filesystem drafts from _incoming/ to journal/, drain journal-draft-labelled Issues into journal/, commit each, push once, then close the drained Issues with back-links. Use when journal drafts are pending, when start-session reports a non-empty inbox, or when asked to promote or file journal entries. Runs from a paul-context checkout on any surface.'
+---
+
+# Promote the journal-draft inbox
 
 See `paul-context/decisions/2026-05-05-journal-inbox-promotion.md` for the design rationale.
 

@@ -156,21 +156,26 @@ Revocation levels and what to do about a possibly-exposed token or request key:
 | `/usr/local/bin/pre-commit`, `/usr/bin/shellcheck`, `/usr/local/bin/actionlint` | with `--with-precommit` |
 | `/usr/local/bin/gh` | the GitHub CLI, pinned release, with `--with-gh` |
 
-Whitelisted today: `retrospective`, `start-session`, `end-session`. The 15
-`setup-*` skills are held back pending a currency review — they are
-repo-scaffolding procedures a sandbox session rarely needs, and they predate
-this surface.
+Whitelisted today: `promote-journal-inbox`, `retrospective`, `start-session`,
+`end-session`. The 15 `setup-*` skills are held back pending a currency review
+— they are repo-scaffolding procedures a sandbox session rarely needs, and they
+predate this surface.
 
-All three are **composed skills** (#265, #288): each has a workstation body and
-a cloud-sandbox body built from one shared fragment set, so its artefact lives
-at `profiles/<profile>/skills/<name>/SKILL.md` and is fetched by profile,
-exactly as `AGENTS.md` and `CLAUDE.md` are. The script keeps two lists —
-`SKILLS` for one-body skills, `COMPOSED_SKILLS` for per-surface ones — and
-`SKILLS` is currently empty. It stays because the distinction is real, and
-because a new skill is more likely to need one body than two: ADR-0018
-principle 8 makes that the default. Moving a skill between the lists is part of
-adding or removing its manifest entry; get it backwards and the fetch 404s at
-install, naming the skill.
+The script keeps two lists, because there are two sources:
+
+- **`COMPOSED_SKILLS`** — the three session skills (#265, #288). Each has a
+  workstation body and a cloud-sandbox body built from one shared fragment set,
+  so its artefact lives at `profiles/<profile>/skills/<name>/SKILL.md` and is
+  fetched by profile, exactly as `AGENTS.md` and `CLAUDE.md` are.
+- **`SKILLS`** — one body for every surface, fetched from `home/skills/`.
+  `promote-journal-inbox` is the only entry (#289): its pre-flight tests the
+  repo rather than a path, and it already prefers MCP with `gh` as the
+  fallback, so nothing about it differs by surface. That is ADR-0018 principle
+  8 working as intended — one body is the default, and a per-surface pair has
+  to earn itself.
+
+Moving a skill between the lists is part of adding or removing its manifest
+entry; get it backwards and the fetch 404s at install, naming the skill.
 
 The session skills shell out to four helper scripts, delivered alongside them
 into `~/.claude/bin/`. They are not optional: the skills invoke them by name, so
