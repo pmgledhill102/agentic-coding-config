@@ -2,6 +2,9 @@
 
 - **Status**: Proposed (2026-08-18)
 - **Date**: 2026-08-18
+- **Amended**: 2026-08-23 — principle 8 added (#291), after #265 applied the
+  framework to skill bodies and #289 showed how easily a surface difference
+  is asserted without being verified
 - **Tags**: architecture, portability, context, skills, claude-code, codex
 - **Scope**: user (applies to all personal repos and agent surfaces)
 
@@ -53,7 +56,7 @@ what makes per-surface composition worth designing.
 
 ## Decision
 
-Adopt seven principles for composing and delivering agent context.
+Adopt eight principles for composing and delivering agent context.
 
 ### 1. Determinism over conditionals
 
@@ -178,9 +181,53 @@ committed outputs match. Additionally, and specifically:
 - no sandbox profile transitively includes a workstation-only fragment
 - every composed policy artefact is reported with its line count, so the
   always-loaded budget is a number in the build rather than a surprise
+- every composed skill is reported with how many of its sections carry a
+  per-surface variant, so principle 8's bar is a number in the build too
 
-This principle is the price of the other six. Without it, principle 1
+The last two are reports, not gates. A budget overrun and a high variant
+ratio are both content decisions, and a build that failed on them would
+be a build people learn to override.
+
+This principle is the price of the others. Without it, principle 1
 converts loud failures into quiet ones.
+
+### 8. One body until a difference is proven
+
+Composition makes a surface difference cheap to express. That is the
+point, and it is also the risk: a mechanism for stating differences
+invites stating ones that are not there, and an invented difference ships
+a false statement to a surface exactly as effectively as a stale fragment
+does.
+
+**The default is one shared body.** A per-surface split is an exception
+that has to earn itself against two questions, both of which must pass:
+
+1. **Falsifiability.** Write the sandbox sentence and the workstation
+   sentence. Is each one *false* on the other surface? If the sandbox text
+   would still be true on a workstation, it is not a surface difference —
+   it is phrasing, and it belongs in the shared fragment.
+2. **Capability, not delivery.** Is the difference in what the surface
+   *can do*, or in what has been *shipped* there? A delivery gap is closed
+   by shipping the thing. Composing around an absence encodes it, and the
+   encoding outlives the absence.
+
+A pair that passes is justified where it is declared, not merely created.
+The manifest is the review point, the same way `cloud/bootstrap.sh`'s
+whitelist is the review point for which skills reach a sandbox at all.
+
+This is why principle 1 reads "binding for always-loaded policy, strong
+for everything else". The economics invert between the tiers of principle
+2, and the tier that most invites splitting is the one where splitting
+buys least:
+
+| Tier | Cost of a conditional | Cost of splitting |
+| ---- | --------------------- | ----------------- |
+| Always-loaded policy | every turn, every session, forever | low — fragments are short and declarative |
+| Skill body | ~zero until invoked | high — two long procedural texts that must stay in step |
+
+The second row is the one to watch, and its cost is not hypothetical: see
+the twin-drift trade-off below. Nothing can check that two variants of one
+section still agree, because they are supposed to differ.
 
 ## Consequences
 
@@ -221,6 +268,22 @@ converts loud failures into quiet ones.
 - **The content review is unavoidable and is not small.** Splitting
   content by surface requires deciding, line by line, which surface each
   line is true on. Much of `home/` predates the cloud surface entirely.
+- **Variant twins can drift, and no check can catch it.** A skill and its
+  command copy are guarded by byte-equality, which is what
+  `tests/skills-match-commands.py` asserts. Two composed variants of one
+  section are *deliberately* different, so the same guard is structurally
+  unavailable: a fix applied to one twin and missed on the other is
+  invisible until someone reads that surface's artefact. This is the
+  previous entry's failure reached by a second route — the first is a
+  fragment nobody revisits, this is a pair that stops agreeing — and
+  principle 8's bar is the mitigation rather than the fix. Fewer pairs,
+  fewer places for it to happen.
+- **An invented difference is indistinguishable from a real one.** The
+  build proves a variant was composed correctly, never that it needed to
+  exist. #289 is the worked example: a sandbox variant was proposed on the
+  premise that a command could not run there, when it was merely not
+  installed there. Principle 8's two questions exist because that error is
+  cheap to make and expensive to find.
 
 ### Explicitly not decided here
 
@@ -281,3 +344,6 @@ document applied to it.
   deployed-time freshness, and they are different problems
 - #247, #142, #48 — content review, chezmoi shrink, and the commands
   retirement that principle 3 completes
+- #265, #289, #291 — principle 8's origin: #265 extended composition to
+  skill bodies, #289 asserted a surface difference that turned out not to
+  exist, and #291 is the amendment that followed
