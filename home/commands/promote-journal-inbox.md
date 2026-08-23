@@ -1,4 +1,4 @@
-Drain the journal-draft inbox for `paul-context`: move filesystem drafts from `~/dev/paul-context/_incoming/` to `journal/`, drain GitHub Issues labeled `journal-draft` from `pmgledhill102/paul-context` into `journal/`, commit each, push once, then close the drained Issues with back-links. Run from `~/dev/paul-context/` (the slash command lives in `agentic-coding-config` per the slash-commands-in-dotfiles convention; the work happens in `paul-context`).
+Drain the journal-draft inbox for `paul-context`: move filesystem drafts from `_incoming/` to `journal/`, drain GitHub Issues labeled `journal-draft` from `pmgledhill102/paul-context` into `journal/`, commit each, push once, then close the drained Issues with back-links. Run from a `paul-context` checkout, wherever it sits on disk (the slash command lives in `agentic-coding-config` per the slash-commands-in-dotfiles convention; the work happens in `paul-context`).
 
 See `paul-context/decisions/2026-05-05-journal-inbox-promotion.md` for the design rationale.
 
@@ -85,11 +85,25 @@ If nothing was committed (Phase 1 + Phase 2 both produced zero new commits):
 
 - Surface `(nothing to push)` and skip to Phase 4.
 
-Otherwise:
+Otherwise, **push where this session is entitled to push.** That is one question, not a surface question, and it has two answers:
+
+**No branch assigned to this session** — you started it, you own the checkout, nothing external decided where your commits go:
 
 ```sh
 git push origin main
 ```
+
+This is the direct-push exception the global agent policy names, and it is deliberate rather than sloppy. Promotion is append-only content movement into a single-author private repo with no CI, and the content was authored and approved during the retro that drafted it. A pull request here means reviewing your own journal entry — ceremony, not review, and permanent PR noise on a repo that gets one of these per session.
+
+**A branch has been assigned to this session** — a harness gave you `<branch>` and told you not to push elsewhere:
+
+```sh
+git push -u origin <branch>
+```
+
+Then open a PR. This is not an exception being waived; it is the ordinary branch-and-PR rule, and it costs almost nothing here because one PR carries every draft this run promoted. **Never push to `main` from a session with an assigned branch** — the instruction not to is not yours to override, and the exception above exists for the case where no such instruction was given.
+
+Either way the commits leave the machine, which is the part that matters: on a disposable container, drafts committed and unpushed are drafts destroyed.
 
 If push fails (rejected, network, hook):
 
@@ -101,7 +115,11 @@ If push succeeds, proceed to Phase 4.
 
 ## Phase 4 — Close drained Issues
 
-For each Issue captured in Phase 2:
+**Which route Phase 3 took decides this step**, because an Issue must not be closed while its journal entry is still only on a branch.
+
+### If Phase 3 pushed to `main`
+
+The entry is live. For each Issue captured in Phase 2:
 
 1. Add a back-link comment via `mcp__github__add_issue_comment`:
 
@@ -113,7 +131,18 @@ For each Issue captured in Phase 2:
 
 2. Close the Issue via `mcp__github__issue_write` with `method=update`, `state=closed`, `state_reason=completed`.
 
-If a comment or close fails, surface the failure and continue with the rest. The bead has already been promoted (the journal entry is live on `main`), so a missed close is a recoverable bookkeeping issue — re-running `/promote-journal-inbox` will re-enumerate the still-open Issues, find the journal entries already exist, surface them as conflicts, and the user can close manually.
+If a comment or close fails, surface the failure and continue with the rest. The draft has already been promoted (the journal entry is live on `main`), so a missed close is a recoverable bookkeeping issue — re-running `promote-journal-inbox` will re-enumerate the still-open Issues, find the journal entries already exist, surface them as conflicts, and the user can close manually.
+
+### If Phase 3 pushed to an assigned branch
+
+**Close nothing.** The entry is not on `main` until the PR merges, and an Issue closed before then would strand the draft: closed upstream, absent from `journal/`, and invisible to the next run that would otherwise re-promote it.
+
+Instead:
+
+1. Put `Closes #<n>` in the PR body, once per drained Issue. GitHub closes them on merge, which is the same bookkeeping done by the mechanism that already knows when the entry actually landed.
+2. Add the back-link comment as above, but ending `— promoted in #<pr>, closes on merge` rather than `Closing.`
+
+Leaving the Issue open is deliberate and self-correcting: if the PR is never merged, the draft is still discoverable and the next run re-promotes it, which is the outcome you want.
 
 ## Phase 5 — Summary
 
@@ -128,7 +157,7 @@ Print a tight wrap-up:
 <for each conflict>:
     - <filename or Issue ref> — <reason>
 
-  Pushed: <yes/no/n/a>
+  Pushed: <main | <branch> + PR #<n> | no | n/a>
   Closed Issues: <count> — <list of #N or "(none)">
 ```
 
@@ -138,7 +167,7 @@ Surface the conflict list explicitly so it's obvious what didn't move and why.
 
 - **Never overwrite** an existing `journal/<file>.md`. Skip + surface. Manual resolution lives with the user.
 - **Per-draft commits**, single batched push. Each entry is its own commit — clean audit trail, easy revert. The single push at end keeps remote round-trips down and makes the close-Issues precondition simple.
-- **Close-Issues happens AFTER push.** If push fails, drafts stay committed locally but upstream Issues remain open — the next run handles the recovery cleanly via the conflict path.
+- **Close-Issues happens AFTER push, and only on the `main` route.** If push fails, drafts stay committed locally but upstream Issues remain open — the next run handles the recovery cleanly via the conflict path. On the assigned-branch route nothing is closed here at all; `Closes #<n>` in the PR body does it on merge, when the entry actually reaches `main`.
 - **No retries on network failures.** Surface and stop. The user drives the retry.
 - **No body transformation on Issue drafts.** What the Issue body says is what lands in `journal/`. Don't try to fix typos, normalise headings, or strip metadata — that's manual editing, not promotion.
 - **Don't `cd` away from `paul-context`** during the run. Every git operation should target the same working tree the pre-flight validated.
