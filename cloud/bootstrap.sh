@@ -496,8 +496,23 @@ esac
 # There is nothing to synthesise, so this loop just fetches. The credential
 # skill above predates that machinery and is still generated from its command
 # file at install time; when it joins `home/skills/` these two paths merge.
+#
+# TWO LISTS, BECAUSE THERE ARE TWO SOURCES (#265). A composed skill has a
+# per-surface body: the sandbox variant calls the GitHub MCP server where the
+# workstation variant reads what `gh` put in the gather output, resolved at
+# composition rather than by the session working out which half of one text
+# applies to it (ADR-0018 principle 1). Its artefact therefore lives under
+# profiles/<profile>/skills/, next to that profile's composed policy, and is
+# fetched by profile exactly as AGENTS.md and CLAUDE.md are above. A plain
+# skill has one body for every surface and still comes from home/skills/.
+#
+# Adding a composed variant of an existing skill means moving its name from
+# SKILLS to COMPOSED_SKILLS in the same change that adds the manifest entry.
+# Getting that backwards is caught at install: the fetch 404s and the script
+# dies naming the skill, rather than a session quietly running the wrong body.
 
-SKILLS="retrospective start-session end-session"
+SKILLS="retrospective"
+COMPOSED_SKILLS="start-session end-session"
 
 # Helper scripts the session skills shell out to. They are NOT optional: the
 # skills invoke them by name, and a skill whose helper is missing fails at the
@@ -528,9 +543,17 @@ for script in $BIN_SCRIPTS; do
 done
 log "helpers -> $HOME/.claude/bin/ ($(echo "$BIN_SCRIPTS" | wc -w | tr -d ' ') session scripts)"
 
-for skill in $SKILLS; do
-    curl -sSfL "$RAW/home/skills/$skill/SKILL.md" -o "$TMP/$skill.SKILL.md" ||
-        die "could not fetch the $skill skill from $REF"
+for skill in $SKILLS $COMPOSED_SKILLS; do
+    # One loop, one difference: where the body comes from. Recomputing it per
+    # skill keeps the install, symlink and de-duplication steps below in a
+    # single place rather than duplicated per source.
+    case " $COMPOSED_SKILLS " in
+        *" $skill "*) src="profiles/$PROFILE/skills/$skill/SKILL.md" ;;
+        *) src="home/skills/$skill/SKILL.md" ;;
+    esac
+
+    curl -sSfL "$RAW/$src" -o "$TMP/$skill.SKILL.md" ||
+        die "could not fetch the $skill skill from $REF ($src) — a composed skill needs a profiles/$PROFILE/skills/ entry in context/manifest.json"
 
     # Same 404-as-content guard as the helper: a bad ref returns an HTML error
     # page with a 200 from some proxies, and a skill whose body is HTML fails
@@ -658,7 +681,8 @@ fi
     echo "sha=$resolved"
     echo "installed_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
     echo "profile=$PROFILE"
-    echo "skills=$SKILLS"
+    echo "skills=$SKILLS $COMPOSED_SKILLS"
+    echo "composed_skills=$COMPOSED_SKILLS"
     echo "helpers=$BIN_SCRIPTS"
     echo "precommit=$WITH_PRECOMMIT"
     echo "gcloud=$WITH_GCLOUD"

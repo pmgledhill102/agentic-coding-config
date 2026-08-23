@@ -9,11 +9,12 @@ skills, and the composed agent policy into the container. See
 [ADR-0016](../adrs/0016-capability-delivery-principles.md) for why the substance
 lives here rather than in the setup script itself.
 
-Which skills is an explicit whitelist — the `SKILLS` variable in the script —
-rather than everything under `home/skills/`. Raw GitHub offers no directory
-listing, so a wildcard would need the API, a token and a JSON parser; and the
-list being hand-maintained means adding a skill to every sandbox is a decision
-someone makes rather than a side effect of creating a file.
+Which skills is an explicit whitelist — the `SKILLS` and `COMPOSED_SKILLS`
+variables in the script — rather than everything under `home/skills/`. Raw
+GitHub offers no directory listing, so a wildcard would need the API, a token
+and a JSON parser; and the list being hand-maintained means adding a skill to
+every sandbox is a decision someone makes rather than a side effect of creating
+a file.
 
 ## Claude Code
 
@@ -41,8 +42,8 @@ so the session skills' gather sections come back `gh-unauthorized` rather
 than populated (lane map on #257, cleanup on #273). The flag exists for
 surfaces whose egress genuinely reaches the GitHub API, e.g. self-hosted
 environments. On Anthropic-hosted sandboxes the GitHub MCP server remains the
-only repo-data route, and the skills' documented MCP recovery is the working
-path.
+only repo-data route, and the sandbox bodies of the session skills call it
+directly rather than treating it as a fallback (#265).
 
 **The `Rev:` comment is load-bearing.** The environment snapshots the setup
 script's result and re-runs it only when the script text changes, the allowed
@@ -143,7 +144,7 @@ Revocation levels and what to do about a possibly-exposed token or request key:
 | `/usr/local/bin/gcp-credentials` | the helper (or `~/.local/bin` unprivileged) |
 | `~/.claude/bin/gcp-credentials` | symlink, because the skill still names that path |
 | `/usr/local/bin/gcloud` | wrapper: prefers the broker token, renews it when stale |
-| `~/.agents/skills/<name>/SKILL.md` | each whitelisted skill, canonical |
+| `~/.agents/skills/<name>/SKILL.md` | each whitelisted skill, canonical — the sandbox body for a composed one |
 | `~/.claude/skills/<name>` | symlink to the above, for Claude Code |
 | `~/.agents/AGENTS.md` | the composed policy profile |
 | `~/.claude/CLAUDE.md` | the Claude adapter profile (Claude profiles only) |
@@ -160,6 +161,16 @@ Whitelisted today: `retrospective`, `start-session`, `end-session`. The 15
 repo-scaffolding procedures a sandbox session rarely needs, and they predate
 this surface.
 
+Two of the three come from a different place, and the script keeps two lists to
+say which. `start-session` and `end-session` are **composed skills** (#265):
+each has a workstation body and a cloud-sandbox body built from one shared
+fragment set, so its artefact lives at
+`profiles/<profile>/skills/<name>/SKILL.md` and is fetched by profile, exactly
+as `AGENTS.md` and `CLAUDE.md` are. `retrospective` has one body for every
+surface and still comes from `home/skills/`. Moving a skill between the two
+lists is part of adding or removing its manifest entry; get it backwards and
+the fetch 404s at install, naming the skill.
+
 The session skills shell out to four helper scripts, delivered alongside them
 into `~/.claude/bin/`. They are not optional: the skills invoke them by name, so
 a missing helper fails at the point of use rather than at install.
@@ -167,10 +178,14 @@ a missing helper fails at the point of use rather than at install.
 `start-session-gather-state` runs it as a sibling — a dependency nothing in the
 skill text mentions.
 
-**`gh` is absent from these containers**, and three of `start-session`'s seven
-sections report `gh-unavailable` as a result: `main_ci`, `gh_ready`,
-`gh_assigned`. The sandbox policy fragment says so, and says to reach for the
-MCP equivalent. Closing the gap properly is tracked separately.
+**`gh` does not answer repo questions in these containers**, whether it is
+absent or installed-and-403ed (#273, #276), so the gather scripts' GitHub
+sections always come back `gh-unavailable` or `gh-unauthorized`. That is no
+longer something a session has to notice and route around: the sandbox bodies
+of both session skills issue the MCP queries as ordinary steps and never
+mention `gh` at all. What those queries cannot express — a `-is:blocked` filter
+on issues, an author filter on PRs — the sandbox text states outright rather
+than implying a filter that was not applied.
 
 ## Pre-commit enforcement
 

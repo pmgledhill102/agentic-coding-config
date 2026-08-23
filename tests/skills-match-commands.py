@@ -50,6 +50,18 @@ GENERALISATIONS = [
         "a global pre-tool hook runs pre-commit on every "
         "`git commit`/`git push` the agent makes",
     ),
+    # Composed skills (#265). A skill and its command twin are built from one
+    # fragment list that differs in exactly one entry: the head, which carries
+    # frontmatter for a SKILL.md and a description line for a command.
+    # tests/compose-context.py records the list in each file's generated
+    # banner, so that single difference surfaces there — and nowhere else,
+    # which is the property this pair asserts. Every other line of a composed
+    # pair is the same bytes rather than merely the same meaning, so for those
+    # two skills this check is now a check on the generator.
+    (
+        "Fragments: 00-head-command",
+        "Fragments: 00-head-skill",
+    ),
 ]
 
 # `/setup-common` is a Claude slash-command spelling; a leading slash means

@@ -41,6 +41,7 @@ sh tests/gcp-credentials-test.sh         # credential-helper behaviour
 sh tests/precommit-hook-test.sh          # pre-commit hook matching
 sh tests/retired-paths.sh                # the prune list is safe and sectioned
 sh tests/retired-paths-test.sh           # ...and its validator still catches
+python3 tests/compose-context.py         # composed profiles and skills match their fragments
 python3 tests/skills-match-commands.py   # skills match their source commands
 python3 tests/plugin-manifests.py        # marketplace, plugin and hook manifests
 python3 tests/allowlist-covers-commands.py  # allow rules match documented commands
@@ -69,3 +70,10 @@ is repo-meta and never deploys.
 - `home/settings.json` and `home/settings.json.md` must change together
   (CI enforces the sync; the `.md` carries the rationale)
 - ADRs in `adrs/` record decisions; `docs/` holds workflow docs and runbooks
+- **Anything with a `GENERATED` banner is composed — edit the fragment.**
+  `context/manifest.json` says which fragments build which output;
+  `context/fragments/` holds policy fragments and `context/skills/` holds
+  skill-body fragments. Run `python3 tests/compose-context.py --write` after
+  editing one, and commit the regenerated artefacts in the same change. That
+  covers `home/{AGENTS,CLAUDE}.md`, everything under `profiles/`, and the
+  `start-session` / `end-session` skill and command files
