@@ -6,13 +6,11 @@ Apply when **all** of the following hold (single-pass check over already-collect
 
 - `local_state.status` is empty (clean working tree)
 - `local_state.unpushed` is empty (no unpushed commits — covers steps 4 and 7)
-- `merged_brs` is empty
 - `stashes` is empty
 - the step 1(b) issue query returned nothing assigned to you
 - the step 1(b) PR query returned no open PRs
-- `worktrees` has exactly one entry (just the primary)
 
-`stale_claude_files` is not in the predicate: there is no chezmoi here, so it never has anything to say (step 11).
+Three sections the workstation predicate checks are absent here, because the steps that consume them do no work on this surface: `merged_brs` (step 6), `worktrees` (step 12) and `stale_claude_files` (step 11). A predicate term whose step is skipped can only make the fast-path fire less often, never more correctly.
 
 **The two MCP calls run before this predicate is evaluated, not instead of it.** They are step 1's work, not a recovery path, so "the query was skipped" is never a reason a line is empty. A line whose query genuinely failed reads `n/a (no GitHub route)` and **fails** the predicate — the fast-path is a narration optimisation, not permission to report an unchecked section as clean.
 
@@ -26,5 +24,5 @@ If **any** predicate fails, run every step as before — a messy session's narra
 
 **Caveats** (deliberately accepted to keep the predicate single-pass):
 
-- The fast-path skips step 6 Batch B's squash-merged branch check (`~/.claude/bin/end-session-squash-merged`). Local branch tidiness is close to free here anyway — the container is disposable, so a lingering branch costs nothing beyond this session.
+- Steps 6 and 12 are not in the predicate because they do no work on this surface (see those steps). Their summary lines read `n/a (sandbox — container discarded)` whether the fast-path fires or not.
 - Background processes (step 13) aren't in the predicate. Claude tracks them from session state, not gather; if any are running, surface them in the summary regardless of fast-path.

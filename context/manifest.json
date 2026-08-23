@@ -110,13 +110,14 @@
       }
     },
     "end-session": {
+      "//": "Ten variant pairs out of 22 sections — the highest ratio of the three, and the reason is real rather than lazy: this skill acts on local state, and local state is exactly what a disposable container makes meaningless. Steps 6 and 12 do no work on a sandbox (#283), step 11 has no chezmoi to check, and the GitHub steps take a different route entirely (#265). Composed before ADR-0018 principle 8 existed, so its pairs have not been re-examined under the two questions; #283 added one (18-worktrees) that was checked against them.",
       "outputs": {
         "home/commands/end-session.md": [
           "00-head-command", "01-intro", "02-action-tiers", "03-pre-flight", "04-surface-workstation",
           "05-phase-1", "06-gather-workstation", "07-fast-path-workstation", "08-fetch-prune",
           "09-ci-on-demand", "10-uncommitted-work", "11-return-to-main", "12-prune-branches-workstation",
           "13-push-main", "14-open-prs-workstation", "15-stashes", "16-assigned-issues-workstation",
-          "17-stale-claude-files-workstation", "18-worktrees", "19-background-processes",
+          "17-stale-claude-files-workstation", "18-worktrees-workstation", "19-background-processes",
           "20-summary-workstation", "21-phase-2", "22-guardrails-workstation"
         ],
         "home/skills/end-session/SKILL.md": [
@@ -124,7 +125,7 @@
           "05-phase-1", "06-gather-workstation", "07-fast-path-workstation", "08-fetch-prune",
           "09-ci-on-demand", "10-uncommitted-work", "11-return-to-main", "12-prune-branches-workstation",
           "13-push-main", "14-open-prs-workstation", "15-stashes", "16-assigned-issues-workstation",
-          "17-stale-claude-files-workstation", "18-worktrees", "19-background-processes",
+          "17-stale-claude-files-workstation", "18-worktrees-workstation", "19-background-processes",
           "20-summary-workstation", "21-phase-2", "22-guardrails-workstation"
         ],
         "profiles/claude-cloud-sandbox/skills/end-session/SKILL.md": [
@@ -132,7 +133,7 @@
           "05-phase-1", "06-gather-sandbox", "07-fast-path-sandbox", "08-fetch-prune",
           "09-ci-on-demand", "10-uncommitted-work", "11-return-to-main", "12-prune-branches-sandbox",
           "13-push-main", "14-open-prs-sandbox", "15-stashes", "16-assigned-issues-sandbox",
-          "17-stale-claude-files-sandbox", "18-worktrees", "19-background-processes",
+          "17-stale-claude-files-sandbox", "18-worktrees-sandbox", "19-background-processes",
           "20-summary-sandbox", "21-phase-2", "22-guardrails-sandbox"
         ],
         "profiles/codex-cloud-sandbox/skills/end-session/SKILL.md": [
@@ -140,7 +141,7 @@
           "05-phase-1", "06-gather-sandbox", "07-fast-path-sandbox", "08-fetch-prune",
           "09-ci-on-demand", "10-uncommitted-work", "11-return-to-main", "12-prune-branches-sandbox",
           "13-push-main", "14-open-prs-sandbox", "15-stashes", "16-assigned-issues-sandbox",
-          "17-stale-claude-files-sandbox", "18-worktrees", "19-background-processes",
+          "17-stale-claude-files-sandbox", "18-worktrees-sandbox", "19-background-processes",
           "20-summary-sandbox", "21-phase-2", "22-guardrails-sandbox"
         ]
       }
