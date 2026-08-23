@@ -2,12 +2,13 @@
 
 This document captures the reasoning behind the `/end-session` slash command's shape — in particular why its Phase 1 gather runs inside a shell script rather than inline.
 
-- Command spec: [`home/commands/end-session.md`](../home/commands/end-session.md)
+- Source of the skill body: [`context/skills/end-session/`](../context/skills/end-session/) — the fragments it is composed from
+- Composed artefacts (**generated, do not edit**): [`home/skills/end-session/SKILL.md`](../home/skills/end-session/SKILL.md), [`home/commands/end-session.md`](../home/commands/end-session.md), and one per cloud profile under [`profiles/`](../profiles/)
 - Scripts: [`home/bin/`](../home/bin/)
 
 ## What `/end-session` does
 
-Single-invocation tidy-up to leave a repo at a verifiable "clean walk-away" point: fetch + prune, rebase `main`, prune dead branches (merged and squash-merged), surface outstanding PRs / stashes / assigned issues / stale Claude files / worktrees, then offer the retrospective.
+Single-invocation tidy-up to leave a repo at a verifiable "clean walk-away" point: fetch + prune, rebase `main`, prune dead branches (merged and squash-merged), surface outstanding PRs / stashes / assigned issues / stale Claude files / worktrees, then run the retrospective. On a cloud sandbox the local-tidy steps are skipped as pointless (the container is discarded) while every push step still runs.
 
 Every step is classified by how much human judgment it needs:
 
@@ -56,7 +57,7 @@ fixed commands, so parallelising it would buy nothing.
 ## Architecture
 
 ```text
-/end-session  (home/commands/end-session.md)
+/end-session  (composed from context/skills/end-session/)
     │
     ├── Step 1  → ~/.claude/bin/end-session-gather-state
     │                  │
@@ -98,8 +99,25 @@ Progress pings go to stderr (`[gather] …`) so a human watching sees something 
 | --- | --- |
 | `exit=0`, empty content | Clean result — treat as "none". |
 | `exit=0`, content | Normal data — parse for the corresponding step. |
-| `exit != 0`, content `gh-unavailable` | Silent skip (no `gh` installed). Steps 3 and 8 degrade. |
+| `exit != 0`, content `gh-unavailable` / `gh-unauthorized` | Means different things by surface — see below. |
+| `exit != 0`, content `chezmoi-unavailable` | Nothing chezmoi-managed here; step 11 has nothing to check. |
 | `exit != 0`, other content | Real error — surface before continuing Phase 1. |
+
+The `gh` row is the one that changed shape when the skill was composed per
+surface (#265):
+
+- **Workstation**: `gh` is on PATH and authorised, so these sections carry real
+  data and a sentinel is unexpected. Report the affected summary lines as
+  `n/a (gh absent)` and say so once.
+- **Cloud sandbox**: the sentinel is what these sections return **every time**.
+  `gh` is either absent or 403ed by the egress proxy on every repo-scoped path
+  (#273, #276). Nothing degrades, because a different query answers the
+  question: the sandbox body issues `mcp__github__list_issues` and
+  `list_pull_requests` as ordinary step-1 work rather than as recovery.
+
+`gh-unauthorized` did not exist when this doc was written, and the old row also
+named step 3 — repo-wide CI, which #275 removed from the gather entirely. CI is
+now checked on demand, per PR.
 
 Sections where empty output is expected (e.g., `merged_brs` grep returning no matches) append `|| true` inside the script so `exit=0` remains meaningful.
 
@@ -139,17 +157,59 @@ Keep it inline in the command spec when:
 - It needs per-item user judgment between sub-commands (would break into separate prompts anyway).
 - It's runtime-level (background process state, agent memory) that can't run from a detached shell.
 
+## The skill body is composed, not written
+
+**`home/skills/end-session/SKILL.md` and `home/commands/end-session.md` are
+generated.** Editing either loses the change: CI rejects an artefact that does
+not match its fragments, and the next `--write` overwrites it. Both carry a
+`GENERATED` banner naming the fragments they came from.
+
+The source is `context/skills/end-session/`, one fragment per section, composed
+by `tests/compose-context.py` per [ADR-0018](../adrs/0018-composing-agent-context-per-surface.md).
+A section whose content genuinely differs by surface has a `-workstation` and a
+`-sandbox` variant; everything else is shared. Ten of 22 sections carry a pair,
+which is the highest ratio of the three session skills and is not an accident:
+this skill acts on **local state**, and local state is exactly what a
+disposable container makes meaningless.
+
+After editing a fragment: `python3 tests/compose-context.py --write`, and
+commit the regenerated artefacts in the same change.
+
+Principle 8 governs whether a new section should be split at all — the default
+is one shared body, and a pair has to pass two questions. Its step 0 comes
+first: check whether a helper script can absorb the difference, in which case
+there is nothing to split. That is the cheaper fix, because a branch in a
+script costs nothing to read.
+
 ## Rollout
 
-The scripts live in `home/bin/end-session-*` in this repo, committed `100755`. This repo's `home/` is mounted at `~/.claude/` on each machine via a chezmoi archive external declared in [dotfiles](https://github.com/pmgledhill102/dotfiles), so they materialise at `~/.claude/bin/end-session-*` (with exec bit) only after a `chezmoi apply`. On a typical machine that's `dotup`.
+Two delivery routes, with different staleness models:
 
-This matters because a merged PR to this repo's `main` does not land in `~/.claude/bin/` until chezmoi refreshes the external and applies. The external carries a `refreshPeriod`, so a merge is not picked up instantly. The first `/end-session` invocation on a machine after merging a change here should be preceded by `dotup`.
+- **Workstation** — `home/` is mounted at `~/.claude/` via a chezmoi archive
+  external declared in [dotfiles](https://github.com/pmgledhill102/dotfiles), so
+  the scripts materialise at `~/.claude/bin/end-session-*` (with exec bit) only
+  after a `chezmoi apply`. The external carries a `refreshPeriod`, so a merged
+  PR is not picked up instantly; `dotup` (`chezmoi update --refresh-externals`)
+  is what bypasses the cache. `start-session`'s `claude_drift` check reports
+  when this machine is behind.
+- **Cloud sandbox** — `cloud/bootstrap.sh` fetches the helper scripts into
+  `~/.claude/bin/` and the composed skill body from
+  `profiles/<profile>/skills/`, at container build. There is no chezmoi and no
+  `dotup`. A merge reaches a container when its environment snapshot next
+  rebuilds — the setup script's text changing, the allowed hosts changing, or
+  roughly seven days passing — or immediately if the bootstrap is re-run by
+  hand. `start-session`'s `bootstrap_currency` check reports when a container
+  is behind.
+
+The scripts themselves live in `home/bin/end-session-*`, committed `100755`,
+and are one file per surface: the sandbox composition reads different sections
+of the same output rather than running a different script.
 
 ## Maintenance
 
-- **ShellCheck**: CI's `home/bin/` scan covers the scripts. Run locally with `shellcheck home/bin/end-session-*` before pushing.
+- **ShellCheck**: CI's `home/bin/` scan covers the scripts. Run locally with `shellcheck home/bin/end-session-*` before pushing — noting that it cannot be installed in a cloud sandbox (no package route, and the egress proxy blocks both the npx download and the GitHub release), so a shell change authored there reaches CI unverified.
 - **Paired files**: `settings.json` and `settings.json.md` are paired — any change to the allow rule must update both.
-- **Adding a section to the gather**: add a `run_section` or `run_sh` call in the script, extend the section table in `commands/end-session.md`, then add a step (or fold into an existing step) that reads the new section.
+- **Adding a section to the gather**: add a `run_section` or `run_sh` call in the script, extend the section table in the gather fragment — `context/skills/end-session/06-gather-{workstation,sandbox}.md`, both of them — then add or extend a step that reads it, and regenerate. Never edit `home/commands/end-session.md` or the SKILL.md directly; they are composed.
 - **New sibling script**: name it `end-session-<purpose>` and commit it `100755`; the existing permission rule covers it.
 
 ## Non-goals
