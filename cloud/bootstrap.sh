@@ -510,9 +510,14 @@ esac
 # SKILLS to COMPOSED_SKILLS in the same change that adds the manifest entry.
 # Getting that backwards is caught at install: the fetch 404s and the script
 # dies naming the skill, rather than a session quietly running the wrong body.
+#
+# SKILLS is empty as of #288, which composed the last of the three session
+# skills. It stays because the distinction is real and the next skill added
+# here is more likely to need one body than two — ADR-0018 principle 8 makes
+# that the default, not the exception.
 
-SKILLS="retrospective"
-COMPOSED_SKILLS="start-session end-session"
+SKILLS=""
+COMPOSED_SKILLS="retrospective start-session end-session"
 
 # Helper scripts the session skills shell out to. They are NOT optional: the
 # skills invoke them by name, and a skill whose helper is missing fails at the

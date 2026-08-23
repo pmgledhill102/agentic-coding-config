@@ -161,15 +161,16 @@ Whitelisted today: `retrospective`, `start-session`, `end-session`. The 15
 repo-scaffolding procedures a sandbox session rarely needs, and they predate
 this surface.
 
-Two of the three come from a different place, and the script keeps two lists to
-say which. `start-session` and `end-session` are **composed skills** (#265):
-each has a workstation body and a cloud-sandbox body built from one shared
-fragment set, so its artefact lives at
-`profiles/<profile>/skills/<name>/SKILL.md` and is fetched by profile, exactly
-as `AGENTS.md` and `CLAUDE.md` are. `retrospective` has one body for every
-surface and still comes from `home/skills/`. Moving a skill between the two
-lists is part of adding or removing its manifest entry; get it backwards and
-the fetch 404s at install, naming the skill.
+All three are **composed skills** (#265, #288): each has a workstation body and
+a cloud-sandbox body built from one shared fragment set, so its artefact lives
+at `profiles/<profile>/skills/<name>/SKILL.md` and is fetched by profile,
+exactly as `AGENTS.md` and `CLAUDE.md` are. The script keeps two lists —
+`SKILLS` for one-body skills, `COMPOSED_SKILLS` for per-surface ones — and
+`SKILLS` is currently empty. It stays because the distinction is real, and
+because a new skill is more likely to need one body than two: ADR-0018
+principle 8 makes that the default. Moving a skill between the lists is part of
+adding or removing its manifest entry; get it backwards and the fetch 404s at
+install, naming the skill.
 
 The session skills shell out to four helper scripts, delivered alongside them
 into `~/.claude/bin/`. They are not optional: the skills invoke them by name, so

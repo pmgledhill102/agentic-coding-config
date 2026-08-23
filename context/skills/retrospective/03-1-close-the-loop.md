@@ -2,7 +2,7 @@
 
 Before analysing this session, read what the last few retros produced and what became of it:
 
-- **Recent journal entries** — the last 3–5. On a workstation, read `~/dev/paul-context/journal/` (newest by filename date) plus any drafts still in `~/dev/paul-context/_incoming/`. In a sandbox with no clone, list recent `journal-draft`-labeled Issues on `pmgledhill102/paul-context` — `mcp__github__list_issues` when connected, else `gh issue list --repo pmgledhill102/paul-context --label journal-draft --state all`.
+- **Recent journal entries** — the last 3–5. Where they live depends on whether a `paul-context` clone is reachable, not on which surface you are: if `~/dev/paul-context/journal/` exists, read it (newest by filename date) plus any drafts still in `~/dev/paul-context/_incoming/`. Otherwise list recent `journal-draft`-labeled Issues on `pmgledhill102/paul-context` — `mcp__github__list_issues` when connected, else `gh issue list --repo pmgledhill102/paul-context --label journal-draft --state all`.
 - **Retro-filed Issues** — their bodies carry the `From retro: paul-context/journal/...` backlink. Check the repos the recent journals routed to, listing both open and closed Issues. These are historical, so body-text search is acceptable here (the never-search rule guards *time-sensitive* reads; a week-old issue is safely indexed).
 
 Report a short fate summary before proposing anything new:

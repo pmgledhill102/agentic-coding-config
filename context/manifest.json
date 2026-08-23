@@ -69,13 +69,13 @@
       }
     },
     "retrospective": {
-      "//": "Decomposed by #288; the per-surface variants land in the follow-up commit. Until they do, this composes the workstation-shape outputs only, which is what makes the split verifiable: regenerating must reproduce the committed files byte-for-byte apart from the banner.",
+      "//": "Two variant pairs out of 15 sections (#288). Eight sites in the original branched on `command -v chezmoi`; six of them failed ADR-0018 principle 8's questions and were reworded or deleted instead. 07-propose is the lever table, whose cells are genuinely false on the other surface. 08-route is the durable-lesson route, where a memory file persists on a workstation and evaporates in a container. The other six either keyed on whether a paul-context clone is reachable — which is not a surface fact, see #289 — or restated a decision step 6 already makes.",
       "outputs": {
         "home/commands/retrospective.md": [
           "00-head-command", "01-shape-of-this-retro", "02-steps", "03-1-close-the-loop",
           "04-2-read-context", "05-3-name-the-costs-impact-first",
-          "06-4-read-the-subtraction-instruments", "07-5-propose-at-most-three",
-          "08-6-categorise-and-route", "09-7-propose-to-the-user", "10-8-execute",
+          "06-4-read-the-subtraction-instruments", "07-propose-workstation",
+          "08-route-workstation", "09-7-propose-to-the-user", "10-8-execute",
           "11-9-do-not-write-to-retros-md", "12-10-brief-summary",
           "13-first-run-dispositions-carried-from-263", "14-guidelines",
           "15-what-changed-from-the-previous-versions"
@@ -83,8 +83,26 @@
         "home/skills/retrospective/SKILL.md": [
           "00-head-skill", "01-shape-of-this-retro", "02-steps", "03-1-close-the-loop",
           "04-2-read-context", "05-3-name-the-costs-impact-first",
-          "06-4-read-the-subtraction-instruments", "07-5-propose-at-most-three",
-          "08-6-categorise-and-route", "09-7-propose-to-the-user", "10-8-execute",
+          "06-4-read-the-subtraction-instruments", "07-propose-workstation",
+          "08-route-workstation", "09-7-propose-to-the-user", "10-8-execute",
+          "11-9-do-not-write-to-retros-md", "12-10-brief-summary",
+          "13-first-run-dispositions-carried-from-263", "14-guidelines",
+          "15-what-changed-from-the-previous-versions"
+        ],
+        "profiles/claude-cloud-sandbox/skills/retrospective/SKILL.md": [
+          "00-head-skill", "01-shape-of-this-retro", "02-steps", "03-1-close-the-loop",
+          "04-2-read-context", "05-3-name-the-costs-impact-first",
+          "06-4-read-the-subtraction-instruments", "07-propose-sandbox",
+          "08-route-sandbox", "09-7-propose-to-the-user", "10-8-execute",
+          "11-9-do-not-write-to-retros-md", "12-10-brief-summary",
+          "13-first-run-dispositions-carried-from-263", "14-guidelines",
+          "15-what-changed-from-the-previous-versions"
+        ],
+        "profiles/codex-cloud-sandbox/skills/retrospective/SKILL.md": [
+          "00-head-skill", "01-shape-of-this-retro", "02-steps", "03-1-close-the-loop",
+          "04-2-read-context", "05-3-name-the-costs-impact-first",
+          "06-4-read-the-subtraction-instruments", "07-propose-sandbox",
+          "08-route-sandbox", "09-7-propose-to-the-user", "10-8-execute",
           "11-9-do-not-write-to-retros-md", "12-10-brief-summary",
           "13-first-run-dispositions-carried-from-263", "14-guidelines",
           "15-what-changed-from-the-previous-versions"

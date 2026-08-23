@@ -12,10 +12,14 @@ For each proposal and observation, decide what artifact it produces:
 | **Settings change** | Permission to add or remove, hook to register, env var to set | File an Issue against `pmgledhill102/agentic-coding-config` describing the change and why — same routing as any other a-c-c finding. **Never edit a `settings.json` directly** (see 6b) |
 | **Observation only** | Noted but below the proposal bar | No artifact; mention in the journal's Observations section |
 
-**The durable-lesson route depends on the surface**, and the difference is the memory row of the lever table:
+**There is no memory route here.** Memory writes are machine-local and this machine is a container that gets reclaimed, so a memory file would be written, look successful, and silently evaporate. Do not write one. This is the memory row of step 5's lever table, and it is the one cell with nothing in it.
 
-- **Workstation**: `Write` to `~/.claude/projects/<project>/memory/<slug>.md` with frontmatter (`name`, `description`, `type` of `user|feedback|project|reference`), then `Edit` `MEMORY.md` to add a one-line index entry, following the auto-memory conventions in the global CLAUDE.md.
-- **Cloud sandbox**: **there is no memory route — memory writes are machine-local and die with the container.** Do not write one; it would silently evaporate. The durable route here is **journal + Issue**: the lesson goes in the journal entry, and if it needs to change behaviour rather than just be remembered, it also becomes an Issue against the repo whose lever applies (usually `agentic-coding-config`, whose fragments and bootstrap are how a lesson reaches every future sandbox).
+The durable route is **journal + Issue**:
+
+- The lesson goes in the journal entry, which leaves the container (step 8).
+- If it needs to *change behaviour* rather than just be remembered, it also becomes an Issue against the repo whose lever applies — usually `agentic-coding-config`, whose fragments and bootstrap are how a lesson reaches every future container.
+
+That second half is not optional bookkeeping. A journal entry records what was learned; only the Issue changes what the next session does, and there is no memory file here to do that job instead.
 
 #### 6a. No cd-shortcut
 

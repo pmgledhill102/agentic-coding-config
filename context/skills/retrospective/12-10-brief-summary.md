@@ -10,7 +10,7 @@ Retrospective complete.
   Proposals:                  2 of 3 cap used — 1 removal, 1 addition
   Issues created (here):      1 — #41
   Issues raised cross-repo:   1 — github.com/.../issues/14
-  Durable lessons:            1 — journal + issue (sandbox; no memory on this surface)
+  Durable lessons:            1 — journal + issue
 
 Next /start-session in the cross-repo'd repos will surface the new Issues as ready work.
 ```
