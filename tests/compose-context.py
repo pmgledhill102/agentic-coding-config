@@ -136,6 +136,40 @@ def compose(manifest, profile, output, fragments):
     return "\n".join(parts) + "\n"
 
 
+VARIANT_SUFFIX = re.compile(r"-(?:workstation|sandbox)$")
+
+
+def variant_ratio(manifest, skill):
+    """Report how many of a skill's sections carry a per-surface variant.
+
+    ADR-0018 principle 8: the default is one shared body, and a split has to
+    earn itself. This is that bar expressed as a number in the build, the same
+    way the line count expresses the always-loaded budget — a report, never a
+    gate. A high ratio is a content decision, and a build that failed on one
+    would be a build people learn to override.
+
+    It is worth watching because a variant pair is the one thing here that no
+    check can guard. A skill and its command twin must be byte-identical, so
+    drift between them fails the build; two variants of a section are supposed
+    to differ, so a fix landing on one and missing the other is silent until
+    somebody reads that surface's artefact.
+    """
+    frag_dir = ROOT / manifest["skill_fragment_dir"] / skill
+    sections, varying = set(), set()
+    for path in frag_dir.glob("*.md"):
+        stem = path.stem
+        if stem.startswith("00-head-"):
+            continue  # the head is per-output shape, not a surface variant
+        base = VARIANT_SUFFIX.sub("", stem)
+        sections.add(base)
+        if base != stem:
+            varying.add(base)
+    if not sections:
+        return ""
+    pct = round(100 * len(varying) / len(sections))
+    return f"{len(varying)}/{len(sections)} sections carry a surface variant ({pct}%)"
+
+
 def emit(output, expected, write, failures, wrote):
     """Write or verify one composed artefact. Shared by both output kinds."""
     path = ROOT / output
@@ -202,6 +236,7 @@ def main():
                 )
                 print(f"  {output:52s} {len(expected.splitlines()):4d} lines")
                 emit(output, expected, write, failures, wrote)
+            print(f"  {'':52s} {variant_ratio(manifest, skill)}")
 
     # Check 5. Every file under profiles/ must be claimed by the manifest.
     #
