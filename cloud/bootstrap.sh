@@ -511,12 +511,15 @@ esac
 # Getting that backwards is caught at install: the fetch 404s and the script
 # dies naming the skill, rather than a session quietly running the wrong body.
 #
-# SKILLS is empty as of #288, which composed the last of the three session
-# skills. It stays because the distinction is real and the next skill added
-# here is more likely to need one body than two — ADR-0018 principle 8 makes
-# that the default, not the exception.
+# SKILLS holds promote-journal-inbox and nothing else. It is the drain half of
+# the journal loop whose fill half runs here: a sandbox retro files a
+# journal-draft Issue, and this is what empties that inbox. One body serves
+# both surfaces — its pre-flight tests the repo rather than a path, and it
+# already prefers MCP with gh as the fallback — so it needs no composition,
+# which is ADR-0018 principle 8 working as intended rather than an omission
+# (#289).
 
-SKILLS=""
+SKILLS="promote-journal-inbox"
 COMPOSED_SKILLS="retrospective start-session end-session"
 
 # Helper scripts the session skills shell out to. They are NOT optional: the
