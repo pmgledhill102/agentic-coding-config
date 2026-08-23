@@ -4,7 +4,8 @@
 - **Date**: 2026-08-18
 - **Amended**: 2026-08-23 — principle 8 added (#291), after #265 applied the
   framework to skill bodies and #289 showed how easily a surface difference
-  is asserted without being verified
+  is asserted without being verified; its step 0 added the same day (#293),
+  because the cheapest split is the one a script makes unnecessary
 - **Tags**: architecture, portability, context, skills, claude-code, codex
 - **Scope**: user (applies to all personal repos and agent surfaces)
 
@@ -199,8 +200,51 @@ invites stating ones that are not there, and an invented difference ships
 a false statement to a surface exactly as effectively as a stale fragment
 does.
 
-**The default is one shared body.** A per-surface split is an exception
-that has to earn itself against two questions, both of which must pass:
+**The default is one shared body.**
+
+**Step 0: try to absorb the difference in code.** Before asking whether a
+split is justified, ask whether there is anything left to split. A
+conditional in a script costs nothing to read — it is executed, not
+loaded, and the model sees only its output — where a conditional in prose
+is paid in context by every session on every surface. Principle 1's
+corollary above says surface-detection is legitimate in a script and
+illegitimate in prose; step 0 is that corollary used as a design move
+rather than as a prohibition.
+
+The worked example is `bin/start-session-claude-drift`. It reported a wall
+of phantom drift on a container — 50 files "never deployed", a remedy
+naming a program not installed there — because it tested for a `~/.claude`
+directory, which a sandbox now has. Two fixes were available: a paragraph
+in the sandbox skill body explaining that the section misfires and should
+be ignored, or three lines of shell teaching the script to test for
+chezmoi and emit `state=absent`. The second costs one line of table in the
+composed body, describing an output. The first would have been read by
+every sandbox session forever.
+
+The boundary is sharp. **A script can absorb a difference it can
+compute. It cannot absorb a difference in what the agent itself must
+invoke or decide** — an MCP tool is not callable from a subprocess, which
+is why the sandbox `end-session` body genuinely differs while the drift
+check does not. Differences in data or detection go to the script;
+differences in which tool the agent reaches for, which steps run, or what
+it must not do are content.
+
+A script that absorbs a difference must emit a **named state**, never
+silence: `gh-unauthorized`, `state=absent`, `chezmoi-unavailable`,
+`not-a-container`. "Nothing here" and "not checked" have to stay
+distinguishable in its output, or the context saving has bought a
+correctness problem — and the skills are already full of rules against
+exactly that confusion.
+
+None of which makes shell free. It needs shellcheck, POSIX portability and
+BSD/GNU care that prose does not, and the drift fix above reached CI
+unverified locally because shellcheck is not installable in the sandbox it
+was written in. That cost is paid once, by one author, against a context
+cost paid per session by every reader — so this is a preference, not a
+law.
+
+Only what survives step 0 reaches the two questions. A per-surface split
+is an exception that has to earn itself against both, and both must pass:
 
 1. **Falsifiability.** Write the sandbox sentence and the workstation
    sentence. Is each one *false* on the other surface? If the sandbox text
@@ -344,6 +388,9 @@ document applied to it.
   deployed-time freshness, and they are different problems
 - #247, #142, #48 — content review, chezmoi shrink, and the commands
   retirement that principle 3 completes
-- #265, #289, #291 — principle 8's origin: #265 extended composition to
-  skill bodies, #289 asserted a surface difference that turned out not to
-  exist, and #291 is the amendment that followed
+- #265, #289, #291, #293 — principle 8's origin: #265 extended composition
+  to skill bodies, #289 asserted a surface difference that turned out not to
+  exist, #291 is the amendment that followed, and #293 added its step 0
+- #287 — the `start-session-claude-drift` fix that is step 0's worked example
+- #288 — the first composition to run under principle 8: 2 variant pairs out
+  of 15 sections, against 4 and 9 for the two composed before it
