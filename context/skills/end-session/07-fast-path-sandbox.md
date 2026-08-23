@@ -20,7 +20,7 @@ If the predicate holds:
 
 1. Emit step 14's summary directly. Every actionable line says "none"; static lines (main rebased) reflect the already-clean state.
 2. Do **not** narrate steps 2–13 individually. No "Step 4 — pass", no "Step 6 — nothing to prune", no per-step status lines. The summary IS the output.
-3. Phase 2's retrospective prompt still fires as today.
+3. Phase 2 still runs the retrospective — the fast-path shortens Phase 1 narration, not the session-closing work.
 
 If **any** predicate fails, run every step as before — a messy session's narration is unchanged.
 
