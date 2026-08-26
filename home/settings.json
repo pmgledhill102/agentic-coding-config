@@ -323,8 +323,7 @@
       "Read(~/.claude/retros.md)",
       "Read(~/.claude/settings.json)",
       "Edit(/private/tmp/**)",
-      "Edit(/tmp/**)",
-      "Edit(~/dev/paul-context/_incoming/**)"
+      "Edit(/tmp/**)"
     ]
   },
   "hooks": {

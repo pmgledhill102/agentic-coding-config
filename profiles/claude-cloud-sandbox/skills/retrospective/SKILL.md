@@ -195,9 +195,10 @@ Wait for explicit confirmation. Don't proceed on ambiguous input.
 1. **journal** (always first):
    - **Derive the filename.** `<source-repo-slug>` = sanitised basename of `git remote get-url origin` from the current cwd (lowercase, `[a-z0-9-]+`). If no git remote, use `basename "$PWD"`. `<topic-slug>` = kebab-cased session summary, ≤5 words. `<filename>` = `<YYYY-MM-DD>-<source-repo-slug>-<topic-slug>.md`.
    - **Resolve same-project same-day collisions** at write-time: if the target already exists, append `-2`, `-3`, … before `.md` until unique. Filesystem path checks `<pc>/_incoming/<filename>`; Issue path checks for an open Issue with the same title (rare in practice — same project, same day, same topic — but the suffix prevents silent merge of two distinct retros).
-   - **Pick the inbox path:**
-     - **Filesystem inbox** (preferred): if `<pc>` resolved and `[ -w "<pc>/_incoming" ]`, `Write` the journal markdown to `<pc>/_incoming/<filename>`. **No git operations against `paul-context`.**
-     - **GitHub Issue fallback** (`<pc>` unset, or its `_incoming/` is not writable): stage the journal markdown with the `Write` tool to `/tmp/<filename>` (`Edit(/tmp/**)` is auto-allowed, and `Edit` rules cover the `Write` tool), then file as a labeled Issue:
+   - **Stage the draft first, always.** `Write` the journal markdown to `/tmp/<filename>`. `Edit(/tmp/**)` is auto-allowed on every surface (and `Edit` rules cover the `Write` tool), so this write always succeeds and the draft exists on disk before any route is chosen. Nothing below can lose it.
+   - **Then deliver it:**
+     - **Filesystem inbox** (preferred): if `<pc>` resolved and `[ -w "<pc>/_incoming" ]`, `cp /tmp/<filename> "<pc>/_incoming/<filename>"`. `Bash(cp *)` is auto-allowed, so this needs no permission rule naming a checkout root and works wherever the clone sits. **No git operations against `paul-context`.** If the copy fails, fall through to the Issue route rather than stopping.
+     - **GitHub Issue fallback** (`<pc>` unset, its `_incoming/` is not writable, or the copy above failed): file the already-staged `/tmp/<filename>` as a labeled Issue:
 
        Create the issue on `pmgledhill102/paul-context` with the
        `journal-draft` label and the title `journal: <filename-without-.md>`,
