@@ -82,7 +82,7 @@ stated rather than inferred from where it sits.
 ### Commit & PR Style
 
 - Prefer several short paragraphs to one long line in commit messages; state what changed and why, not just what. Use repeated `-m` flags for the paragraphs (`git commit -m "Title" -m "Body" -m "Co-Authored-By: ..."`) rather than an editor or a heredoc
-- **For multi-line content, prefer a file over inline.** Use a tool's `--*-file` flag (`--body-file=PATH` for issues and PRs, `--input` for API JSON) or a surgical edit tool, rather than `--body "$(cat …)"` — it avoids quoting edge cases, renders correctly, and keeps the command readable in a transcript. Heredocs are not banned everywhere: on a surface whose permission rules are prefix-matched they cost an approval prompt per use, and the environment guidance says so where that applies
+- **For multi-line content, prefer a file over inline.** Use a tool's `--*-file` flag (`--body-file=PATH` for issues and PRs, `--input` for API JSON) or a surgical edit tool, rather than `--body "$(cat …)"` — it avoids quoting edge cases, renders correctly, and keeps the command readable in a transcript
 
 ### Process Guidelines
 
@@ -210,13 +210,6 @@ or in the environment's setup script.
   about live GCP state"**.
 - **Skills delivered by the bootstrap**, listed in `cloud/README.md`.
   A command that exists on the workstation is not necessarily present here.
-
-### Heredocs are fine here
-
-No prefix-matched approval list is in play, so a heredoc costs nothing here
-and the workstation's ban does not apply — use one where it is the natural
-tool. The portable preference survives on its own merits only: anything a
-human will review is still better passed as a file than inlined.
 
 ### `gh` is not installed here
 
