@@ -338,31 +338,44 @@ is the validator and runs in CI; `tests/retired-paths-test.sh` checks the
 validator against both mirror-image mistakes, because the real list is empty
 below the marker and so exercises neither branch on its own.
 
-**The undeployed section is empty on purpose.** An entry is only correct once
-the chezmoi external has stopped deploying that path — a change to the
-`include` filter in `dotfiles`, which this repo cannot make. List a path while
-chezmoi still deploys it and every `chezmoi apply` writes the file, then the
-post-apply pruner deletes it again: convergent, but churn masquerading as
-working. The order is dotfiles first, entries second. See [#142][issue-142].
+**The undeployed section is empty, and the cutover that would have filled it
+was declined.** An entry is only correct once the chezmoi external has stopped
+deploying that path — a change to the `include` filter in `dotfiles`, which
+this repo cannot make and which `dotfiles` has now decided not to make
+([dotfiles#392][dotfiles-392], closed as not planned; the consequences here are
+[#311][issue-311]). List a path while chezmoi still deploys it and every
+`chezmoi apply` writes the file, then the post-apply pruner deletes it again:
+convergent, but churn masquerading as working. So `commands/`, `skills/`,
+`hooks/` and `bin/` do not belong below the marker — chezmoi is still their
+route on personal machines. The mechanism stays for a genuine undeployment;
+nothing meets that description today.
 
-### The residue this is heading for
+### The residue this was heading for, and why it isn't
 
-Once the plugin channel is verified end to end ([#48][issue-48]), what chezmoi
-deploys shrinks to the part a plugin structurally cannot carry:
+The plan was that once the plugin channel was verified end to end
+([#48][issue-48]), what chezmoi deploys would shrink to the part a plugin
+structurally cannot carry:
 
-| Stays deployed | Why |
+| Would have stayed deployed | Why |
 | --- | --- |
 | `CLAUDE.md`, `AGENTS.md` | Policy prose can't ride a plugin. Both are generated from `context/fragments/` — edit the fragment, run `python3 tests/compose-context.py --write` |
 | `settings.json`, `settings.json.md` | Permission allowlists can't ride a plugin |
 | `retired-paths` | Read by the pruner at `~/.claude/retired-paths` |
 | `bin/claude-prune-retired` | Invoked by dotfiles after each apply |
 
-Everything else — `commands/`, `skills/`, `hooks/`, the rest of `bin/` — is
-delivered by the plugin and belongs below the `UNDEPLOYED` marker when that
-step is taken. Note this is a longer list than [#142][issue-142] originally
-assumed: it was written before `home/` became the plugin root, and named only
-the machine-local fragment as residue, when in fact all four policy files are
-structurally stuck on the chezmoi channel.
+**That cutover was declined** ([dotfiles#392][dotfiles-392], closed as not
+planned; the consequences here are [#311][issue-311]), so the deployed surface
+is not shrinking. The deciding reason is local to this repo:
+`.claude-plugin/marketplace.json` declares `"source": "./home"`, which is the
+`claude-workstation` composition — a plugin can therefore only ever ship
+workstation-composed context. Making it the primary channel would mean either
+shipping workstation context into cloud sandboxes, losing the surface tailoring
+this repo exists to provide, or publishing one plugin per profile: more
+machinery than the `bootstrap.sh --profile` line it would replace.
+
+So `commands/`, `skills/`, `hooks/` and the rest of `bin/` stay on the chezmoi
+channel. The table above survives as a statement of what a plugin structurally
+cannot carry, not as a migration plan.
 
 `/end-session` step 11 remains the backstop. It compares `chezmoi
 managed` against the real contents of `~/.claude/commands/` and
@@ -370,10 +383,10 @@ managed` against the real contents of `~/.claude/commands/` and
 file retired without a list entry, or one left by another tool.
 
 [dotfiles-371]: https://github.com/pmgledhill102/dotfiles/issues/371
+[dotfiles-392]: https://github.com/pmgledhill102/dotfiles/issues/392
+[issue-311]: https://github.com/pmgledhill102/agentic-coding-config/issues/311
 
 [issue-125]: https://github.com/pmgledhill102/agentic-coding-config/issues/125
-
-[issue-142]: https://github.com/pmgledhill102/agentic-coding-config/issues/142
 
 ## Slash commands
 
@@ -406,10 +419,12 @@ Skill bodies carry no `$ARGUMENTS` / `$1` / `` !`cmd` `` / `@file` templating �
 Codex's parser rejects those — so arguments arrive as free text ("the user names
 the target language in their request").
 
-**Both forms ship for now.** The commands stay until the plugin cutover
-([#48][issue-48]); retirement is tracked separately. Until then the skill body
-is a copy, so **a change to one needs the same change to the other** — the
-duplication is deliberate and temporary, but it can drift.
+**Both forms ship.** The commands were to be retired at the plugin cutover
+([#48][issue-48]) — and that cutover was declined, so nothing currently governs
+how long the twins persist. The decision is open in [#311][issue-311]; the
+cloud-sandbox profiles are the working precedent, shipping `skills/` and no
+`commands/`. Until it is taken the skill body is a copy, so **a change to one
+needs the same change to the other** — the duplication can drift.
 
 The session-lifecycle commands (`/start-session`, `/end-session`,
 `/retrospective`, `/promote-journal-inbox`) and `/gcp-credentials` are **not**

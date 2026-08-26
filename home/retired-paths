@@ -69,5 +69,16 @@ local-machine.md
 # That converges on the right end state, but it is churn masquerading as
 # working. So: dotfiles narrows the include FIRST, then the paths land here.
 #
-# It is also gated on #48's end-to-end verification — do not undeploy anything
-# the plugin has not been observed to deliver. See #142.
+# AND IT WILL NOT (#311). dotfiles declined the plugin cutover — it keeps both
+# existing channels, the chezmoi archive external and cloud/bootstrap.sh, and
+# will not narrow the include (pmgledhill102/dotfiles#392, closed as not
+# planned). So commands/, skills/, hooks/ and bin/ are NOT candidates for this
+# section: chezmoi is still their delivery route on personal machines, and an
+# entry here would produce exactly the write-then-delete churn described above,
+# on every apply. There is no longer a platform where that would sit harmless
+# either — the pruner now has a PowerShell sibling for native Windows
+# (pmgledhill102/dotfiles#407).
+#
+# The mechanism stays for a genuine undeployment: a path that must still exist
+# in home/ for some other reason but must leave ~/.claude/. Nothing meets that
+# description today, which is why the section is empty.
