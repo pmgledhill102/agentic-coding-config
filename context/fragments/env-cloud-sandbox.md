@@ -24,6 +24,13 @@ or in the environment's setup script.
 - **Skills delivered by the bootstrap**, listed in `cloud/README.md`.
   A command that exists on the workstation is not necessarily present here.
 
+## Heredocs are fine here
+
+No prefix-matched approval list is in play, so a heredoc costs nothing here
+and the workstation's ban does not apply — use one where it is the natural
+tool. The portable preference survives on its own merits only: anything a
+human will review is still better passed as a file than inlined.
+
 ## `gh` is not installed here
 
 GitHub work goes through the MCP tools. The `gh` CLI is absent from this
