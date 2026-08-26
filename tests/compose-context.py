@@ -27,10 +27,10 @@ The two differ only in assembly, because their file shapes differ. A policy
 artefact gets an injected H1 title and every fragment demoted under it; a skill
 body already has its own frontmatter and H1, carried by its first fragment, so
 skill fragments are concatenated verbatim. That first fragment is the `head`:
-`head-skill` for a `SKILL.md`, `head-command` for the `home/commands/` twin
-that ships until the #48 cutover. Everything after it is shared between the
-two, which is what keeps `tests/skills-match-commands.py` green without a new
-transform — the bodies are not merely similar, they are the same bytes.
+`head-skill`, carrying the frontmatter and the H1. A `head-command` sat beside
+it while each skill also composed to a `home/commands/` twin, which needs a
+one-line description instead of frontmatter; the twins were retired (#313) and
+it went with them.
 
 Checks, per ADR-0018 principle 7 — deterministic delivery converts loud
 failures into quiet ones, so the build is what catches them:
@@ -221,9 +221,11 @@ def main():
 
     # Skill bodies. Same source-of-truth rule, one tier down: no budget line,
     # because a skill body costs nothing until the skill is invoked (ADR-0018
-    # principle 2), and no H1 check, because the two output shapes disagree on
-    # purpose — a SKILL.md has exactly one, its home/commands/ twin has none.
-    # markdownlint enforces MD025 over both.
+    # principle 2), and no H1 check here — markdownlint enforces MD025 over
+    # every output anyway. The check was skipped originally because the two
+    # output shapes disagreed on purpose: a SKILL.md has exactly one H1, and
+    # its home/commands/ twin had none. The twins are gone (#313); adding an
+    # H1 check for skills is a small piece of tightening, not done here.
     used_fragments = set()
     if manifest.get("skills"):
         print()

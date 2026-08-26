@@ -33,7 +33,7 @@ a sandbox is told about the machine it is actually on.
 | Content | chezmoi | `bootstrap.sh` |
 | --- | :-: | :-: |
 | `skills/` | yes | yes, a named whitelist per profile |
-| `commands/` | yes | no — a skill registers the same `/name` |
+| `commands/` | `gcp-credentials` only (#313) | no — a skill registers the same `/name` |
 | `bin/` helpers | yes, at `~/.claude/bin/` | yes, same path |
 | Policy prose (`AGENTS.md`, `CLAUDE.md`) | yes | yes, the profile's composition |
 | Hooks | yes, via `settings.json` | yes — `--with-hooks` merges the same block |
@@ -98,8 +98,8 @@ re-downloads on each refresh (vs `git-repo`'s incremental fetch); for a
 repo this small that's fine.
 
 **One-line mental model:** files under **`home/`** in this repo map
-directly to `~/.claude/`. So `home/commands/foo.md` →
-`~/.claude/commands/foo.md`, `home/settings.json` → `~/.claude/settings.json`.
+directly to `~/.claude/`. So `home/skills/foo/SKILL.md` →
+`~/.claude/skills/foo/SKILL.md`, `home/settings.json` → `~/.claude/settings.json`.
 Files at the repo root (`README.md`, `adrs/`, etc.) are repo-meta and
 don't deploy.
 
@@ -132,8 +132,8 @@ restructure that introduced `home/` is on top of that history.
     ├── CLAUDE.md              → ~/.claude/CLAUDE.md  (GENERATED — composed from context/fragments/)
     ├── settings.json          → ~/.claude/settings.json
     ├── settings.json.md       → ~/.claude/settings.json.md  (annotated companion, kept alongside)
-    ├── commands/              → ~/.claude/commands/  (Claude slash commands)
-    ├── skills/                → ~/.claude/skills/    (Agent Skills — provider-neutral)
+    ├── commands/              → ~/.claude/commands/  (gcp-credentials only; the twins retired in #313)
+    ├── skills/                → ~/.claude/skills/    (Agent Skills — provider-neutral, the surviving form)
     └── bin/                   → ~/.claude/bin/  (helper executables)
 ```
 
@@ -254,10 +254,11 @@ every sandbox is the code most in need of linting, not the least.
 ### Deleting a file here does not delete it on machines
 
 chezmoi only **adds and updates** target files. Delete
-`home/commands/foo.md` and `~/.claude/commands/foo.md` survives on every
-machine that ever applied a version containing it — and Claude Code goes
-on listing `/foo` as an available slash command. This bit us with the
-retired `bd-*` commands ([#125][issue-125]).
+`home/skills/foo/SKILL.md` and `~/.claude/skills/foo/SKILL.md` survives on
+every machine that ever applied a version containing it — and Claude Code goes
+on listing `/foo` as available. This bit us with the retired `bd-*` commands
+([#125][issue-125]), and it is why retiring the `home/commands/` twins
+([#313][issue-313]) meant 20 list entries rather than 20 deletions.
 
 Two things follow, both non-obvious:
 
@@ -363,9 +364,21 @@ file retired without a list entry, or one left by another tool.
 
 [issue-125]: https://github.com/pmgledhill102/agentic-coding-config/issues/125
 
-## Slash commands
+## Skills, and the one surviving command
 
-Each `/setup-*` command contains:
+Everything here ships as an [Agent Skill](https://agentskills.io) under
+`home/skills/`, one `<name>/SKILL.md` each with `name` + `description`
+frontmatter. Claude Code registers a skill as the same `/name` a slash command
+would give, so `/setup-python` works exactly as before. Skills are the portable
+unit: native in Claude Code, the primary customisation unit in Codex, and read
+by OpenCode, Gemini CLI, Cursor and Copilot too (ADR-0014).
+
+`home/commands/gcp-credentials.md` is the one command left. It has no skill
+counterpart on a workstation, and it carries Claude-specific tool references —
+it reaches a sandbox by another route anyway, `cloud/bootstrap.sh` writing it
+to `~/.agents/skills/`.
+
+Each `/setup-*` skill contains:
 
 1. Tool installation commands
 2. Configuration file contents
@@ -381,34 +394,28 @@ Each `/setup-*` command contains:
 /setup-python     # Language-specific tooling
 ```
 
-### Skills (provider-neutral)
+### There used to be twins
 
-The 16 provider-neutral commands — every `/setup-*` plus `/repo-review` — also
-exist as [Agent Skills](https://agentskills.io) under `home/skills/`, one
-`<name>/SKILL.md` each with `name` + `description` frontmatter. Skills are the
-portable unit: native in Claude Code, and the primary customisation unit in
-Codex, with OpenCode, Gemini CLI, Cursor and Copilot also reading the format
-(ADR-0014).
+Until [#313][issue-313] each of these shipped **twice** on a workstation: as
+`home/commands/<name>.md` and as `home/skills/<name>/SKILL.md`, from the same
+source, registering the same `/name`. Two identical bodies that could drift
+apart, and a CI job whose whole purpose was to notice when they did.
+
+They were to be retired at the plugin cutover ([#48][issue-48]); that cutover
+was declined and the issue closed, so the duplication was judged on its own
+merits instead. Both cloud profiles had already shipped `skills/` and no
+`commands/` since ADR-0018, with `/start-session` resolving to the skill and
+behaving identically — the precedent this followed.
+
+Because chezmoi never deletes a target it has stopped managing, retiring them
+meant 20 entries in `home/retired-paths`, not 20 deletions. See
+["Deleting a file here does not delete it on machines"](#deleting-a-file-here-does-not-delete-it-on-machines).
 
 Skill bodies carry no `$ARGUMENTS` / `$1` / `` !`cmd` `` / `@file` templating —
 Codex's parser rejects those — so arguments arrive as free text ("the user names
-the target language in their request").
-
-**Both forms still ship, and the twins are on their way out.** They were to be
-retired at the plugin cutover ([#48][issue-48]); that cutover was declined and
-that issue closed, so the decision was taken on its own merits instead — retire
-them, tracked in [#313][issue-313]. The cloud profiles are the precedent: they ship
-`skills/` and no `commands/`, and `/start-session` resolves to the skill there
-with no loss of behaviour. Until #313 lands, each skill body is a copy of its
-command, so **a change to one needs the same change to the other** —
-`tests/skills-match-commands.py` is what stops that drifting silently.
-
-Four of the five session-lifecycle commands are converted too: `/start-session`
-and `/end-session` are *composed* to both forms from `context/skills/`
-([#265][issue-265]), and `/retrospective` and `/promote-journal-inbox` have
-skill twins. `/gcp-credentials` is the one exception — it stays a command,
-because it carries Claude-specific tool references. It reaches a sandbox by
-another route anyway: `cloud/bootstrap.sh` writes it to `~/.agents/skills/`.
+the target language in their request"). `/start-session`, `/end-session` and
+`/retrospective` are *composed* from `context/skills/` ([#265][issue-265]);
+the rest are written directly.
 
 [issue-48]: https://github.com/pmgledhill102/agentic-coding-config/issues/48
 [issue-313]: https://github.com/pmgledhill102/agentic-coding-config/issues/313

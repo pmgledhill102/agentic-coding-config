@@ -61,6 +61,45 @@ local-machine.md
 hooks/hooks.json
 bin/plugin-hook-dispatch
 
+# 2026-08-26 — the home/commands/ twins retired (#313)
+#
+# Every one of these also exists as home/skills/<name>/SKILL.md, from the same
+# source: the 15 setup-* and repo-review are hand-maintained pairs, and
+# start-session, end-session and retrospective compose to both forms from
+# context/skills/. Claude Code registers a skill as the same /name a command
+# gives, so a machine carrying both offered one slash command backed by two
+# identical bodies that could drift apart.
+#
+# The twins were to go at the #48 plugin cutover. That cutover was declined
+# (#311) and #48 closed, so the duplication was judged on its own merits
+# instead. Both cloud profiles have shipped skills/ and no commands/ since
+# ADR-0018, with /start-session resolving to the skill and behaving the same —
+# the precedent this follows.
+#
+# home/commands/gcp-credentials.md is NOT here. It has no skill counterpart in
+# home/skills/, so on a workstation it is the only interface to the credential
+# client; retiring it would remove /gcp-credentials from every machine.
+commands/end-session.md
+commands/promote-journal-inbox.md
+commands/repo-review.md
+commands/retrospective.md
+commands/setup-common.md
+commands/setup-docker.md
+commands/setup-dotnet.md
+commands/setup-go.md
+commands/setup-java.md
+commands/setup-markdown.md
+commands/setup-node.md
+commands/setup-php.md
+commands/setup-python.md
+commands/setup-repo.md
+commands/setup-ruby.md
+commands/setup-rust.md
+commands/setup-shell.md
+commands/setup-terraform.md
+commands/setup-typescript.md
+commands/start-session.md
+
 # === UNDEPLOYED: still in home/, no longer deployed to ~/.claude/ ===
 #
 # WHY A SECOND SECTION: a path can need to stay in home/ for some reason other
