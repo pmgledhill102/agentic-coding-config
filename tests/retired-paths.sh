@@ -11,11 +11,11 @@
 #   above the UNDEPLOYED marker   retired — the path must be GONE from home/
 #   below it                      undeployed — the path must STILL be in home/
 #
-# The inversion is deliberate. An undeployed path is one the plugin still ships
-# from home/ but chezmoi no longer delivers; if it isn't in home/ at all then it
-# is simply retired and the entry is on the wrong side. Checking each section
-# for the other's condition means neither can quietly absorb the other's
-# mistakes.
+# The inversion is deliberate. An undeployed path is one that must stay in
+# home/ for some reason other than deployment, while no longer being delivered
+# to ~/.claude/; if it isn't in home/ at all then it is simply retired and the
+# entry is on the wrong side. Checking each section for the other's condition
+# means neither can quietly absorb the other's mistakes.
 #
 # Usage: sh tests/retired-paths.sh [path-to-list]
 # Exit: 0 if every entry is safe and correctly placed, 1 otherwise.

@@ -5,14 +5,11 @@ workstation composition is a separate file, so nothing below has to ask which
 surface it is running on, and nothing below describes a machine this is not.
 
 **Where the helper scripts are.** `cloud/bootstrap.sh` installed them under
-`~/.claude/bin/`, which is what the skills' usual spelling resolves to when
-`CLAUDE_PLUGIN_ROOT` is unset:
+`~/.claude/bin/`, which is where every surface now keeps them:
 
 ```sh
-${CLAUDE_PLUGIN_ROOT:-$HOME/.claude}/bin/<script>
+~/.claude/bin/<script>
 ```
-
-Both spellings are auto-approved in `settings.json`. Do not hard-code either.
 
 **How GitHub is reached: the MCP server, not `gh`.** The gather script's
 GitHub sections do not work on this surface and are not expected to. `gh` is

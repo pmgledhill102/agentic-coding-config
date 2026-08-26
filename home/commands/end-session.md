@@ -34,11 +34,11 @@ This file is the workstation composition of the skill (ADR-0018). The sandbox
 composition is a separate file, so nothing below has to ask which surface it is
 running on.
 
-**Where the helper scripts are.** Prefer the plugin-relative path and fall back
-to the chezmoi one — `${CLAUDE_PLUGIN_ROOT:-$HOME/.claude}/bin/<script>`. Both
-spellings are auto-approved in `settings.json`. Under chezmoi the variable is
-unset and this resolves to `~/.claude/bin/`; under a plugin install it resolves
-inside the plugin. Do not hard-code either.
+**Where the helper scripts are.** chezmoi puts them at `~/.claude/bin/`, and
+that is the spelling to use: `~/.claude/bin/<script>`. Earlier versions used
+`${CLAUDE_PLUGIN_ROOT:-$HOME/.claude}/bin/<script>` so one line could serve a
+plugin install too; that channel was withdrawn (#312), the variable is never
+set on this surface, and the fallback was the only branch that ever ran.
 
 **How GitHub is reached: `gh`, inside the gather.** `gh` is on PATH here and
 authorised for repo data, so the gather script answers the GitHub questions
@@ -61,7 +61,7 @@ so retired files accumulate until something looks for them.
 Run the parallel gather script. It does `git fetch --all --prune --tags` first, then fans out all read-only queries (status/branch/log, stashes, worktrees, merged branches, open PRs, assigned GitHub issues) in parallel. Default-branch CI is deliberately not gathered — see step 3.
 
 ```sh
-${CLAUDE_PLUGIN_ROOT:-$HOME/.claude}/bin/end-session-gather-state
+~/.claude/bin/end-session-gather-state
 ```
 
 Output is a sectioned stream. Each section starts with `===<name> (exit=<N>)===`. The sections are:
@@ -158,7 +158,7 @@ Take the list from gather section `merged_brs`.
 **Batch B — Squash-merged branches** — branches whose upstream was deleted (`[upstream: gone]`, typical after GitHub squash-merge + branch delete) AND whose work is provably on `main`. These won't show up in Batch A because squash-merging rewrites history; `-d` would refuse them. The script accepts either of two "work is delivered" signals as the safety net — empty diff vs `main`, or GitHub records a merged PR with the branch as `headRefName` (fallback for cases where main has subtle post-squash drift that fails the diff but the PR clearly merged):
 
 ```sh
-${CLAUDE_PLUGIN_ROOT:-$HOME/.claude}/bin/end-session-squash-merged
+~/.claude/bin/end-session-squash-merged
 ```
 
 For each batch:

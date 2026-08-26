@@ -40,7 +40,8 @@ case "$cmd" in
 esac
 
 # Resolved next to this script rather than at a fixed ~/.claude/bin path, so
-# the same file works from the chezmoi deployment and from the plugin's bin/.
+# the same file works wherever it was installed -- chezmoi's ~/.claude/bin on a
+# workstation, the copy cloud/bootstrap.sh writes to the same path in a sandbox.
 wrapper="$(dirname -- "$0")/gh-pr-checks-wait"
 [ -x "$wrapper" ] || exit 0
 

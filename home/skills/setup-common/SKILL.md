@@ -354,53 +354,28 @@ The `cooldown` block is load-bearing, not a lint nit: this same skill installs a
 
 > **Note:** Auto-merge requires branch protection or rulesets with required status checks enabled on the default branch. Without this, `--auto` merges immediately without waiting for CI.
 
-### 9. Agent plugin (Claude Code only)
+### 9. Agent permissions for cloud sessions
 
-**Provider-specific step — skip it on any client that is not Claude Code.**
-Everything else in this skill is provider-neutral; this one configures Claude
-Code's plugin system by name. The equivalent for another client is whatever
-mechanism it uses to load shared skills into a session that cannot see the
-user's machine; there is no portable spelling of it yet.
+A cloud session reads the project repo's `.claude/` and **nothing** from
+`~/.claude/`, so anything it needs has to arrive by a route the repo or the
+environment controls.
 
-Stamp the marketplace and plugin declaration into the project's
-`.claude/settings.json`, creating the file if absent and **merging** if present:
+Do **not** stamp a marketplace or `enabledPlugins` declaration here. This
+estate published its config as a Claude Code plugin for a while; that channel
+was withdrawn, and a repo enabling it now would point at a marketplace that no
+longer exists. Agent config reaches a sandbox through the environment's setup
+script running `cloud/bootstrap.sh`, which is a property of the environment
+rather than of any one repo — see `cloud/README.md`.
 
-```json
-{
-  "extraKnownMarketplaces": {
-    "agentic-config": {
-      "source": {
-        "source": "github",
-        "repo": "pmgledhill102/agentic-coding-config"
-      }
-    }
-  },
-  "enabledPlugins": {
-    "agentic-config@agentic-config": true
-  }
-}
-```
+What *does* belong in the repo's `.claude/settings.json` is the **permission
+allowlist**: it is the only place a cloud session reads permissions from, and
+no delivery channel can carry it. Stamping a core allowlist is a reasonable
+follow-on, deliberately not done automatically here — permissions are the one
+thing worth deciding per repo rather than by template.
 
-Note `enabledPlugins` is an **object** keyed `<plugin>@<marketplace>`, not an
-array of names.
-
-**This is the only route by which a cloud session gets any of this.** Cloud
-sessions read the project repo's `.claude/` and nothing from `~/.claude/`, so a
-repo without these two keys runs bare: no setup skills, no session commands, no
-credential helper. Locally the same content already arrives via chezmoi, so
-stamping a repo changes nothing there — it is purely what makes the cloud
-surface match.
-
-Commit the file; it is meant to be shared, not gitignored. If the repo already
-has `.claude/settings.json`, add these keys alongside whatever is there rather
-than replacing it.
-
-Permission allowlists are a separate matter: a plugin cannot carry them (a
-plugin's `settings.json` supports only a couple of keys), and repo
-`.claude/settings.json` is the **only** place a cloud session reads permissions
-from. Stamping a core allowlist there is a reasonable follow-on, deliberately
-not done automatically here — permissions are the one thing worth deciding per
-repo rather than by template.
+Whatever you put there, commit it; it is meant to be shared, not gitignored,
+and if the repo already has `.claude/settings.json`, merge alongside whatever
+is there rather than replacing it.
 
 ### 10. Verify
 

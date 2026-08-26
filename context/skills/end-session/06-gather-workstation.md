@@ -3,7 +3,7 @@
 Run the parallel gather script. It does `git fetch --all --prune --tags` first, then fans out all read-only queries (status/branch/log, stashes, worktrees, merged branches, open PRs, assigned GitHub issues) in parallel. Default-branch CI is deliberately not gathered — see step 3.
 
 ```sh
-${CLAUDE_PLUGIN_ROOT:-$HOME/.claude}/bin/end-session-gather-state
+~/.claude/bin/end-session-gather-state
 ```
 
 Output is a sectioned stream. Each section starts with `===<name> (exit=<N>)===`. The sections are:

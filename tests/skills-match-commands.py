@@ -2,7 +2,7 @@
 """Assert every skill body still matches the command it was copied from.
 
 #137 converted the 16 provider-neutral commands to Agent Skills but kept
-`home/commands/*.md` in place until the plugin cutover (#48). The skill body
+`home/commands/*.md` in place until the twins are retired (#313). The skill body
 is therefore a *copy*, and the README asks that a change to one be made to
 the other.
 
@@ -142,7 +142,7 @@ def main():
         print(
             f"{failures} of {len(skills)} skills have drifted.\n"
             "\n"
-            "Both copies ship until the plugin cutover (#48), so a change to a\n"
+            "Both copies ship until the twins are retired (#313), so a change to a\n"
             "command needs the same change to its skill. If the difference is a\n"
             "new deliberate generalisation, declare it in GENERALISATIONS in this\n"
             "file rather than silencing the check."

@@ -24,16 +24,17 @@ This file is the workstation composition of the skill (ADR-0018). The sandbox
 composition is a separate file, so nothing below has to ask which surface it is
 running on.
 
-**Where the helper scripts are.** Prefer the plugin-relative path and fall back
-to the chezmoi one:
+**Where the helper scripts are.** chezmoi puts them at `~/.claude/bin/`, which
+is the only route that delivers them here:
 
 ```sh
-${CLAUDE_PLUGIN_ROOT:-$HOME/.claude}/bin/<script>
+~/.claude/bin/<script>
 ```
 
-Both spellings are auto-approved in `settings.json`. Under chezmoi the variable
-is unset and this resolves to `~/.claude/bin/`; under a plugin install it
-resolves inside the plugin. Do not hard-code either.
+Earlier versions of this skill spelled it
+`${CLAUDE_PLUGIN_ROOT:-$HOME/.claude}/bin/<script>` so one line could serve a
+plugin install too. That channel was withdrawn (#312), the variable is never
+set on this surface, and the fallback was the only branch that ever ran.
 
 **How GitHub is reached: `gh`, inside the gather.** `gh` is on PATH here and
 authorised for repo data, so the gather script answers the GitHub questions
@@ -54,7 +55,7 @@ this command makes **no standalone Bash calls before the gather**.
 Run the parallel gather script. It does `git fetch --all --prune --tags` first, resolves the repo's default branch, then fans out all read-only queries (local branch state, ready/assigned GitHub issues) in parallel. The script compacts each section's output to keep model-visible context cost low: `fetch`'s body is suppressed on success. Default-branch CI is deliberately **not** gathered here — see step 4 for why, and for the on-demand alternative.
 
 ```sh
-${CLAUDE_PLUGIN_ROOT:-$HOME/.claude}/bin/start-session-gather-state
+~/.claude/bin/start-session-gather-state
 ```
 
 Output is a sectioned stream. Each section starts with `===<name> (exit=<N>)===`. The sections are:

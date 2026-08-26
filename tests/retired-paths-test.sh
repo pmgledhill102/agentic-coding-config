@@ -42,7 +42,7 @@ check() {
     fi
 }
 
-MARKER='# === UNDEPLOYED: delivered by the plugin, no longer deployed by chezmoi ==='
+MARKER='# === UNDEPLOYED: still in home/, no longer deployed to ~/.claude/ ==='
 
 echo "retired-paths validator:"
 

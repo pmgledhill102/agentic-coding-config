@@ -26,7 +26,7 @@
 #
 # THIS FILE HAS TWO SECTIONS. Everything above the UNDEPLOYED marker below is
 # retired: gone from home/, gone from every machine. Everything below it is
-# still in home/ — because home/ is also the plugin root — but is no longer
+# still in home/ — for some reason other than being deployed — but is no longer
 # delivered to ~/.claude/. The pruner treats both the same way and needs no
 # knowledge of the distinction; CI is what tells them apart, and it asserts
 # the OPPOSITE condition for each. See the marker comment for the rules.
@@ -47,14 +47,33 @@ bin/bd-push-safe
 ephemeral-first.md
 local-machine.md
 
-# === UNDEPLOYED: delivered by the plugin, no longer deployed by chezmoi ===
+# 2026-08-26 — the plugin channel withdrawn (#312)
 #
-# WHY A SECOND SECTION: #48 made home/ double as the plugin root, so the paths
-# that move to the plugin cannot be deleted from home/ the way a retired file
-# is — deleting them would remove them from the plugin too. They still have to
-# be removed from ~/.claude/ on machines that already have them, because
-# chezmoi never deletes a target it has stopped managing. Same pruner, opposite
-# precondition.
+# hooks.json declared the same five hooks a third time, and only for a plugin:
+# every command was "${CLAUDE_PLUGIN_ROOT}/bin/plugin-hook-dispatch <script>",
+# which expands to nothing outside one. plugin-hook-dispatch existed to stand
+# down when ~/.claude/bin/<hook> was present, so a plugin-enabled workstation
+# ran each hook once rather than twice. With no plugin there is nothing to
+# stand down from. Both deployed to ~/.claude/ via the archive external, so
+# both need pruning. The hooks themselves are untouched: home/settings.json
+# declares them for a workstation and `bootstrap.sh --with-hooks` merges them
+# into a sandbox's settings.json, and the five scripts in home/bin/ stay.
+hooks/hooks.json
+bin/plugin-hook-dispatch
+
+# === UNDEPLOYED: still in home/, no longer deployed to ~/.claude/ ===
+#
+# WHY A SECOND SECTION: a path can need to stay in home/ for some reason other
+# than being deployed, while still having to leave ~/.claude/ on machines that
+# already have it — because chezmoi never deletes a target it has stopped
+# managing. Such a path cannot be deleted from home/ the way a retired file is.
+# Same pruner, opposite precondition.
+#
+# The case that created this section was home/ doubling as the plugin root
+# (#48): a path moving to the plugin channel could not be deleted from home/
+# without removing it from the plugin too. The plugin was withdrawn (#312), so
+# that case is gone and no other has appeared. The section is kept because the
+# distinction is real and the guard below is what makes it safe.
 #
 # CI RULE: an entry below this marker MUST still exist in home/. If it doesn't,
 # it isn't undeployed — it's retired, and belongs above the marker. That

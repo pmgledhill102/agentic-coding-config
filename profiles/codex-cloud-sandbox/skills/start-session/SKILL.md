@@ -30,14 +30,11 @@ workstation composition is a separate file, so nothing below has to ask which
 surface it is running on, and nothing below describes a machine this is not.
 
 **Where the helper scripts are.** `cloud/bootstrap.sh` installed them under
-`~/.claude/bin/`, which is what the skills' usual spelling resolves to when
-`CLAUDE_PLUGIN_ROOT` is unset:
+`~/.claude/bin/`, which is where every surface now keeps them:
 
 ```sh
-${CLAUDE_PLUGIN_ROOT:-$HOME/.claude}/bin/<script>
+~/.claude/bin/<script>
 ```
-
-Both spellings are auto-approved in `settings.json`. Do not hard-code either.
 
 **How GitHub is reached: the MCP server, not `gh`.** The gather script's
 GitHub sections do not work on this surface and are not expected to. `gh` is
@@ -77,7 +74,7 @@ the other, and both always run.
 **(a) The gather script.** It does `git fetch --all --prune --tags` first, resolves the repo's default branch, then fans out its read-only queries in parallel. The script compacts each section's output to keep model-visible context cost low: `fetch`'s body is suppressed on success. Default-branch CI is deliberately **not** gathered here — see step 4 for why, and for the on-demand alternative.
 
 ```sh
-${CLAUDE_PLUGIN_ROOT:-$HOME/.claude}/bin/start-session-gather-state
+~/.claude/bin/start-session-gather-state
 ```
 
 Output is a sectioned stream. Each section starts with `===<name> (exit=<N>)===`. The sections are:
