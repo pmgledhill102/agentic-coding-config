@@ -88,3 +88,10 @@ HOME=/tmp/chezmoi-test chezmoi init --source <path> --dry-run
 staging multi-line content (issue bodies, PR bodies) before passing it to a
 tool via `--body-file`. Note that macOS resolves `/tmp` to `/private/tmp`,
 which is why permission rules carry both spellings.
+
+**Do NOT use heredocs (`cat <<'EOF'`) or ANSI-C quoting (`$'...\n...'`) in
+shell commands here.** A heredoc is a multi-line command, so it matches no
+prefix-matched `Bash(...)` rule and prompts every time however ordinary it
+is; ANSI-C quoting also gets flagged for hiding characters. Stage the
+content in `/tmp` and pass it with `--body-file`, or use a surgical edit
+tool — `Edit(/tmp/**)` is auto-approved to make that path free.
