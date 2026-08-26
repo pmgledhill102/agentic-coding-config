@@ -87,21 +87,21 @@ plugin manifests simply ride along inert.
 
 [chezmoi-externals]: https://www.chezmoi.io/reference/special-files-and-directories/chezmoiexternal-format/
 [dotfiles]: https://github.com/pmgledhill102/dotfiles
+[dotfiles-external]: https://github.com/pmgledhill102/dotfiles/blob/main/home/.chezmoiexternal.toml.tmpl
+[dotfiles#389]: https://github.com/pmgledhill102/dotfiles/issues/389
 
 ## How this gets onto your machine
 
-This repo's `home/` subdirectory is mounted at `~/.claude/` on every
-machine. The wiring lives in `dotfiles`:
+This repo's `home/` subdirectory is mounted at `~/.claude/`. The wiring
+lives in `dotfiles`, in
+[`home/.chezmoiexternal.toml.tmpl`][dotfiles-external]: an `archive`
+external that deploys this repo's `home/**` to `~/.claude/`, **on
+`personal` machines only** ([dotfiles#389]). Work machines get no
+`~/.claude/` from here.
 
-```toml
-# dotfiles' home/.chezmoiexternal.toml.tmpl
-[".claude"]
-type = "archive"
-url = "https://github.com/pmgledhill102/agentic-coding-config/archive/refs/heads/main.tar.gz"
-stripComponents = 2
-include = ["agentic-coding-config-main/home/**"]
-refreshPeriod = "168h"
-```
+That file is the source of truth and is deliberately not quoted here. A
+copy drifts — this one did, silently, when the personal-only gating was
+added.
 
 `chezmoi apply` (or `dotup`) downloads the archive, strips the
 `agentic-coding-config-main/home/` prefix, and includes only files under
