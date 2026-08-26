@@ -678,18 +678,42 @@ that otherwise discourages the structured-body pattern.
   is handed to Claude as `/private/tmp/claude-<uid>/...`), so the
   `/tmp/**` glob alone can miss. Both spellings are kept: Linux has no
   such symlink and uses the `/tmp/**` form.
-- `Edit(~/dev/paul-context/_incoming/**)` — journal-draft inbox for
-  the cross-repo retrospective skill. Drafts land here and are later
-  promoted into `paul-context/journal/` by `/promote-journal-inbox`
-  (run from `~/dev/paul-context/`). The directory is `.gitignored` in
-  the `paul-context` repo, so anything written here is local-only
-  until promotion — content can't pollute `paul-context`'s git
-  history regardless of what gets written. This single user-level
-  rule replaces what would otherwise be N per-project
-  `Edit(~/dev/paul-context/journal/**)` grants plus git-on-paul-context
-  permissions in every project that runs `/end-session`. See
-  `paul-context/decisions/2026-05-05-journal-inbox-promotion.md` for
-  the full rationale.
+
+**Removed: `Edit(~/dev/paul-context/_incoming/**)`.** This granted the
+journal-draft inbox for the cross-repo retrospective skill, naming one
+machine's layout. #300 taught that skill to discover a `paul-context`
+checkout wherever it sits, which left the rule covering only the
+conventional location — so a retro standing in a checkout anywhere else
+(a cloud session has it at `/home/user/paul-context`) picked the
+filesystem route and only then hit the allow rules. Interactively that
+is a prompt; headless it is a denial with no recovery, because the
+skill's guard is `[ -w "<pc>/_incoming" ]` — a *filesystem* writability
+test, not a permission test — so the Issue fallback had already been
+skipped by the time the write failed, and the retro's whole output was
+lost at the last step (#303).
+
+The fix is in the skill, not in a broader rule. `/retrospective` now
+stages every draft to `/tmp/<filename>` first and copies it into
+`<pc>/_incoming/` from there, so the only write path is one that
+`Edit(/tmp/**)` and `Bash(cp *)` already cover — on any checkout root,
+on any surface — and a failed copy falls through to the Issue route
+with the draft still on disk. That makes this rule dead config, and a
+rule granting nothing is worse than no rule: it reads as coverage.
+
+The alternative was broadening the glob to something like
+`Edit(**/paul-context/_incoming/**)`. Not taken, because whether a
+leading `**/` is honoured by the permission matcher is unverified —
+the three surviving `Edit` rules are all anchored absolute paths, and
+the `/tmp` vs `/private/tmp` pair above is this file's own precedent
+for enumerating spellings rather than trusting the matcher to unify
+them. Staging through `/tmp` sidesteps the question entirely.
+
+Unchanged: `_incoming/` is `.gitignored` in `paul-context`, so drafts
+are local-only until `/promote-journal-inbox` drains them into
+`journal/`; that command runs from a `paul-context` checkout, wherever
+it sits. See
+`paul-context/decisions/2026-05-05-journal-inbox-promotion.md` for the
+full rationale.
 
 ## Never allow
 
