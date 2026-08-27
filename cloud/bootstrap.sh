@@ -5,39 +5,52 @@
 # everything of substance stays here, versioned, instead of being pasted into a
 # vendor configuration field (ADR-0016, principle 5):
 #
-#   curl -sSL https://raw.githubusercontent.com/pmgledhill102/agentic-coding-config/<REF>/cloud/bootstrap.sh | sh -s -- <REF> [--with-gcloud] [--with-precommit] [--with-hooks] [--with-gh] [--profile <name>]
+#   sh bootstrap.sh <REF> [--profile <name>] [--with-X | --no-X ...]
 #
-# --with-gcloud installs the Google Cloud SDK as well. Opt-in, so that the one
-# line an environment carries declares what kind of environment it is.
+# --profile names the composed context profile, defaulting to
+# claude-cloud-sandbox, and is the only argument most environments need. It
+# selects the AGENTS.md/CLAUDE.md to install AND, through the rules below the
+# argument loop, which capabilities come with it. The environment declares
+# which harness it is rather than this script sniffing for one: ADR-0018
+# principle 1 puts surface differences in the delivery, and the caller is the
+# only party that knows the answer without guessing.
+#
+# What each profile resolves to today:
+#
+#                          gcloud  pre-commit  hooks  gh
+#   claude-cloud-sandbox     yes       yes      yes   no
+#   codex-cloud-sandbox      yes       yes      no    no
+#   *-workstation            no        no       no    no
+#
+# Every capability takes --with-X to force it on and --no-X to force it off,
+# and either beats the profile wherever it sits on the line. The capabilities:
+#
+# --with-gcloud installs the Google Cloud SDK, a ~96 MB download. On by default
+# for a sandbox; --no-gcloud for an environment that does no GCP work.
 #
 # --with-precommit installs the pre-commit framework and the binaries this
 # estate's hooks need, and points git at a global hook so every repo in the
-# container is covered. Opt-in for the same reason, and one more: it is the only
-# part of this script that needs the Ubuntu archives, so an environment that
-# cannot reach them keeps working by not asking for it.
+# container is covered. It is the only part of this script that needs the
+# Ubuntu archives, so --no-precommit is the escape for an environment that
+# cannot reach them.
 #
 # --with-hooks wires this estate's PreToolUse guards and PostToolUse terraform
 # hooks into ~/.claude/settings.json. Separate from --with-precommit because
 # they are different mechanisms: a git hook blocks the commit, a harness hook
-# returns the failure into the agent's context where it can act on it.
+# returns the failure into the agent's context where it can act on it. Claude
+# profiles only -- Codex does not read that file.
 #
 # --with-gh installs the GitHub CLI from a pinned release tarball, for the
 # session skills' gather scripts. NOT for Anthropic-hosted web sandboxes:
 # there the egress proxy authenticates gh for identity endpoints only and
 # 403s every repo-scoped API path, so the gather sections come back
 # gh-unauthorized rather than populated — measured 2026-08-19, lane map on
-# #257, cleanup on #273. The flag exists for surfaces whose egress genuinely
-# reaches the GitHub API, e.g. self-hosted environments.
+# #257, cleanup on #273. Off for every profile; the flag exists for surfaces
+# whose egress genuinely reaches the GitHub API, e.g. self-hosted environments.
 #
-# --profile names the composed context profile to install, defaulting to
-# claude-cloud-sandbox. A Codex environment passes --profile codex-cloud-sandbox.
-# The environment declares which harness it is rather than this script sniffing
-# for one: ADR-0018 principle 1 puts surface differences in the delivery, and
-# the caller is the only party that knows the answer without guessing.
-#
-# Pass the same <REF> twice on purpose: the first fetches this script, the
-# second is what it fetches everything else from, so a run cannot straddle two
-# versions. Pin <REF> to a tag or commit in anything durable — a branch means
+# <REF> is what everything else is fetched from, and should match the ref this
+# script was itself fetched from, so a run cannot straddle two versions. Pin it
+# to a tag or commit in anything durable — a branch means
 # any compromise of this repo reaches every sandbox that starts afterwards.
 #
 # This script fails loudly: a half-installed toolkit is worse than none, and the
@@ -60,18 +73,25 @@ die() { echo "[bootstrap] error: $*" >&2; exit 1; }
 
 REF="${1:-main}"
 [ $# -gt 0 ] && shift
-WITH_GCLOUD=0
-WITH_PRECOMMIT=0
-WITH_HOOKS=0
-WITH_GH=0
+# Empty means "the caller did not say", which is distinct from --no-X. The
+# profile fills in only the ones still empty, so a flag wins wherever it
+# appears on the line -- including before the --profile it contradicts.
+WITH_GCLOUD=
+WITH_PRECOMMIT=
+WITH_HOOKS=
+WITH_GH=
 PROFILE=claude-cloud-sandbox
 
 while [ $# -gt 0 ]; do
     case "$1" in
         --with-gcloud) WITH_GCLOUD=1 ;;
+        --no-gcloud) WITH_GCLOUD=0 ;;
         --with-precommit) WITH_PRECOMMIT=1 ;;
+        --no-precommit) WITH_PRECOMMIT=0 ;;
         --with-hooks) WITH_HOOKS=1 ;;
+        --no-hooks) WITH_HOOKS=0 ;;
         --with-gh) WITH_GH=1 ;;
+        --no-gh) WITH_GH=0 ;;
         --profile)
             shift
             [ $# -gt 0 ] || die "--profile needs a value"
@@ -82,6 +102,55 @@ while [ $# -gt 0 ]; do
     esac
     shift
 done
+
+# --- what the profile implies ------------------------------------------------
+#
+# The profile already states two facts, and the defaults are read off them
+# rather than kept in a per-profile table that would need a row adding every
+# time a profile is. A table of two columns and N rows says no more than the
+# name does, and goes stale in a way the name cannot.
+#
+#   claude-*         -> hooks. ~/.claude/settings.json is a Claude mechanism;
+#                      Codex does not read it. Installing the harness hooks
+#                      alongside a Codex profile put four files in the
+#                      container that nothing there consumes -- ADR-0016
+#                      principle 3, provider-specific coupling belongs on
+#                      provider-specific surfaces, applied to the installer.
+#
+#   *-cloud-sandbox  -> pre-commit, and gcloud. A sandbox is disposable and
+#                      rebuilt from a script, so the argument for making a
+#                      developer opt into enforcement does not apply: there is
+#                      no laptop here whose setup someone is protecting. #254
+#                      is what the absence cost.
+#
+# gh is the one capability with no sensible default. It is documented as
+# actively counterproductive on Anthropic-hosted sandboxes, where the egress
+# proxy 403s every repo-scoped path, so it stays off until a caller who knows
+# their egress asks for it.
+#
+# gcloud on by default is a reversal, and worth naming as one. It used to be
+# opt-in so that "the one line an environment carries declares what kind of
+# environment it is" -- but the profile name declares that now, and better,
+# so the flag was only restating what --profile already said. The 96 MB is the
+# price; --no-gcloud is the refund for an environment that does no GCP work.
+resolve() {
+    # resolve <current> <default> -- echo the caller's answer, or the default
+    if [ -n "$1" ]; then echo "$1"; else echo "$2"; fi
+}
+
+case "$PROFILE" in
+    claude-*) def_hooks=1 ;;
+    *) def_hooks=0 ;;
+esac
+case "$PROFILE" in
+    *-cloud-sandbox) def_precommit=1; def_gcloud=1 ;;
+    *) def_precommit=0; def_gcloud=0 ;;
+esac
+
+WITH_GCLOUD=$(resolve "$WITH_GCLOUD" "$def_gcloud")
+WITH_PRECOMMIT=$(resolve "$WITH_PRECOMMIT" "$def_precommit")
+WITH_HOOKS=$(resolve "$WITH_HOOKS" "$def_hooks")
+WITH_GH=$(resolve "$WITH_GH" 0)
 
 RAW="https://raw.githubusercontent.com/pmgledhill102/agentic-coding-config/${REF}"
 
@@ -178,6 +247,13 @@ pip_install() {
 }
 
 log "installing from ${REF}"
+
+# Print the resolved set, not the flags. With defaults in play the command line
+# no longer says what a run will do, and a container is read afterwards far more
+# often than the setup script that built it.
+on_off() { [ "$1" -eq 1 ] && echo "yes" || echo "no"; }
+log "profile -> $PROFILE"
+log "caps    :  gcloud=$(on_off "$WITH_GCLOUD") precommit=$(on_off "$WITH_PRECOMMIT") hooks=$(on_off "$WITH_HOOKS") gh=$(on_off "$WITH_GH")"
 
 # There is deliberately no apt step here.
 #
@@ -793,6 +869,7 @@ fi
     echo "helpers=$BIN_SCRIPTS"
     echo "precommit=$WITH_PRECOMMIT"
     echo "gcloud=$WITH_GCLOUD"
+    echo "hooks=$WITH_HOOKS"
     echo "gh=$WITH_GH"
 } > "$MANIFEST"
 log "manifst -> $MANIFEST ($kind $(echo "$resolved" | cut -c1-12))"

@@ -24,18 +24,31 @@ Set these three things once per environment, at
 ### 1. Setup script
 
 ```sh
+PROFILE=claude-cloud-sandbox
+REF=main
 # Rev: 1
 
 curl -sSL --retry 3 --retry-delay 2 \
-  https://raw.githubusercontent.com/pmgledhill102/agentic-coding-config/main/cloud/bootstrap.sh \
+  "https://raw.githubusercontent.com/pmgledhill102/agentic-coding-config/$REF/cloud/bootstrap.sh" \
   -o /tmp/bootstrap.sh || echo "[setup] could not fetch bootstrap.sh"
 
-{ sh /tmp/bootstrap.sh main --with-gcloud; echo $? > /tmp/bootstrap.rc; } 2>&1 \
+{ sh /tmp/bootstrap.sh "$REF" --profile "$PROFILE"; echo $? > /tmp/bootstrap.rc; } 2>&1 \
   | tee /tmp/bootstrap.log
 
 echo "[setup] bootstrap exit=$(cat /tmp/bootstrap.rc 2>/dev/null) at $(date -u +%FT%TZ)"
 exit 0
 ```
+
+**The first three lines are the whole per-environment configuration.** Below
+them the script is byte-identical on every surface, which is the point: a
+Codex environment differs from a Claude one by one word, and a pinned
+environment from a tracking one by one word, in a place obvious enough that
+nobody has to read the rest to find it.
+
+`REF` is a variable rather than typed twice because it appears in two places —
+the ref this script is fetched from, and the ref it installs everything else
+from. Those straddling different versions is precisely the failure the pin
+exists to prevent, and two literals are two chances to update only one.
 
 **Do not put a shebang in this field.** The harness writes the field's contents
 into a generated `/tmp/init-script-*.sh` beneath a header of its own and runs
@@ -61,8 +74,54 @@ Downloading the bootstrap to a file rather than piping it into `sh` is also
 deliberate: it separates "could not fetch" from "ran and failed", and it keeps
 the run's own exit status reachable.
 
-Drop `--with-gcloud` for an environment that does no Google Cloud work; it
-saves a ~96 MB download and declares what kind of environment this is.
+### What a profile includes
+
+The profile selects the capabilities as well as the context, so most
+environments need no capability flags at all:
+
+| Profile | gcloud | pre-commit | hooks | gh |
+| --- | --- | --- | --- | --- |
+| `claude-cloud-sandbox` | yes | yes | yes | no |
+| `codex-cloud-sandbox` | yes | yes | no | no |
+| `*-workstation` | no | no | no | no |
+
+These are read off the profile name rather than held in a table the script
+would have to grow a row in per profile. A `claude-*` profile gets the harness
+hooks because `~/.claude/settings.json` is a Claude mechanism and Codex does not
+read it — ADR-0016 principle 3, provider-specific coupling on provider-specific
+surfaces, applied to the installer. Anything `*-cloud-sandbox` gets pre-commit
+and gcloud, because a sandbox is disposable and rebuilt from a script: the
+argument for making a developer opt into enforcement is about protecting
+somebody's laptop, and there is no laptop here. #254 is what its absence cost.
+
+`gh` is off everywhere. It is documented below as counterproductive on
+Anthropic-hosted sandboxes, so it waits for a caller who knows their egress.
+
+### Overriding a profile
+
+Every capability takes `--with-X` to force it on and `--no-X` to force it off.
+Either beats the profile wherever it sits on the line, so ordering against
+`--profile` does not matter:
+
+```sh
+sh /tmp/bootstrap.sh "$REF" --profile "$PROFILE" --no-gcloud
+```
+
+`--no-gcloud` is the one worth knowing: it saves a ~96 MB download in an
+environment that does no Google Cloud work. `--no-precommit` is the escape for
+an environment that cannot reach the Ubuntu archives, since that is the only
+part of the script needing them.
+
+The run reports what it resolved, because with defaults in play the command
+line no longer says what happened:
+
+```text
+[bootstrap] profile -> claude-cloud-sandbox
+[bootstrap] caps    :  gcloud=yes precommit=yes hooks=yes gh=no
+```
+
+The same set is written to `~/.agents/.bootstrap-manifest`, which is where to
+look when a container is behaving as though something is missing.
 
 `--with-gh` installs the GitHub CLI from a pinned release — but **do not add
 it to Anthropic-hosted environments**. Measured 2026-08-19: the egress proxy
@@ -84,12 +143,11 @@ snapshot built the first time. Bump the number to force a rebuild.
 Pin a tag instead of `main` for anything beyond development:
 
 ```sh
-  .../v0.1.0/cloud/bootstrap.sh -o /tmp/bootstrap.sh
-sh /tmp/bootstrap.sh v0.1.0 --with-gcloud
+REF=v0.1.0
 ```
 
-Both occurrences change together — the ref that fetches the script and the ref
-it installs everything else from — so that a run cannot straddle two versions.
+One word, one place — which is why `REF` is a variable rather than the two
+literals it replaced.
 
 A mutable ref means any compromise of this repo reaches every sandbox that
 starts afterwards. A tag also names, in the session's own log, which version it
@@ -236,9 +294,7 @@ Sandboxes bypassed the pre-commit framework entirely until `--with-precommit`:
 the binary was absent and no `.git/hooks/pre-commit` existed, so a repo's
 committed `.pre-commit-config.yaml` did nothing here (#254).
 
-```sh
-  | sh -s -- <REF> --with-precommit
-```
+On by default for every `*-cloud-sandbox` profile; `--no-precommit` opts out.
 
 It installs `pre-commit`, plus `shellcheck` and `actionlint`, which this
 estate's config runs as `language: system` hooks — they use the binary on
@@ -247,10 +303,16 @@ if the binaries are present. Installing them is the point; the config's `SKIP=`
 escape is for a laptop missing one, and normalising it would leave enforcement
 that is routinely skipped.
 
-Opt-in for two reasons: it is the only part of this script needing the Ubuntu
-archives, so an environment that cannot reach them keeps working by not asking;
-and the one line an environment carries should declare what kind of environment
-it is.
+It used to be opt-in for two reasons: it is the only part of this script needing
+the Ubuntu archives, so an environment that cannot reach them keeps working by
+not asking; and the one line an environment carries should declare what kind of
+environment it is.
+
+The second reason is now served better by `--profile`, which declares the same
+thing at less cost. The first survives as `--no-precommit`, but it is an escape
+rather than a default: an enforcement mechanism that arrives only when someone
+remembers to ask for it is the state #254 described, and the whole point of a
+sandbox being rebuilt from a script is that nobody has to remember.
 
 **The hook is global, via `core.hooksPath`, not `pre-commit install` per repo.**
 This script runs from an environment setup script whose ordering against the
@@ -280,9 +342,9 @@ returns the failure into its context — so the agent reads the message and fixe
 the cause rather than simply being stopped. Both are worth having; neither
 replaces the other.
 
-```sh
-  | sh -s -- <REF> --with-precommit --with-hooks
-```
+Both are on by default for `claude-*` sandbox profiles. A Codex profile gets
+pre-commit but not the harness hooks, because Codex does not read
+`~/.claude/settings.json`.
 
 Viable because a container-created `~/.claude/settings.json` **is** honoured —
 measured 2026-08-18 by planting one and watching a `PreToolUse` hook fire eight
@@ -342,8 +404,7 @@ hooks in a container-created `~/.claude/settings.json` are honoured at all
 codex-cloud-sandbox`:
 
 ```sh
-curl -sSL https://raw.githubusercontent.com/pmgledhill102/agentic-coding-config/<REF>/cloud/bootstrap.sh \
-  | sh -s -- <REF> --profile codex-cloud-sandbox
+PROFILE=codex-cloud-sandbox
 ```
 
 The environment declares which harness it is rather than the script sniffing
@@ -367,11 +428,13 @@ Re-run the bootstrap directly; no environment edit, no restart:
 
 ```sh
 curl -sSL https://raw.githubusercontent.com/pmgledhill102/agentic-coding-config/main/cloud/bootstrap.sh \
-  | sh -s -- main --with-gcloud
+  -o /tmp/bootstrap.sh
+sh /tmp/bootstrap.sh main --profile claude-cloud-sandbox
 ```
 
-Keep `--with-gcloud` even where gcloud exists: it skips the download but is also
-the branch that installs the gcloud wrapper.
+Do not add `--no-gcloud` here even where gcloud already exists: the install is
+skipped anyway when it is on `PATH`, and that same branch is what installs the
+gcloud wrapper.
 
 Skills are read when the agent starts, so a newly installed skill appears after
 the session restarts or resumes. The helper is usable immediately.

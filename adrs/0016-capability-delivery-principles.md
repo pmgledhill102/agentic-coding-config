@@ -140,6 +140,12 @@ This does not forbid the plugin route. It scopes it: use it for **project
 configuration**, where per-repo declaration is the point, and not for
 **environment capability**, where it is a tax.
 
+The principle applies to installers too, not only to committed config.
+`cloud/bootstrap.sh` derives its capability defaults from the profile name, so
+a `claude-*` profile gets the harness hooks and a `codex-*` one does not —
+`~/.claude/settings.json` is a Claude mechanism, and installing it alongside a
+Codex profile put four files in the container that nothing there reads.
+
 ### 4. Portable content, provider-specific delivery
 
 The portability commitment in ADR-0014 is about *content* — SKILL.md
@@ -170,10 +176,17 @@ the thing being configured is genuinely per-repo.
 Where a provider surface must hold something, it holds **one line** that
 defers to versioned content in this repo:
 
-```bash
-#!/bin/bash
-curl -sSL https://raw.githubusercontent.com/pmgledhill102/agentic-coding-config/v1.3.0/cloud/bootstrap.sh | bash
+```sh
+PROFILE=claude-cloud-sandbox
+REF=v1.3.0
+curl -sSL ".../agentic-coding-config/$REF/cloud/bootstrap.sh" -o /tmp/bootstrap.sh
+sh /tmp/bootstrap.sh "$REF" --profile "$PROFILE"
 ```
+
+(Amended 2026-08-27. As first written this example carried a `#!/bin/bash`
+line; a setup-script field is pasted beneath a header the harness supplies, so
+that line never selects an interpreter, and a live environment lost its `#` in
+transit and exited 127 before `curl` ran. `cloud/README.md` has the detail.)
 
 Two properties make this work:
 
