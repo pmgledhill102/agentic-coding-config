@@ -42,9 +42,7 @@ sh tests/precommit-hook-test.sh          # pre-commit hook matching
 sh tests/retired-paths.sh                # the prune list is safe and sectioned
 sh tests/retired-paths-test.sh           # ...and its validator still catches
 python3 tests/compose-context.py         # composed profiles and skills match their fragments
-python3 tests/skills-match-commands.py   # skills match their source commands
-python3 tests/plugin-manifests.py        # marketplace, plugin and hook manifests
-python3 tests/allowlist-covers-commands.py  # allow rules match documented commands
+python3 tests/allowlist-covers-commands.py  # allow rules match documented invocations
 
 # shell — CI scans home/bin/, cloud/ and tests/. Select by shebang: home/bin/
 # also holds a Python script, and `shellcheck home/bin/*` errors on it.

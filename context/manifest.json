@@ -2,7 +2,7 @@
   "//": "Source of truth for composed agent context. See adrs/0018-composing-agent-context-per-surface.md.",
   "//fragments": "Fragments are authored standalone with their own H1. The generator demotes every heading one level and emits a single H1 per output, so composed files satisfy MD025.",
   "//outputs": "Output paths differ by delivery route, deliberately: the workstation profile writes to home/, which chezmoi deploys unchanged; other profiles write to profiles/, which is repo-meta and is fetched by cloud/bootstrap.sh.",
-  "//skills": "Skill bodies compose the same way, one tier down (#265). A fragment is one section of the skill; a section whose content differs by surface has a -workstation and a -sandbox variant, and every output names exactly one of the pair. The first fragment is the head: head-skill carries frontmatter and the H1, head-command carries the one-line description its home/commands/ twin needs until the #48 cutover. Both cloud profiles take the same sandbox fragments — what varies for these skills is the environment (no usable gh), not the provider.",
+  "//skills": "Skill bodies compose the same way, one tier down (#265). A fragment is one section of the skill; a section whose content differs by surface has a -workstation and a -sandbox variant, and every output names exactly one of the pair. The first fragment is the head: head-skill carries the frontmatter and the H1. There used to be a head-command beside it, carrying the one-line description a home/commands/ twin needs instead of frontmatter; the twins were retired (#313) and it went with them. Both cloud profiles take the same sandbox fragments — what varies for these skills is the environment (no usable gh), not the provider.",
   "fragment_dir": "context/fragments",
   "skill_fragment_dir": "context/skills",
   "environment_fragments": ["env-workstation", "env-cloud-sandbox"],
@@ -42,12 +42,6 @@
   "skills": {
     "start-session": {
       "outputs": {
-        "home/commands/start-session.md": [
-          "00-head-command", "01-intro", "02-action-tiers", "03-surface-workstation", "04-phase-1",
-          "05-gather-workstation", "06-fetch-result", "07-sync-default-branch", "08-ci-on-demand",
-          "09-recent-merges", "10-config-drift-workstation", "11-journal-inbox",
-          "12-session-brief-workstation", "13-guardrails"
-        ],
         "home/skills/start-session/SKILL.md": [
           "00-head-skill", "01-intro", "02-action-tiers", "03-surface-workstation", "04-phase-1",
           "05-gather-workstation", "06-fetch-result", "07-sync-default-branch", "08-ci-on-demand",
@@ -71,15 +65,6 @@
     "retrospective": {
       "//": "Two variant pairs out of 15 sections (#288). Eight sites in the original branched on `command -v chezmoi`; six of them failed ADR-0018 principle 8's questions and were reworded or deleted instead. 07-propose is the lever table, whose cells are genuinely false on the other surface. 08-route is the durable-lesson route, where a memory file persists on a workstation and evaporates in a container. The other six either keyed on whether a paul-context clone is reachable — which is not a surface fact, see #289 — or restated a decision step 6 already makes.",
       "outputs": {
-        "home/commands/retrospective.md": [
-          "00-head-command", "01-shape-of-this-retro", "02-steps", "03-1-close-the-loop",
-          "04-2-read-context", "05-3-name-the-costs-impact-first",
-          "06-4-read-the-subtraction-instruments", "07-propose-workstation",
-          "08-route-workstation", "09-7-propose-to-the-user", "10-8-execute",
-          "11-9-do-not-write-to-retros-md", "12-10-brief-summary",
-          "13-first-run-dispositions-carried-from-263", "14-guidelines",
-          "15-what-changed-from-the-previous-versions"
-        ],
         "home/skills/retrospective/SKILL.md": [
           "00-head-skill", "01-shape-of-this-retro", "02-steps", "03-1-close-the-loop",
           "04-2-read-context", "05-3-name-the-costs-impact-first",
@@ -112,14 +97,6 @@
     "end-session": {
       "//": "Ten variant pairs out of 22 sections — the highest ratio of the three, and the reason is real rather than lazy: this skill acts on local state, and local state is exactly what a disposable container makes meaningless. Steps 6 and 12 do no work on a sandbox (#283), step 11 has no chezmoi to check, and the GitHub steps take a different route entirely (#265). Composed before ADR-0018 principle 8 existed, so its pairs have not been re-examined under the two questions; #283 added one (18-worktrees) that was checked against them.",
       "outputs": {
-        "home/commands/end-session.md": [
-          "00-head-command", "01-intro", "02-action-tiers", "03-pre-flight", "04-surface-workstation",
-          "05-phase-1", "06-gather-workstation", "07-fast-path-workstation", "08-fetch-prune",
-          "09-ci-on-demand", "10-uncommitted-work", "11-return-to-main", "12-prune-branches-workstation",
-          "13-push-main", "14-open-prs-workstation", "15-stashes", "16-assigned-issues-workstation",
-          "17-stale-claude-files-workstation", "18-worktrees-workstation", "19-background-processes",
-          "20-summary-workstation", "21-phase-2", "22-guardrails-workstation"
-        ],
         "home/skills/end-session/SKILL.md": [
           "00-head-skill", "01-intro", "02-action-tiers", "03-pre-flight", "04-surface-workstation",
           "05-phase-1", "06-gather-workstation", "07-fast-path-workstation", "08-fetch-prune",

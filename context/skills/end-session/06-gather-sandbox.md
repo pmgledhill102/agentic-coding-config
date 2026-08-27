@@ -7,7 +7,7 @@ substitutes for the other, and all three always run.
 **(a) The gather script.** It does `git fetch --all --prune --tags` first, then fans out its read-only queries (status/branch/log, stashes, worktrees, merged branches) in parallel. Default-branch CI is deliberately not gathered — see step 3.
 
 ```sh
-${CLAUDE_PLUGIN_ROOT:-$HOME/.claude}/bin/end-session-gather-state
+~/.claude/bin/end-session-gather-state
 ```
 
 Output is a sectioned stream. Each section starts with `===<name> (exit=<N>)===`. The sections are:

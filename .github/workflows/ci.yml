@@ -78,30 +78,6 @@ jobs:
       - name: Composed profiles must match their fragments
         run: python3 tests/compose-context.py
 
-  skills-sync:
-    name: skills ↔ commands sync
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      # Both copies ship until the plugin cutover (#48), so the skill bodies
-      # are copies of the commands and drift silently. Retire this job with
-      # home/commands/ at that cutover.
-      - name: Skill bodies must match their source commands
-        run: python3 tests/skills-match-commands.py
-
-  plugin-manifests:
-    name: plugin manifests
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      # A broken catalog fails at install time, in someone else's session, on a
-      # repo that merely enabled the plugin — a long way from the change that
-      # broke it.
-      - name: Marketplace and plugin manifests must be valid
-        run: python3 tests/plugin-manifests.py
-
   allowlist-coverage:
     name: allowlist covers documented commands
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository

@@ -9,81 +9,62 @@ depends on where the session is running:
 | Channel | Surface | Mechanism |
 | --- | --- | --- |
 | [chezmoi external][chezmoi-externals] | local machines | `home/` mounts at `~/.claude/`, via [dotfiles][dotfiles] |
-| **plugin** | cloud sessions | this repo is a plugin marketplace; project repos enable it in `.claude/settings.json` |
-| network fetch | cloud sandboxes (credentials) | `cloud/bootstrap.sh`, run by the environment's setup script |
+| network fetch | cloud sandboxes | `cloud/bootstrap.sh`, run by the environment's setup script |
 
-The second and third exist because a cloud session starts empty and reads
-**only the project repo's `.claude/`** — nothing from `~/.claude/` is
-transferred. See [`cloud/README.md`](cloud/README.md) for the per-environment
-setup and [ADR-0016](adrs/0016-capability-delivery-principles.md) for why the
-credential substance lives in a fetched script rather than in the setup script.
+The second exists because a cloud session starts empty and reads **only the
+project repo's `.claude/`** — nothing from `~/.claude/` is transferred, and
+there is no machine to run chezmoi on. See
+[`cloud/README.md`](cloud/README.md) for the per-environment setup and
+[ADR-0016](adrs/0016-capability-delivery-principles.md) for why the substance
+lives in a fetched script rather than in the environment's setup field.
 
-## The plugin channel
+## The cloud channel
 
-`home/` doubles as the plugin root: it already had `commands/`, `skills/` and
-`bin/` in exactly the layout a plugin expects, so no tree is duplicated or
-generated. Two manifests make it a marketplace:
-
-| File | Role |
-| --- | --- |
-| `.claude-plugin/marketplace.json` (repo root) | the catalog; repo-meta, never deploys |
-| `home/.claude-plugin/plugin.json` | the plugin manifest, at the plugin root |
-
-A project repo opts in by committing to its own `.claude/settings.json` —
-`/setup-common` stamps this:
-
-```json
-{
-  "extraKnownMarketplaces": {
-    "agentic-config": {
-      "source": { "source": "github", "repo": "pmgledhill102/agentic-coding-config" }
-    }
-  },
-  "enabledPlugins": { "agentic-config@agentic-config": true }
-}
-```
-
-Note `enabledPlugins` is an **object** keyed `<plugin>@<marketplace>`, not an
-array.
+An environment's setup script carries one line — a `curl … | sh` naming a ref
+and a profile — and everything of substance stays in `cloud/bootstrap.sh`,
+versioned here. What it installs is a **composed profile**, not this repo's
+`home/`: `profiles/claude-cloud-sandbox/` and `profiles/codex-cloud-sandbox/`
+are built from the same fragments as the workstation's `home/`, with the
+sections that differ by surface swapped out. That is the point of the split —
+a sandbox is told about the machine it is actually on.
 
 ### What each channel can and cannot carry
 
-| Content | chezmoi | plugin |
+| Content | chezmoi | `bootstrap.sh` |
 | --- | :-: | :-: |
-| `commands/`, `skills/` | yes | yes |
-| `bin/` helpers | yes, at `~/.claude/bin/` | yes, added to the Bash tool's `PATH` |
-| Policy prose (`AGENTS.md`, `CLAUDE.md`) | yes | **no** |
+| `skills/` | yes | yes, a named whitelist per profile |
+| `commands/` | `gcp-credentials` only (#313) | no — a skill registers the same `/name` |
+| `bin/` helpers | yes, at `~/.claude/bin/` | yes, same path |
+| Policy prose (`AGENTS.md`, `CLAUDE.md`) | yes | yes, the profile's composition |
+| Hooks | yes, via `settings.json` | yes — `--with-hooks` merges the same block |
 | Permission allowlist (`settings.json`) | yes | **no** |
-| Hooks | yes, via `settings.json` | yes, via `hooks/hooks.json` |
 
-Two limits are structural rather than temporary:
+The last row is structural: **permissions travel only in a repo's own
+`.claude/settings.json`**, which is the one place a cloud session reads them
+from. No delivery channel can carry them, which is why `/setup-common` raises
+the allowlist as a per-repo decision rather than stamping one.
 
-- **Policy prose can't ride a plugin.** A plugin's own `settings.json` supports
-  only a couple of keys. Process rules reach a cloud session through the
-  project repo's own `CLAUDE.md`/`AGENTS.md`, not through this.
-- **Permissions travel only in repo `.claude/settings.json`**, which is the one
-  place a cloud session reads them from.
+### There was a third channel, and it was withdrawn
 
-### Hooks, declared twice, run once
+For a while this repo was also a Claude Code plugin marketplace: `home/`
+doubled as the plugin root, and a project repo opted in with
+`extraKnownMarketplaces` + `enabledPlugins` in its own `.claude/settings.json`.
+It was withdrawn in [#312][issue-312] after `dotfiles` declined to adopt it
+([dotfiles#392][dotfiles-392], and the consequences here in [#311][issue-311]).
 
-The surface audit the hooks port was waiting on found nothing workstation-only:
-all five fail open without `gh`, `jq`, a git repo or terraform, so all five are
-in `hooks/hooks.json`. Two details make the double declaration safe:
+The deciding reason is worth keeping, because it is a property of this repo
+rather than a preference: the marketplace declared `"source": "./home"`, and
+`home/` is the `claude-workstation` composition. A plugin could therefore only
+ever ship workstation-composed context — so using it for cloud sessions meant
+either telling a sandbox it was a laptop, or publishing one plugin per profile,
+which is more machinery than the `bootstrap.sh --profile` line it replaced.
 
-- Claude Code runs every matching hook from **every** source, so a local
-  machine in a plugin-enabled repo has both copies live. The plugin's three
-  script hooks go through `bin/plugin-hook-dispatch`, which stands down when
-  `~/.claude/bin/<hook>` exists — the chezmoi copy wins wherever it is
-  deployed, and neither channel is ever skipped entirely.
-- `prchecks-wait-claude-hook` finds its wrapper beside itself
-  (`$(dirname "$0")/gh-pr-checks-wait`) instead of at a fixed `~/.claude/bin`
-  path, so one file serves both channels.
-
-`home/settings.json.md` carries the per-hook detail, including which parts do
-still run twice and why that is fine.
-
-Locally, nothing changes: chezmoi delivers the same content directly, and the
-plugin manifests simply ride along inert.
+What went with it: the two manifests, `home/hooks/hooks.json`, and
+`home/bin/plugin-hook-dispatch`. The hooks themselves were never plugin-only —
+`home/settings.json` declares them for a workstation and `bootstrap.sh
+--with-hooks` merges that same block into a sandbox, so the dispatcher that
+kept a plugin-enabled machine from running each hook twice had nothing left to
+stand down from. `home/settings.json.md` carries the per-hook detail.
 
 [chezmoi-externals]: https://www.chezmoi.io/reference/special-files-and-directories/chezmoiexternal-format/
 [dotfiles]: https://github.com/pmgledhill102/dotfiles
@@ -117,8 +98,8 @@ re-downloads on each refresh (vs `git-repo`'s incremental fetch); for a
 repo this small that's fine.
 
 **One-line mental model:** files under **`home/`** in this repo map
-directly to `~/.claude/`. So `home/commands/foo.md` →
-`~/.claude/commands/foo.md`, `home/settings.json` → `~/.claude/settings.json`.
+directly to `~/.claude/`. So `home/skills/foo/SKILL.md` →
+`~/.claude/skills/foo/SKILL.md`, `home/settings.json` → `~/.claude/settings.json`.
 Files at the repo root (`README.md`, `adrs/`, etc.) are repo-meta and
 don't deploy.
 
@@ -136,7 +117,6 @@ restructure that introduced `home/` is on top of that history.
 ├── adrs/                      # repo-meta: architecture decisions
 ├── docs/                      # repo-meta: workflow docs and runbooks
 ├── .github/, .pre-commit-config.yaml, .markdownlint.yaml, .gitignore
-├── .claude-plugin/            # repo-meta: marketplace.json (the plugin catalog)
 ├── tests/                     # repo-meta: behavioural tests for home/bin/
 ├── context/                   # repo-meta: the SOURCE for everything marked GENERATED below
 │   ├── manifest.json          #   which fragments compose into which output
@@ -147,14 +127,13 @@ restructure that introduced `home/` is on top of that history.
 ├── cloud/                     # ← fetched over the network into cloud sandboxes
 │   ├── bootstrap.sh           #   installs the helper + skill into a container
 │   └── README.md              #   per-environment setup (script, domains, vars)
-└── home/                      # ← mounts at ~/.claude/ AND is the plugin root
-    ├── .claude-plugin/        #   plugin.json — the plugin manifest
+└── home/                      # ← mounts at ~/.claude/
     ├── AGENTS.md              → ~/.claude/AGENTS.md  (GENERATED — composed from context/fragments/)
     ├── CLAUDE.md              → ~/.claude/CLAUDE.md  (GENERATED — composed from context/fragments/)
     ├── settings.json          → ~/.claude/settings.json
     ├── settings.json.md       → ~/.claude/settings.json.md  (annotated companion, kept alongside)
-    ├── commands/              → ~/.claude/commands/  (Claude slash commands)
-    ├── skills/                → ~/.claude/skills/    (Agent Skills — provider-neutral)
+    ├── commands/              → ~/.claude/commands/  (gcp-credentials only; the twins retired in #313)
+    ├── skills/                → ~/.claude/skills/    (Agent Skills — provider-neutral, the surviving form)
     └── bin/                   → ~/.claude/bin/  (helper executables)
 ```
 
@@ -275,10 +254,11 @@ every sandbox is the code most in need of linting, not the least.
 ### Deleting a file here does not delete it on machines
 
 chezmoi only **adds and updates** target files. Delete
-`home/commands/foo.md` and `~/.claude/commands/foo.md` survives on every
-machine that ever applied a version containing it — and Claude Code goes
-on listing `/foo` as an available slash command. This bit us with the
-retired `bd-*` commands ([#125][issue-125]).
+`home/skills/foo/SKILL.md` and `~/.claude/skills/foo/SKILL.md` survives on
+every machine that ever applied a version containing it — and Claude Code goes
+on listing `/foo` as available. This bit us with the retired `bd-*` commands
+([#125][issue-125]), and it is why retiring the `home/commands/` twins
+([#313][issue-313]) meant 20 list entries rather than 20 deletions.
 
 Two things follow, both non-obvious:
 
@@ -319,10 +299,11 @@ still needs them.
 
 ### Undeploying a file, which is not the same as retiring it
 
-Since `home/` doubles as the plugin root, the paths that move to the plugin
-channel **cannot be deleted from `home/`** — that would remove them from the
-plugin too. But they still have to leave `~/.claude/`, because chezmoi never
-deletes a target it has stopped managing. Same pruner, opposite precondition.
+A path can need to stay in `home/` for some reason other than being deployed,
+while still having to leave `~/.claude/` on machines that already have it —
+because chezmoi never deletes a target it has stopped managing. Such a path
+cannot be deleted from `home/` the way a retired file is. Same pruner, opposite
+precondition.
 
 `home/retired-paths` therefore has two sections, split by an `UNDEPLOYED`
 marker line:
@@ -330,7 +311,7 @@ marker line:
 | Section | Meaning | CI asserts |
 | --- | --- | --- |
 | Above the marker | Retired — gone from `home/`, gone from machines | the path is **absent** from `home/` |
-| Below the marker | Undeployed — the plugin still ships it, chezmoi no longer delivers it | the path is **present** in `home/` |
+| Below the marker | Undeployed — still needed in `home/`, chezmoi no longer delivers it | the path is **present** in `home/` |
 
 The inversion is the guard: an entry on the wrong side fails the build, so
 neither section can quietly absorb the other's mistakes. `tests/retired-paths.sh`
@@ -338,31 +319,38 @@ is the validator and runs in CI; `tests/retired-paths-test.sh` checks the
 validator against both mirror-image mistakes, because the real list is empty
 below the marker and so exercises neither branch on its own.
 
-**The undeployed section is empty on purpose.** An entry is only correct once
-the chezmoi external has stopped deploying that path — a change to the
-`include` filter in `dotfiles`, which this repo cannot make. List a path while
+**The undeployed section is empty.** The case that created it was `home/`
+doubling as the plugin root: a path moving to the plugin channel could not be
+deleted from `home/` without removing it from the plugin too. That channel was
+withdrawn ([#312][issue-312] — see "There was a third channel" above), so the
+case is gone and no other has appeared. The mechanism is kept because the
+distinction is real and the inverted assertion is what makes it safe.
+
+There is a second reason nothing is queued for it. An entry is only correct
+once the chezmoi external has stopped deploying that path — a change to the
+`include` filter in `dotfiles`, which this repo cannot make and which
+`dotfiles` has decided not to make ([dotfiles#392][dotfiles-392], closed as not
+planned; the consequences here are [#311][issue-311]). List a path while
 chezmoi still deploys it and every `chezmoi apply` writes the file, then the
 post-apply pruner deletes it again: convergent, but churn masquerading as
-working. The order is dotfiles first, entries second. See [#142][issue-142].
+working.
 
-### The residue this is heading for
+### What chezmoi deploys, and what it isn't shrinking to
 
-Once the plugin channel is verified end to end ([#48][issue-48]), what chezmoi
-deploys shrinks to the part a plugin structurally cannot carry:
+`home/` was on its way to a residue — the part a plugin structurally could not
+carry — once the plugin channel was verified end to end ([#48][issue-48]):
 
-| Stays deployed | Why |
+| Would have stayed deployed | Why |
 | --- | --- |
 | `CLAUDE.md`, `AGENTS.md` | Policy prose can't ride a plugin. Both are generated from `context/fragments/` — edit the fragment, run `python3 tests/compose-context.py --write` |
 | `settings.json`, `settings.json.md` | Permission allowlists can't ride a plugin |
 | `retired-paths` | Read by the pruner at `~/.claude/retired-paths` |
 | `bin/claude-prune-retired` | Invoked by dotfiles after each apply |
 
-Everything else — `commands/`, `skills/`, `hooks/`, the rest of `bin/` — is
-delivered by the plugin and belongs below the `UNDEPLOYED` marker when that
-step is taken. Note this is a longer list than [#142][issue-142] originally
-assumed: it was written before `home/` became the plugin root, and named only
-the machine-local fragment as residue, when in fact all four policy files are
-structurally stuck on the chezmoi channel.
+That is not happening: #48 was closed and the channel withdrawn, so the whole
+of `home/` stays on the chezmoi route and the deployed surface is not
+shrinking. The table survives as a statement of what a plugin structurally
+cannot carry, which is most of why it was never the right primary channel.
 
 `/end-session` step 11 remains the backstop. It compares `chezmoi
 managed` against the real contents of `~/.claude/commands/` and
@@ -370,14 +358,27 @@ managed` against the real contents of `~/.claude/commands/` and
 file retired without a list entry, or one left by another tool.
 
 [dotfiles-371]: https://github.com/pmgledhill102/dotfiles/issues/371
+[dotfiles-392]: https://github.com/pmgledhill102/dotfiles/issues/392
+[issue-311]: https://github.com/pmgledhill102/agentic-coding-config/issues/311
+[issue-312]: https://github.com/pmgledhill102/agentic-coding-config/issues/312
 
 [issue-125]: https://github.com/pmgledhill102/agentic-coding-config/issues/125
 
-[issue-142]: https://github.com/pmgledhill102/agentic-coding-config/issues/142
+## Skills, and the one surviving command
 
-## Slash commands
+Everything here ships as an [Agent Skill](https://agentskills.io) under
+`home/skills/`, one `<name>/SKILL.md` each with `name` + `description`
+frontmatter. Claude Code registers a skill as the same `/name` a slash command
+would give, so `/setup-python` works exactly as before. Skills are the portable
+unit: native in Claude Code, the primary customisation unit in Codex, and read
+by OpenCode, Gemini CLI, Cursor and Copilot too (ADR-0014).
 
-Each `/setup-*` command contains:
+`home/commands/gcp-credentials.md` is the one command left. It has no skill
+counterpart on a workstation, and it carries Claude-specific tool references —
+it reaches a sandbox by another route anyway, `cloud/bootstrap.sh` writing it
+to `~/.agents/skills/`.
+
+Each `/setup-*` skill contains:
 
 1. Tool installation commands
 2. Configuration file contents
@@ -393,31 +394,32 @@ Each `/setup-*` command contains:
 /setup-python     # Language-specific tooling
 ```
 
-### Skills (provider-neutral)
+### There used to be twins
 
-The 16 provider-neutral commands — every `/setup-*` plus `/repo-review` — also
-exist as [Agent Skills](https://agentskills.io) under `home/skills/`, one
-`<name>/SKILL.md` each with `name` + `description` frontmatter. Skills are the
-portable unit: native in Claude Code, and the primary customisation unit in
-Codex, with OpenCode, Gemini CLI, Cursor and Copilot also reading the format
-(ADR-0014).
+Until [#313][issue-313] each of these shipped **twice** on a workstation: as
+`home/commands/<name>.md` and as `home/skills/<name>/SKILL.md`, from the same
+source, registering the same `/name`. Two identical bodies that could drift
+apart, and a CI job whose whole purpose was to notice when they did.
+
+They were to be retired at the plugin cutover ([#48][issue-48]); that cutover
+was declined and the issue closed, so the duplication was judged on its own
+merits instead. Both cloud profiles had already shipped `skills/` and no
+`commands/` since ADR-0018, with `/start-session` resolving to the skill and
+behaving identically — the precedent this followed.
+
+Because chezmoi never deletes a target it has stopped managing, retiring them
+meant 20 entries in `home/retired-paths`, not 20 deletions. See
+["Deleting a file here does not delete it on machines"](#deleting-a-file-here-does-not-delete-it-on-machines).
 
 Skill bodies carry no `$ARGUMENTS` / `$1` / `` !`cmd` `` / `@file` templating —
 Codex's parser rejects those — so arguments arrive as free text ("the user names
-the target language in their request").
-
-**Both forms ship for now.** The commands stay until the plugin cutover
-([#48][issue-48]); retirement is tracked separately. Until then the skill body
-is a copy, so **a change to one needs the same change to the other** — the
-duplication is deliberate and temporary, but it can drift.
-
-The session-lifecycle commands (`/start-session`, `/end-session`,
-`/retrospective`, `/promote-journal-inbox`) and `/gcp-credentials` are **not**
-converted: they carry Claude-specific tool references or are local-only.
-`/gcp-credentials` already ships as a skill to sandboxes by another route —
-`cloud/bootstrap.sh` writes it to `~/.agents/skills/`.
+the target language in their request"). `/start-session`, `/end-session` and
+`/retrospective` are *composed* from `context/skills/` ([#265][issue-265]);
+the rest are written directly.
 
 [issue-48]: https://github.com/pmgledhill102/agentic-coding-config/issues/48
+[issue-313]: https://github.com/pmgledhill102/agentic-coding-config/issues/313
+[issue-265]: https://github.com/pmgledhill102/agentic-coding-config/issues/265
 
 **Maintenance and review:**
 

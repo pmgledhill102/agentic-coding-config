@@ -7,7 +7,7 @@ the other, and both always run.
 **(a) The gather script.** It does `git fetch --all --prune --tags` first, resolves the repo's default branch, then fans out its read-only queries in parallel. The script compacts each section's output to keep model-visible context cost low: `fetch`'s body is suppressed on success. Default-branch CI is deliberately **not** gathered here — see step 4 for why, and for the on-demand alternative.
 
 ```sh
-${CLAUDE_PLUGIN_ROOT:-$HOME/.claude}/bin/start-session-gather-state
+~/.claude/bin/start-session-gather-state
 ```
 
 Output is a sectioned stream. Each section starts with `===<name> (exit=<N>)===`. The sections are:

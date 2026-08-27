@@ -531,11 +531,11 @@ COMPOSED_SKILLS="retrospective start-session end-session"
 # nothing in the skill text mentions, so it would be easy to omit and hard to
 # diagnose.
 #
-# They land in ~/.claude/bin because the skills spell their invocation
-# "${CLAUDE_PLUGIN_ROOT:-$HOME/.claude}/bin/<script>". Under a plugin install
-# that variable is set; delivered this way it is not, and the fallback resolves
-# here. That dual spelling is why these skills need no edit to work on this
-# surface.
+# They land in ~/.claude/bin because that is where the skills spell their
+# invocation: "~/.claude/bin/<script>", on every surface. The skills used to say
+# "${CLAUDE_PLUGIN_ROOT:-$HOME/.claude}/bin/<script>" so one line could serve a
+# plugin install too; that channel was withdrawn (#312) and the fallback was the
+# only branch this surface ever took, so the spelling is now plain.
 BIN_SCRIPTS="start-session-gather-state start-session-claude-drift end-session-gather-state end-session-squash-merged"
 
 # Defensive: the credential-helper section above already creates this, but the
@@ -603,10 +603,11 @@ done
 # directly -- the same paths this script installs to -- so the two surfaces run
 # identical hooks from one source instead of a copy that drifts.
 #
-# NOT via plugin-hook-dispatch. That dispatcher exists to stand down when a
-# ~/.claude/bin copy is present, because a plugin-enabled workstation would
-# otherwise run every hook twice. Here the bootstrap-written copy is the only
-# copy, so the settings file names it directly, exactly as chezmoi's does.
+# There is one copy of each hook and one declaration of it. A dispatcher used to
+# sit in front of the three script hooks so a plugin-enabled workstation would
+# not run every hook twice; the plugin channel was withdrawn (#312) and the
+# dispatcher went with it. The settings file names each script directly, exactly
+# as chezmoi's does.
 
 if [ "$WITH_HOOKS" -eq 1 ]; then
     command -v jq > /dev/null 2>&1 || die "--with-hooks needs jq to merge settings.json"

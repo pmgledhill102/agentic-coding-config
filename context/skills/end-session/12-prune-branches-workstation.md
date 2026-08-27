@@ -9,7 +9,7 @@ Take the list from gather section `merged_brs`.
 **Batch B — Squash-merged branches** — branches whose upstream was deleted (`[upstream: gone]`, typical after GitHub squash-merge + branch delete) AND whose work is provably on `main`. These won't show up in Batch A because squash-merging rewrites history; `-d` would refuse them. The script accepts either of two "work is delivered" signals as the safety net — empty diff vs `main`, or GitHub records a merged PR with the branch as `headRefName` (fallback for cases where main has subtle post-squash drift that fails the diff but the PR clearly merged):
 
 ```sh
-${CLAUDE_PLUGIN_ROOT:-$HOME/.claude}/bin/end-session-squash-merged
+~/.claude/bin/end-session-squash-merged
 ```
 
 For each batch:

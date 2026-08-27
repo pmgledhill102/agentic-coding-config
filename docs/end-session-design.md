@@ -3,7 +3,7 @@
 This document captures the reasoning behind the `/end-session` slash command's shape — in particular why its Phase 1 gather runs inside a shell script rather than inline.
 
 - Source of the skill body: [`context/skills/end-session/`](../context/skills/end-session/) — the fragments it is composed from
-- Composed artefacts (**generated, do not edit**): [`home/skills/end-session/SKILL.md`](../home/skills/end-session/SKILL.md), [`home/commands/end-session.md`](../home/commands/end-session.md), and one per cloud profile under [`profiles/`](../profiles/)
+- Composed artefacts (**generated, do not edit**): [`home/skills/end-session/SKILL.md`](../home/skills/end-session/SKILL.md) and one per cloud profile under [`profiles/`](../profiles/)
 - Scripts: [`home/bin/`](../home/bin/)
 
 ## What `/end-session` does
@@ -159,10 +159,10 @@ Keep it inline in the command spec when:
 
 ## The skill body is composed, not written
 
-**`home/skills/end-session/SKILL.md` and `home/commands/end-session.md` are
-generated.** Editing either loses the change: CI rejects an artefact that does
-not match its fragments, and the next `--write` overwrites it. Both carry a
-`GENERATED` banner naming the fragments they came from.
+**`home/skills/end-session/SKILL.md` and the two cloud-profile copies are
+generated.** Editing one loses the change: CI rejects an artefact that does not
+match its fragments, and the next `--write` overwrites it. Each carries a
+`GENERATED` banner naming the fragments it came from.
 
 The source is `context/skills/end-session/`, one fragment per section, composed
 by `tests/compose-context.py` per [ADR-0018](../adrs/0018-composing-agent-context-per-surface.md).
@@ -209,7 +209,7 @@ of the same output rather than running a different script.
 
 - **ShellCheck**: CI's `home/bin/` scan covers the scripts. Run locally with `shellcheck home/bin/end-session-*` before pushing — noting that it cannot be installed in a cloud sandbox (no package route, and the egress proxy blocks both the npx download and the GitHub release), so a shell change authored there reaches CI unverified.
 - **Paired files**: `settings.json` and `settings.json.md` are paired — any change to the allow rule must update both.
-- **Adding a section to the gather**: add a `run_section` or `run_sh` call in the script, extend the section table in the gather fragment — `context/skills/end-session/06-gather-{workstation,sandbox}.md`, both of them — then add or extend a step that reads it, and regenerate. Never edit `home/commands/end-session.md` or the SKILL.md directly; they are composed.
+- **Adding a section to the gather**: add a `run_section` or `run_sh` call in the script, extend the section table in the gather fragment — `context/skills/end-session/06-gather-{workstation,sandbox}.md`, both of them — then add or extend a step that reads it, and regenerate. Never edit a `SKILL.md` directly; they are composed.
 - **New sibling script**: name it `end-session-<purpose>` and commit it `100755`; the existing permission rule covers it.
 
 ## Non-goals

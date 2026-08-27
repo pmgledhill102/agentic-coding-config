@@ -257,9 +257,10 @@ The wiring is taken from `home/settings.json` rather than restated in the
 script. That file is the workstation's, and it already invokes
 `~/.claude/bin/<hook>` directly — the same paths the bootstrap installs to — so
 both surfaces run identical hooks from one source instead of a copy that drifts.
-It is deliberately **not** routed through `plugin-hook-dispatch`: that dispatcher
-exists to stand down when a `~/.claude/bin` copy is present, and here that copy
-is the only one.
+A dispatcher used to sit in front of the three script hooks, standing down when
+a `~/.claude/bin` copy was present so a plugin-enabled workstation would not run
+each hook twice; it was withdrawn with the plugin channel (#312), and each
+script is now named directly.
 
 **Merged, not overwritten.** A container may already have a `settings.json`, and
 replacing it wholesale would silently drop whatever else it holds. Note

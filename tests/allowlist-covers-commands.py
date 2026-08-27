@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Assert every helper invocation in home/commands/ is covered by an allow rule.
+"""Assert every helper invocation this repo documents is covered by an allow rule.
 
 WHY: a permission rule that doesn't match fails invisibly. Nothing errors --
 the user just gets a prompt, and a prompt looks like normal life. #237 found
@@ -39,6 +39,17 @@ import sys
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 SETTINGS = ROOT / "home" / "settings.json"
 COMMANDS = ROOT / "home" / "commands"
+SKILLS = ROOT / "home" / "skills"
+
+
+def sources():
+    """Every file that tells an agent to run one of our helpers.
+
+    Skills are the documented form since #313 retired the home/commands/ twins;
+    gcp-credentials.md is the one command left, and it invokes the credential
+    client, so both trees have to be read.
+    """
+    return sorted(COMMANDS.glob("*.md")) + sorted(SKILLS.glob("*/SKILL.md"))
 BIN = ROOT / "home" / "bin"
 
 # Invocations that are MEANT to prompt. Each one is a deliberate omission from
@@ -90,7 +101,8 @@ def invocations():
     starters = [re.compile(r"^(\S*/)?" + re.escape(s) + r"(?=\s|$)") for s in scripts]
 
     found = []
-    for path in sorted(COMMANDS.glob("*.md")):
+    for path in sources():
+        rel = path.relative_to(ROOT)
         inside = False
         for n, raw in enumerate(path.read_text().splitlines(), 1):
             if FENCE.match(raw):
@@ -100,7 +112,7 @@ def invocations():
                 continue
             line = TRAILING_COMMENT.sub("", raw.strip())
             if any(p.match(line) for p in starters):
-                found.append((path.name, n, line))
+                found.append((str(rel), n, line))
     return found
 
 
@@ -112,7 +124,8 @@ def main():
 
     calls = invocations()
     if not calls:
-        print("no home/bin/ invocations found in home/commands/ -- check the parser",
+        print("no home/bin/ invocations found in home/commands/ or home/skills/ "
+              "-- check the parser",
               file=sys.stderr)
         return 1
 
@@ -127,7 +140,7 @@ def main():
     if uncovered:
         print("allowlist coverage FAILED -- these would prompt:\n")
         for name, line, command in uncovered:
-            print(f"  home/commands/{name}:{line}")
+            print(f"  {name}:{line}")
             print(f"    {command}")
         print("\nBash rules are literal text with `*` as the only wildcard, matched")
         print("before shell expansion. A rule covering a command that contains")
