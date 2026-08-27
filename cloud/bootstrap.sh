@@ -42,7 +42,13 @@
 #
 # This script fails loudly: a half-installed toolkit is worse than none, and the
 # caller is better placed to decide tolerance. A cloud setup script, which fails
-# the whole session on a non-zero exit, should append `|| true`.
+# the whole session on a non-zero exit, should end with `exit 0`.
+#
+# What it should NOT carry is a shebang. A vendor setup-script field is pasted
+# into a generated script beneath a header of the harness's own, so the line is
+# never line 1 and never selects an interpreter -- and a `#!` that loses its `#`
+# somewhere in that journey becomes a command, exiting 127 before this script is
+# even fetched. cloud/README.md carries the working snippet.
 #
 # It installs no credentials and reads none. What it places is public content
 # from a public repo.
@@ -84,6 +90,93 @@ command -v curl > /dev/null 2>&1 || die "curl is required"
 TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT INT TERM
 
+# --- fetch: every download in this script goes through here ---------------
+#
+# A bare `curl -sSfL` is a single attempt. This script makes roughly a dozen
+# of them across three hosts, so a run's success is the product of a dozen
+# independent chances of a transient blip -- and a blip here fails the whole
+# session, not just the fetch. Retries turn a class of failures that used to
+# need a human back into a two-second pause.
+#
+# --retry-connrefused and --retry-all-errors are what make it cover the cases
+# that actually happen: without them curl retries transient *transport*
+# errors only, and a proxy answering 502 while it warms up is not one.
+# --connect-timeout bounds a black-holed connection (no RST, no response),
+# which otherwise hangs until the harness's own setup timeout kills the run
+# with far less to go on than a curl error. --speed-limit/--speed-time bound
+# the other stall -- a connection that opens, dribbles, and never finishes --
+# without the collateral damage a tight --max-time would do to the gcloud
+# tarball, which is 96 MB and legitimately slow on a bad link.
+#
+# --retry-all-errors landed in curl 7.71 (--retry-connrefused in 7.52); the
+# sandbox image ships 8.5.0. An older curl rejects an unknown option rather
+# than ignoring it, which would fail every fetch, so probe for the newer of
+# the two and drop both if it is absent. `--help all` is itself 7.73+, so an
+# older curl fails the probe and takes the fallback -- which is the answer
+# wanted in that case anyway.
+CURL_RETRY_OPTS='--retry 3 --retry-delay 2 --retry-connrefused --retry-all-errors'
+if ! curl --help all 2>/dev/null | grep -q -- --retry-all-errors; then
+    CURL_RETRY_OPTS='--retry 3 --retry-delay 2'
+fi
+
+fetch() {
+    # fetch <url> <dest>
+    # shellcheck disable=SC2086  # CURL_RETRY_OPTS is a deliberate word list
+    curl -sSfL $CURL_RETRY_OPTS \
+        --connect-timeout 15 --speed-limit 1024 --speed-time 30 --max-time 600 \
+        "$1" -o "$2"
+}
+
+# --- apt_update: refresh Ubuntu's own sources, and only those --------------
+#
+# `apt-get update` returns non-zero if ANY configured source fails, and a
+# sandbox image carries sources this script has no interest in: deadsnakes,
+# ondrej/php and docker.list all ship in /etc/apt/sources.list.d/. Where
+# egress policy blocks a PPA -- which it does in some environments and not
+# others -- a bare update fails on a repository nothing here needs, and the
+# only package actually wanted (shellcheck) is in the Ubuntu archive.
+#
+# So point apt at Ubuntu's list alone and blank SourceParts, which is the
+# directory the third-party entries live in. noble and later put the archive
+# entries in deb822 /etc/apt/sources.list.d/ubuntu.sources; jammy and earlier
+# in /etc/apt/sources.list. Try whichever exists, then an unrestricted update
+# as a last resort for an image laid out like neither.
+#
+# The return value is advisory. Callers should attempt the install regardless:
+# a refresh that could not reach the archive still leaves whatever package
+# lists the image was built with, and those are frequently enough.
+apt_update() {
+    for _src in /etc/apt/sources.list.d/ubuntu.sources /etc/apt/sources.list; do
+        [ -s "$_src" ] || continue
+        if apt-get update -qq \
+            -o Dir::Etc::SourceList="$_src" \
+            -o Dir::Etc::SourceParts=/dev/null > /dev/null 2>&1; then
+            return 0
+        fi
+    done
+    apt-get update -qq > /dev/null 2>&1
+}
+
+# --- pip_install: PyPI, whatever this image calls pip ----------------------
+#
+# `pip` is not always on PATH where `pip3` is, and Ubuntu 24.04 ships a PEP 668
+# EXTERNALLY-MANAGED marker that makes a system-wide install refuse outright.
+# Refusing is right on a workstation and pointless in a container that exists
+# for one session and is thrown away, so retry with --break-system-packages --
+# a flag pip only grew in 23.0, hence the retry rather than passing it first.
+pip_install() {
+    _pkg="$1"
+    for _pip in "pip" "pip3" "python3 -m pip"; do
+        command -v "${_pip%% *}" > /dev/null 2>&1 || continue
+        # shellcheck disable=SC2086  # deliberate word split: "python3 -m pip"
+        $_pip install --quiet --no-input "$_pkg" > /dev/null 2>&1 && return 0
+        # shellcheck disable=SC2086
+        $_pip install --quiet --no-input --break-system-packages "$_pkg" \
+            > /dev/null 2>&1 && return 0
+    done
+    return 1
+}
+
 log "installing from ${REF}"
 
 # There is deliberately no apt step here.
@@ -120,8 +213,8 @@ log "installing from ${REF}"
 # that costs a second human approval.
 
 if [ "$WITH_GCLOUD" -eq 1 ] && ! command -v gcloud > /dev/null 2>&1; then
-    curl -sSL -o "$TMP/gcloud.tar.gz" \
-        https://dl.google.com/dl/cloudsdk/channels/rapid/downloads/google-cloud-cli-linux-x86_64.tar.gz ||
+    fetch https://dl.google.com/dl/cloudsdk/channels/rapid/downloads/google-cloud-cli-linux-x86_64.tar.gz \
+        "$TMP/gcloud.tar.gz" ||
         die "could not download the gcloud SDK — is dl.google.com on the allowlist?"
     tar -xzf "$TMP/gcloud.tar.gz" -C /opt || die "could not unpack the gcloud SDK"
     # --path-update false, then symlink: a PATH line appended to a shell profile
@@ -221,7 +314,7 @@ else
     mkdir -p "$BIN_DIR"
 fi
 
-curl -sSfL "$RAW/home/bin/gcp-credentials" -o "$TMP/gcp-credentials" ||
+fetch "$RAW/home/bin/gcp-credentials" "$TMP/gcp-credentials" ||
     die "could not fetch the helper from $REF"
 # Refuse an error page rendered as a script. A 404 from a bad ref is HTML, and
 # `sh` would run it and report something baffling.
@@ -262,7 +355,7 @@ log "compat  -> $HOME/.claude/bin/gcp-credentials -> $BIN_DIR/gcp-credentials"
 # invoked it unprompted. What a symlinked skill directory does is the part still
 # worth watching; if Claude stops listing the skill, that is why.
 
-curl -sSfL "$RAW/home/commands/gcp-credentials.md" -o "$TMP/gcp-credentials.md" ||
+fetch "$RAW/home/commands/gcp-credentials.md" "$TMP/gcp-credentials.md" ||
     die "could not fetch the skill from $REF"
 
 # SKILL.md wants frontmatter the command format does not carry. The first line
@@ -323,11 +416,16 @@ if [ "$WITH_PRECOMMIT" -eq 1 ]; then
     # laptop missing one, and normalising it would leave enforcement that is
     # routinely skipped, which is not enforcement.
     if ! command -v shellcheck > /dev/null 2>&1; then
-        if ! apt-get update -qq > /dev/null 2>&1; then
-            die "apt-get update failed — are the Ubuntu archives reachable?"
-        fi
-        if ! DEBIAN_FRONTEND=noninteractive apt-get install -y -qq shellcheck > /dev/null 2>&1; then
-            die "could not install shellcheck"
+        # A failed refresh is reported, not fatal. It used to die here, which
+        # meant a blocked PPA -- a repository nothing in this script wants --
+        # took down an install that the image's existing package lists would
+        # have satisfied. apt_update narrows the sources to Ubuntu's own, so
+        # a failure now means the archives really are unreachable; even then,
+        # let the install be the thing that decides.
+        apt_update || log "warn: apt refresh failed, trying the install anyway"
+        if ! DEBIAN_FRONTEND=noninteractive apt-get install -y -qq shellcheck \
+            > /dev/null 2>&1; then
+            die "could not install shellcheck — are the Ubuntu archives reachable?"
         fi
     fi
     log "shellck -> $(command -v shellcheck)"
@@ -338,8 +436,8 @@ if [ "$WITH_PRECOMMIT" -eq 1 ]; then
     # against github.com reads as an egress block and is not one.
     if ! command -v actionlint > /dev/null 2>&1; then
         AL_VER=1.7.7
-        curl -sSfL -o "$TMP/actionlint.tar.gz" \
-            "https://github.com/rhysd/actionlint/releases/download/v${AL_VER}/actionlint_${AL_VER}_linux_amd64.tar.gz" ||
+        fetch "https://github.com/rhysd/actionlint/releases/download/v${AL_VER}/actionlint_${AL_VER}_linux_amd64.tar.gz" \
+            "$TMP/actionlint.tar.gz" ||
             die "could not download actionlint ${AL_VER}"
         tar -xzf "$TMP/actionlint.tar.gz" -C "$TMP" actionlint || die "could not unpack actionlint"
         install -m 0755 "$TMP/actionlint" /usr/local/bin/actionlint || die "could not install actionlint"
@@ -347,7 +445,7 @@ if [ "$WITH_PRECOMMIT" -eq 1 ]; then
     log "actionl -> $(command -v actionlint)"
 
     command -v pre-commit > /dev/null 2>&1 ||
-        pip install --quiet --no-input pre-commit > /dev/null 2>&1 ||
+        pip_install pre-commit ||
         die "could not install pre-commit from PyPI"
     log "precmit -> $(command -v pre-commit) ($(pre-commit --version))"
 
@@ -403,8 +501,8 @@ fi
 
 if [ "$WITH_GH" -eq 1 ] && ! command -v gh > /dev/null 2>&1; then
     GH_VER=2.97.0
-    curl -sSfL -o "$TMP/gh.tar.gz" \
-        "https://github.com/cli/cli/releases/download/v${GH_VER}/gh_${GH_VER}_linux_amd64.tar.gz" ||
+    fetch "https://github.com/cli/cli/releases/download/v${GH_VER}/gh_${GH_VER}_linux_amd64.tar.gz" \
+        "$TMP/gh.tar.gz" ||
         die "could not download gh ${GH_VER}"
     tar -xzf "$TMP/gh.tar.gz" -C "$TMP" "gh_${GH_VER}_linux_amd64/bin/gh" ||
         die "could not unpack gh"
@@ -438,7 +536,7 @@ fi
 PROFILE_DIR="$HOME/.agents"
 mkdir -p "$PROFILE_DIR"
 
-curl -sSfL "$RAW/profiles/$PROFILE/AGENTS.md" -o "$TMP/AGENTS.md" ||
+fetch "$RAW/profiles/$PROFILE/AGENTS.md" "$TMP/AGENTS.md" ||
     die "could not fetch profile '$PROFILE' from $REF — check the name against profiles/ in the repo"
 
 # Same 404-as-content guard as everything else here: a bad ref or a mistyped
@@ -465,7 +563,7 @@ log "policy  -> $PROFILE_DIR/AGENTS.md (profile: $PROFILE)"
 # claims that path is the one Codex reads.
 case "$PROFILE" in
     claude-*)
-        curl -sSfL "$RAW/profiles/$PROFILE/CLAUDE.md" -o "$TMP/CLAUDE.md" ||
+        fetch "$RAW/profiles/$PROFILE/CLAUDE.md" "$TMP/CLAUDE.md" ||
             die "could not fetch the Claude adapter for profile '$PROFILE' from $REF"
         head -1 "$TMP/CLAUDE.md" | grep -q "^<!-- GENERATED" ||
             die "fetched Claude adapter is not a composed artefact"
@@ -543,7 +641,7 @@ BIN_SCRIPTS="start-session-gather-state start-session-claude-drift end-session-g
 mkdir -p "$HOME/.claude/bin"
 
 for script in $BIN_SCRIPTS; do
-    curl -sSfL "$RAW/home/bin/$script" -o "$TMP/$script" ||
+    fetch "$RAW/home/bin/$script" "$TMP/$script" ||
         die "could not fetch helper script $script from $REF"
     head -1 "$TMP/$script" | grep -q '^#!' ||
         die "fetched $script is not a script — check that $REF exists"
@@ -560,7 +658,7 @@ for skill in $SKILLS $COMPOSED_SKILLS; do
         *) src="home/skills/$skill/SKILL.md" ;;
     esac
 
-    curl -sSfL "$RAW/$src" -o "$TMP/$skill.SKILL.md" ||
+    fetch "$RAW/$src" "$TMP/$skill.SKILL.md" ||
         die "could not fetch the $skill skill from $REF ($src) — a composed skill needs a profiles/$PROFILE/skills/ entry in context/manifest.json"
 
     # Same 404-as-content guard as the helper: a bad ref returns an HTML error
@@ -613,13 +711,13 @@ if [ "$WITH_HOOKS" -eq 1 ]; then
     command -v jq > /dev/null 2>&1 || die "--with-hooks needs jq to merge settings.json"
 
     for script in prchecks-wait-claude-hook prepush-guard-claude-hook precommit-claude-hook; do
-        curl -sSfL "$RAW/home/bin/$script" -o "$TMP/$script" ||
+        fetch "$RAW/home/bin/$script" "$TMP/$script" ||
             die "could not fetch hook script $script from $REF"
         head -1 "$TMP/$script" | grep -q '^#!' || die "fetched $script is not a script"
         install -m 0755 "$TMP/$script" "$HOME/.claude/bin/$script"
     done
 
-    curl -sSfL "$RAW/home/settings.json" -o "$TMP/settings.json" ||
+    fetch "$RAW/home/settings.json" "$TMP/settings.json" ||
         die "could not fetch home/settings.json from $REF"
     jq -e '.hooks' "$TMP/settings.json" > "$TMP/hooks.json" ||
         die "home/settings.json has no .hooks block"

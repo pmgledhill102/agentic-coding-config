@@ -23,13 +23,43 @@ Set these three things once per environment, at
 
 ### 1. Setup script
 
-```bash
-#!/bin/bash
+```sh
 # Rev: 1
-curl -sSL https://raw.githubusercontent.com/pmgledhill102/agentic-coding-config/main/cloud/bootstrap.sh \
-  | sh -s -- main --with-gcloud || true
+
+curl -sSL --retry 3 --retry-delay 2 \
+  https://raw.githubusercontent.com/pmgledhill102/agentic-coding-config/main/cloud/bootstrap.sh \
+  -o /tmp/bootstrap.sh || echo "[setup] could not fetch bootstrap.sh"
+
+{ sh /tmp/bootstrap.sh main --with-gcloud; echo $? > /tmp/bootstrap.rc; } 2>&1 \
+  | tee /tmp/bootstrap.log
+
+echo "[setup] bootstrap exit=$(cat /tmp/bootstrap.rc 2>/dev/null) at $(date -u +%FT%TZ)"
 exit 0
 ```
+
+**Do not put a shebang in this field.** The harness writes the field's contents
+into a generated `/tmp/init-script-*.sh` beneath a header of its own and runs
+that, so a `#!/bin/bash` you paste is never line 1 and never takes effect. Intact
+it is a comment; lose the `#` in transit and it becomes a command, which is how a
+live environment produced this:
+
+```text
+Setup script failed with exit code 127.
+/tmp/init-script-2496021182.sh: line 3: !/bin/bash: No such file or directory
+```
+
+Line 3 is the field's line 1. Nothing had run yet — not `curl`, not the
+bootstrap — and the session was already over. Omitting the line removes the whole
+class of failure, and costs nothing, because the harness supplies the interpreter.
+
+For the same reason, keep the field POSIX. Which shell the harness uses is its
+choice, not yours, so a bashism only works by luck — the form above avoids
+`PIPESTATUS` by parking the exit status in a file, which is why the bootstrap
+runs inside `{ … }` rather than being piped directly into `tee`.
+
+Downloading the bootstrap to a file rather than piping it into `sh` is also
+deliberate: it separates "could not fetch" from "ran and failed", and it keeps
+the run's own exit status reachable.
 
 Drop `--with-gcloud` for an environment that does no Google Cloud work; it
 saves a ~96 MB download and declares what kind of environment this is.
@@ -53,17 +83,24 @@ snapshot built the first time. Bump the number to force a rebuild.
 
 Pin a tag instead of `main` for anything beyond development:
 
-```bash
-  | sh -s -- v0.1.0 --with-gcloud || true
+```sh
+  .../v0.1.0/cloud/bootstrap.sh -o /tmp/bootstrap.sh
+sh /tmp/bootstrap.sh v0.1.0 --with-gcloud
 ```
+
+Both occurrences change together — the ref that fetches the script and the ref
+it installs everything else from — so that a run cannot straddle two versions.
 
 A mutable ref means any compromise of this repo reaches every sandbox that
 starts afterwards. A tag also names, in the session's own log, which version it
 is running.
 
-`|| true` belongs to the caller, not the script: a non-zero exit fails the whole
-session, while `bootstrap.sh` deliberately fails loudly so that a partial
-install is visible rather than silent.
+The trailing `exit 0` belongs to the caller, not the script: a non-zero exit
+fails the whole session, while `bootstrap.sh` deliberately fails loudly so that
+a partial install is visible rather than silent. Swallowing the status is a
+choice the environment makes, which is why the snippet still records the real
+one in its `[setup] bootstrap exit=` line and keeps `/tmp/bootstrap.log` — a
+session that came up half-installed can be diagnosed from inside itself.
 
 ### 2. Allowed domains
 
