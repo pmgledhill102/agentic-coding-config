@@ -4,6 +4,22 @@
   2026-08-13 by [ADR-0016](0016-capability-delivery-principles.md)** —
   which narrows decision 3: per-repo marketplace configuration is not the
   delivery route for everything it implies here. Read 0016 alongside this.
+- **Amended**: 2026-08-27 by [#312](https://github.com/pmgledhill102/agentic-coding-config/issues/312)
+  — **decisions 3, 4, 5 and 7 no longer hold.** The dual-manifest plugin was
+  published, never adopted, and has been withdrawn: `dotfiles` declined it
+  ([dotfiles#392](https://github.com/pmgledhill102/dotfiles/issues/392)) and
+  the marketplace listing was judged not worth maintaining for anyone else
+  (#48, closed). Distribution stays on the two channels this ADR set out to
+  replace — the chezmoi archive external and `cloud/bootstrap.sh`; hooks stay
+  declared in `settings.json` with their scripts at `~/.claude/bin/`; `home/`
+  is not shrinking to a residue. Decisions 1, 2 and 6 stand, and decision 1
+  has since completed: the `home/commands/` twins were retired in #313,
+  leaving skills as the only form. The reason the plugin failed is specific
+  and worth keeping — the marketplace declared `"source": "./home"`, which is
+  the `claude-workstation` composition, so it could only ever ship
+  workstation-composed context. See
+  [ADR-0018](0018-composing-agent-context-per-surface.md) for the
+  per-surface composition that turned that from a detail into a defect.
 - **Date**: 2026-08-09
 - **Tags**: claude-code, codex, opencode, skills, plugins, architecture
 - **Scope**: user (applies to all personal repos and agent surfaces)

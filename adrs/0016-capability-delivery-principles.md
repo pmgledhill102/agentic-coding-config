@@ -1,6 +1,13 @@
 # ADR-0016: Where capability lives — environment, repo, or content
 
 - **Status**: Accepted (2026-08-13), validated on Claude Code and Codex
+- **Amended**: 2026-08-27 by [#312](https://github.com/pmgledhill102/agentic-coding-config/issues/312)
+  — the plugin is no longer one of the delivery routes, so principle 2's row
+  for portable skills and policy is setup-script placement alone, and "two
+  distribution paths persist" is one path. The principles themselves are
+  unchanged: this ADR already argued against committing marketplace
+  declarations to a repo (principle 1), and withdrawing the plugin vindicates
+  that rather than contradicting it.
 - **Date**: 2026-08-13
 - **Tags**: architecture, cloud, plugins, portability, claude-code, codex
 - **Scope**: user (applies to all personal repos and agent surfaces)
