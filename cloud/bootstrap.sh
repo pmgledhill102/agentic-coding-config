@@ -71,8 +71,18 @@ set -eu
 log() { echo "[bootstrap] $*"; }
 die() { echo "[bootstrap] error: $*" >&2; exit 1; }
 
-REF="${1:-main}"
-[ $# -gt 0 ] && shift
+# The ref is positional and first. Guard it against a flag, because taking $1
+# unconditionally makes a caller who omits the ref install from a ref named
+# "--profile" -- and the failure surfaces as `unknown argument:
+# claude-cloud-sandbox` from the loop below, which names the profile's VALUE
+# and points at the wrong token entirely. The documented snippet always passes
+# the ref first, so this bites whoever runs the script by hand.
+REF=main
+case "${1:-}" in
+    "") ;;
+    -*) ;;
+    *) REF="$1"; shift ;;
+esac
 # Empty means "the caller did not say", which is distinct from --no-X. The
 # profile fills in only the ones still empty, so a flag wins wherever it
 # appears on the line -- including before the --profile it contradicts.
@@ -523,6 +533,16 @@ if [ "$WITH_PRECOMMIT" -eq 1 ]; then
     command -v pre-commit > /dev/null 2>&1 ||
         pip_install pre-commit ||
         die "could not install pre-commit from PyPI"
+    # pip exiting 0 is not the same as the console script existing. An image
+    # carrying the pre_commit package without its shim, or a pip whose scripts
+    # directory is off PATH, both satisfy the install and leave nothing to run
+    # -- observed on a live sandbox, which logged `precmit ->  ()` and stamped
+    # the manifest precommit=1 anyway (#319). The manifest is read as an
+    # attestation that the gate is *present* (#254's checklist opens with
+    # "expect precommit=1"), so observe the binary rather than inferring it
+    # from an exit code.
+    command -v pre-commit > /dev/null 2>&1 ||
+        die "pre-commit reported installed but is not on PATH"
     log "precmit -> $(command -v pre-commit) ($(pre-commit --version))"
 
     # A GLOBAL hook via core.hooksPath, not `pre-commit install` per repo.
@@ -818,12 +838,19 @@ if [ "$WITH_HOOKS" -eq 1 ]; then
         log "hooks   -> $SETTINGS (created)"
     fi
 
-    # prepush-guard needs gh, which these containers lack unless --with-gh was
-    # given (#257), so without it it exits 0 here. precommit-claude-hook needs
-    # the pre-commit framework and is a no-op without --with-precommit. Both
-    # degrade rather than failing, which is why this flag has no hard
-    # dependency on those -- but the trio is what makes it worth having.
-    log "hooks   :  prchecks-wait, prepush-guard (needs --with-gh), precommit (needs --with-precommit)"
+    # prepush-guard needs gh, which these containers lack unless gh was enabled
+    # (#257), so without it it exits 0 here. precommit-claude-hook needs the
+    # pre-commit framework and is a no-op without it. Both degrade rather than
+    # failing, which is why hooks have no hard dependency on those -- but the
+    # trio is what makes them worth having.
+    #
+    # Report the resolved state rather than naming the flags. Since #322 either
+    # capability can arrive from the profile with no flag typed, so a fixed
+    # "(needs --with-precommit)" told the reader the opposite of the truth in
+    # every *-cloud-sandbox container -- which turns it on by default.
+    if [ "$WITH_GH" -eq 1 ]; then gh_note=""; else gh_note=" (inactive: no gh)"; fi
+    if [ "$WITH_PRECOMMIT" -eq 1 ]; then pc_note=""; else pc_note=" (inactive: no pre-commit)"; fi
+    log "hooks   :  prchecks-wait, prepush-guard$gh_note, precommit$pc_note"
 fi
 
 # --- the manifest -------------------------------------------------------------
