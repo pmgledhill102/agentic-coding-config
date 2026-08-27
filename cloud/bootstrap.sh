@@ -5,44 +5,63 @@
 # everything of substance stays here, versioned, instead of being pasted into a
 # vendor configuration field (ADR-0016, principle 5):
 #
-#   curl -sSL https://raw.githubusercontent.com/pmgledhill102/agentic-coding-config/<REF>/cloud/bootstrap.sh | sh -s -- <REF> [--with-gcloud] [--with-precommit] [--with-hooks] [--with-gh] [--profile <name>]
+#   sh bootstrap.sh <REF> [--profile <name>] [--with-X | --no-X ...]
 #
-# --with-gcloud installs the Google Cloud SDK as well. Opt-in, so that the one
-# line an environment carries declares what kind of environment it is.
+# --profile names the composed context profile, defaulting to
+# claude-cloud-sandbox, and is the only argument most environments need. It
+# selects the AGENTS.md/CLAUDE.md to install AND, through the rules below the
+# argument loop, which capabilities come with it. The environment declares
+# which harness it is rather than this script sniffing for one: ADR-0018
+# principle 1 puts surface differences in the delivery, and the caller is the
+# only party that knows the answer without guessing.
+#
+# What each profile resolves to today:
+#
+#                          gcloud  pre-commit  hooks  gh
+#   claude-cloud-sandbox     yes       yes      yes   no
+#   codex-cloud-sandbox      yes       yes      no    no
+#   *-workstation            no        no       no    no
+#
+# Every capability takes --with-X to force it on and --no-X to force it off,
+# and either beats the profile wherever it sits on the line. The capabilities:
+#
+# --with-gcloud installs the Google Cloud SDK, a ~96 MB download. On by default
+# for a sandbox; --no-gcloud for an environment that does no GCP work.
 #
 # --with-precommit installs the pre-commit framework and the binaries this
 # estate's hooks need, and points git at a global hook so every repo in the
-# container is covered. Opt-in for the same reason, and one more: it is the only
-# part of this script that needs the Ubuntu archives, so an environment that
-# cannot reach them keeps working by not asking for it.
+# container is covered. It is the only part of this script that needs the
+# Ubuntu archives, so --no-precommit is the escape for an environment that
+# cannot reach them.
 #
 # --with-hooks wires this estate's PreToolUse guards and PostToolUse terraform
 # hooks into ~/.claude/settings.json. Separate from --with-precommit because
 # they are different mechanisms: a git hook blocks the commit, a harness hook
-# returns the failure into the agent's context where it can act on it.
+# returns the failure into the agent's context where it can act on it. Claude
+# profiles only -- Codex does not read that file.
 #
 # --with-gh installs the GitHub CLI from a pinned release tarball, for the
 # session skills' gather scripts. NOT for Anthropic-hosted web sandboxes:
 # there the egress proxy authenticates gh for identity endpoints only and
 # 403s every repo-scoped API path, so the gather sections come back
 # gh-unauthorized rather than populated — measured 2026-08-19, lane map on
-# #257, cleanup on #273. The flag exists for surfaces whose egress genuinely
-# reaches the GitHub API, e.g. self-hosted environments.
+# #257, cleanup on #273. Off for every profile; the flag exists for surfaces
+# whose egress genuinely reaches the GitHub API, e.g. self-hosted environments.
 #
-# --profile names the composed context profile to install, defaulting to
-# claude-cloud-sandbox. A Codex environment passes --profile codex-cloud-sandbox.
-# The environment declares which harness it is rather than this script sniffing
-# for one: ADR-0018 principle 1 puts surface differences in the delivery, and
-# the caller is the only party that knows the answer without guessing.
-#
-# Pass the same <REF> twice on purpose: the first fetches this script, the
-# second is what it fetches everything else from, so a run cannot straddle two
-# versions. Pin <REF> to a tag or commit in anything durable — a branch means
+# <REF> is what everything else is fetched from, and should match the ref this
+# script was itself fetched from, so a run cannot straddle two versions. Pin it
+# to a tag or commit in anything durable — a branch means
 # any compromise of this repo reaches every sandbox that starts afterwards.
 #
 # This script fails loudly: a half-installed toolkit is worse than none, and the
 # caller is better placed to decide tolerance. A cloud setup script, which fails
-# the whole session on a non-zero exit, should append `|| true`.
+# the whole session on a non-zero exit, should end with `exit 0`.
+#
+# What it should NOT carry is a shebang. A vendor setup-script field is pasted
+# into a generated script beneath a header of the harness's own, so the line is
+# never line 1 and never selects an interpreter -- and a `#!` that loses its `#`
+# somewhere in that journey becomes a command, exiting 127 before this script is
+# even fetched. cloud/README.md carries the working snippet.
 #
 # It installs no credentials and reads none. What it places is public content
 # from a public repo.
@@ -54,18 +73,25 @@ die() { echo "[bootstrap] error: $*" >&2; exit 1; }
 
 REF="${1:-main}"
 [ $# -gt 0 ] && shift
-WITH_GCLOUD=0
-WITH_PRECOMMIT=0
-WITH_HOOKS=0
-WITH_GH=0
+# Empty means "the caller did not say", which is distinct from --no-X. The
+# profile fills in only the ones still empty, so a flag wins wherever it
+# appears on the line -- including before the --profile it contradicts.
+WITH_GCLOUD=
+WITH_PRECOMMIT=
+WITH_HOOKS=
+WITH_GH=
 PROFILE=claude-cloud-sandbox
 
 while [ $# -gt 0 ]; do
     case "$1" in
         --with-gcloud) WITH_GCLOUD=1 ;;
+        --no-gcloud) WITH_GCLOUD=0 ;;
         --with-precommit) WITH_PRECOMMIT=1 ;;
+        --no-precommit) WITH_PRECOMMIT=0 ;;
         --with-hooks) WITH_HOOKS=1 ;;
+        --no-hooks) WITH_HOOKS=0 ;;
         --with-gh) WITH_GH=1 ;;
+        --no-gh) WITH_GH=0 ;;
         --profile)
             shift
             [ $# -gt 0 ] || die "--profile needs a value"
@@ -77,6 +103,55 @@ while [ $# -gt 0 ]; do
     shift
 done
 
+# --- what the profile implies ------------------------------------------------
+#
+# The profile already states two facts, and the defaults are read off them
+# rather than kept in a per-profile table that would need a row adding every
+# time a profile is. A table of two columns and N rows says no more than the
+# name does, and goes stale in a way the name cannot.
+#
+#   claude-*         -> hooks. ~/.claude/settings.json is a Claude mechanism;
+#                      Codex does not read it. Installing the harness hooks
+#                      alongside a Codex profile put four files in the
+#                      container that nothing there consumes -- ADR-0016
+#                      principle 3, provider-specific coupling belongs on
+#                      provider-specific surfaces, applied to the installer.
+#
+#   *-cloud-sandbox  -> pre-commit, and gcloud. A sandbox is disposable and
+#                      rebuilt from a script, so the argument for making a
+#                      developer opt into enforcement does not apply: there is
+#                      no laptop here whose setup someone is protecting. #254
+#                      is what the absence cost.
+#
+# gh is the one capability with no sensible default. It is documented as
+# actively counterproductive on Anthropic-hosted sandboxes, where the egress
+# proxy 403s every repo-scoped path, so it stays off until a caller who knows
+# their egress asks for it.
+#
+# gcloud on by default is a reversal, and worth naming as one. It used to be
+# opt-in so that "the one line an environment carries declares what kind of
+# environment it is" -- but the profile name declares that now, and better,
+# so the flag was only restating what --profile already said. The 96 MB is the
+# price; --no-gcloud is the refund for an environment that does no GCP work.
+resolve() {
+    # resolve <current> <default> -- echo the caller's answer, or the default
+    if [ -n "$1" ]; then echo "$1"; else echo "$2"; fi
+}
+
+case "$PROFILE" in
+    claude-*) def_hooks=1 ;;
+    *) def_hooks=0 ;;
+esac
+case "$PROFILE" in
+    *-cloud-sandbox) def_precommit=1; def_gcloud=1 ;;
+    *) def_precommit=0; def_gcloud=0 ;;
+esac
+
+WITH_GCLOUD=$(resolve "$WITH_GCLOUD" "$def_gcloud")
+WITH_PRECOMMIT=$(resolve "$WITH_PRECOMMIT" "$def_precommit")
+WITH_HOOKS=$(resolve "$WITH_HOOKS" "$def_hooks")
+WITH_GH=$(resolve "$WITH_GH" 0)
+
 RAW="https://raw.githubusercontent.com/pmgledhill102/agentic-coding-config/${REF}"
 
 command -v curl > /dev/null 2>&1 || die "curl is required"
@@ -84,7 +159,101 @@ command -v curl > /dev/null 2>&1 || die "curl is required"
 TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT INT TERM
 
+# --- fetch: every download in this script goes through here ---------------
+#
+# A bare `curl -sSfL` is a single attempt. This script makes roughly a dozen
+# of them across three hosts, so a run's success is the product of a dozen
+# independent chances of a transient blip -- and a blip here fails the whole
+# session, not just the fetch. Retries turn a class of failures that used to
+# need a human back into a two-second pause.
+#
+# --retry-connrefused and --retry-all-errors are what make it cover the cases
+# that actually happen: without them curl retries transient *transport*
+# errors only, and a proxy answering 502 while it warms up is not one.
+# --connect-timeout bounds a black-holed connection (no RST, no response),
+# which otherwise hangs until the harness's own setup timeout kills the run
+# with far less to go on than a curl error. --speed-limit/--speed-time bound
+# the other stall -- a connection that opens, dribbles, and never finishes --
+# without the collateral damage a tight --max-time would do to the gcloud
+# tarball, which is 96 MB and legitimately slow on a bad link.
+#
+# --retry-all-errors landed in curl 7.71 (--retry-connrefused in 7.52); the
+# sandbox image ships 8.5.0. An older curl rejects an unknown option rather
+# than ignoring it, which would fail every fetch, so probe for the newer of
+# the two and drop both if it is absent. `--help all` is itself 7.73+, so an
+# older curl fails the probe and takes the fallback -- which is the answer
+# wanted in that case anyway.
+CURL_RETRY_OPTS='--retry 3 --retry-delay 2 --retry-connrefused --retry-all-errors'
+if ! curl --help all 2>/dev/null | grep -q -- --retry-all-errors; then
+    CURL_RETRY_OPTS='--retry 3 --retry-delay 2'
+fi
+
+fetch() {
+    # fetch <url> <dest>
+    # shellcheck disable=SC2086  # CURL_RETRY_OPTS is a deliberate word list
+    curl -sSfL $CURL_RETRY_OPTS \
+        --connect-timeout 15 --speed-limit 1024 --speed-time 30 --max-time 600 \
+        "$1" -o "$2"
+}
+
+# --- apt_update: refresh Ubuntu's own sources, and only those --------------
+#
+# `apt-get update` returns non-zero if ANY configured source fails, and a
+# sandbox image carries sources this script has no interest in: deadsnakes,
+# ondrej/php and docker.list all ship in /etc/apt/sources.list.d/. Where
+# egress policy blocks a PPA -- which it does in some environments and not
+# others -- a bare update fails on a repository nothing here needs, and the
+# only package actually wanted (shellcheck) is in the Ubuntu archive.
+#
+# So point apt at Ubuntu's list alone and blank SourceParts, which is the
+# directory the third-party entries live in. noble and later put the archive
+# entries in deb822 /etc/apt/sources.list.d/ubuntu.sources; jammy and earlier
+# in /etc/apt/sources.list. Try whichever exists, then an unrestricted update
+# as a last resort for an image laid out like neither.
+#
+# The return value is advisory. Callers should attempt the install regardless:
+# a refresh that could not reach the archive still leaves whatever package
+# lists the image was built with, and those are frequently enough.
+apt_update() {
+    for _src in /etc/apt/sources.list.d/ubuntu.sources /etc/apt/sources.list; do
+        [ -s "$_src" ] || continue
+        if apt-get update -qq \
+            -o Dir::Etc::SourceList="$_src" \
+            -o Dir::Etc::SourceParts=/dev/null > /dev/null 2>&1; then
+            return 0
+        fi
+    done
+    apt-get update -qq > /dev/null 2>&1
+}
+
+# --- pip_install: PyPI, whatever this image calls pip ----------------------
+#
+# `pip` is not always on PATH where `pip3` is, and Ubuntu 24.04 ships a PEP 668
+# EXTERNALLY-MANAGED marker that makes a system-wide install refuse outright.
+# Refusing is right on a workstation and pointless in a container that exists
+# for one session and is thrown away, so retry with --break-system-packages --
+# a flag pip only grew in 23.0, hence the retry rather than passing it first.
+pip_install() {
+    _pkg="$1"
+    for _pip in "pip" "pip3" "python3 -m pip"; do
+        command -v "${_pip%% *}" > /dev/null 2>&1 || continue
+        # shellcheck disable=SC2086  # deliberate word split: "python3 -m pip"
+        $_pip install --quiet --no-input "$_pkg" > /dev/null 2>&1 && return 0
+        # shellcheck disable=SC2086
+        $_pip install --quiet --no-input --break-system-packages "$_pkg" \
+            > /dev/null 2>&1 && return 0
+    done
+    return 1
+}
+
 log "installing from ${REF}"
+
+# Print the resolved set, not the flags. With defaults in play the command line
+# no longer says what a run will do, and a container is read afterwards far more
+# often than the setup script that built it.
+on_off() { [ "$1" -eq 1 ] && echo "yes" || echo "no"; }
+log "profile -> $PROFILE"
+log "caps    :  gcloud=$(on_off "$WITH_GCLOUD") precommit=$(on_off "$WITH_PRECOMMIT") hooks=$(on_off "$WITH_HOOKS") gh=$(on_off "$WITH_GH")"
 
 # There is deliberately no apt step here.
 #
@@ -120,8 +289,8 @@ log "installing from ${REF}"
 # that costs a second human approval.
 
 if [ "$WITH_GCLOUD" -eq 1 ] && ! command -v gcloud > /dev/null 2>&1; then
-    curl -sSL -o "$TMP/gcloud.tar.gz" \
-        https://dl.google.com/dl/cloudsdk/channels/rapid/downloads/google-cloud-cli-linux-x86_64.tar.gz ||
+    fetch https://dl.google.com/dl/cloudsdk/channels/rapid/downloads/google-cloud-cli-linux-x86_64.tar.gz \
+        "$TMP/gcloud.tar.gz" ||
         die "could not download the gcloud SDK — is dl.google.com on the allowlist?"
     tar -xzf "$TMP/gcloud.tar.gz" -C /opt || die "could not unpack the gcloud SDK"
     # --path-update false, then symlink: a PATH line appended to a shell profile
@@ -221,7 +390,7 @@ else
     mkdir -p "$BIN_DIR"
 fi
 
-curl -sSfL "$RAW/home/bin/gcp-credentials" -o "$TMP/gcp-credentials" ||
+fetch "$RAW/home/bin/gcp-credentials" "$TMP/gcp-credentials" ||
     die "could not fetch the helper from $REF"
 # Refuse an error page rendered as a script. A 404 from a bad ref is HTML, and
 # `sh` would run it and report something baffling.
@@ -262,7 +431,7 @@ log "compat  -> $HOME/.claude/bin/gcp-credentials -> $BIN_DIR/gcp-credentials"
 # invoked it unprompted. What a symlinked skill directory does is the part still
 # worth watching; if Claude stops listing the skill, that is why.
 
-curl -sSfL "$RAW/home/commands/gcp-credentials.md" -o "$TMP/gcp-credentials.md" ||
+fetch "$RAW/home/commands/gcp-credentials.md" "$TMP/gcp-credentials.md" ||
     die "could not fetch the skill from $REF"
 
 # SKILL.md wants frontmatter the command format does not carry. The first line
@@ -323,11 +492,16 @@ if [ "$WITH_PRECOMMIT" -eq 1 ]; then
     # laptop missing one, and normalising it would leave enforcement that is
     # routinely skipped, which is not enforcement.
     if ! command -v shellcheck > /dev/null 2>&1; then
-        if ! apt-get update -qq > /dev/null 2>&1; then
-            die "apt-get update failed — are the Ubuntu archives reachable?"
-        fi
-        if ! DEBIAN_FRONTEND=noninteractive apt-get install -y -qq shellcheck > /dev/null 2>&1; then
-            die "could not install shellcheck"
+        # A failed refresh is reported, not fatal. It used to die here, which
+        # meant a blocked PPA -- a repository nothing in this script wants --
+        # took down an install that the image's existing package lists would
+        # have satisfied. apt_update narrows the sources to Ubuntu's own, so
+        # a failure now means the archives really are unreachable; even then,
+        # let the install be the thing that decides.
+        apt_update || log "warn: apt refresh failed, trying the install anyway"
+        if ! DEBIAN_FRONTEND=noninteractive apt-get install -y -qq shellcheck \
+            > /dev/null 2>&1; then
+            die "could not install shellcheck — are the Ubuntu archives reachable?"
         fi
     fi
     log "shellck -> $(command -v shellcheck)"
@@ -338,8 +512,8 @@ if [ "$WITH_PRECOMMIT" -eq 1 ]; then
     # against github.com reads as an egress block and is not one.
     if ! command -v actionlint > /dev/null 2>&1; then
         AL_VER=1.7.7
-        curl -sSfL -o "$TMP/actionlint.tar.gz" \
-            "https://github.com/rhysd/actionlint/releases/download/v${AL_VER}/actionlint_${AL_VER}_linux_amd64.tar.gz" ||
+        fetch "https://github.com/rhysd/actionlint/releases/download/v${AL_VER}/actionlint_${AL_VER}_linux_amd64.tar.gz" \
+            "$TMP/actionlint.tar.gz" ||
             die "could not download actionlint ${AL_VER}"
         tar -xzf "$TMP/actionlint.tar.gz" -C "$TMP" actionlint || die "could not unpack actionlint"
         install -m 0755 "$TMP/actionlint" /usr/local/bin/actionlint || die "could not install actionlint"
@@ -347,7 +521,7 @@ if [ "$WITH_PRECOMMIT" -eq 1 ]; then
     log "actionl -> $(command -v actionlint)"
 
     command -v pre-commit > /dev/null 2>&1 ||
-        pip install --quiet --no-input pre-commit > /dev/null 2>&1 ||
+        pip_install pre-commit ||
         die "could not install pre-commit from PyPI"
     log "precmit -> $(command -v pre-commit) ($(pre-commit --version))"
 
@@ -403,8 +577,8 @@ fi
 
 if [ "$WITH_GH" -eq 1 ] && ! command -v gh > /dev/null 2>&1; then
     GH_VER=2.97.0
-    curl -sSfL -o "$TMP/gh.tar.gz" \
-        "https://github.com/cli/cli/releases/download/v${GH_VER}/gh_${GH_VER}_linux_amd64.tar.gz" ||
+    fetch "https://github.com/cli/cli/releases/download/v${GH_VER}/gh_${GH_VER}_linux_amd64.tar.gz" \
+        "$TMP/gh.tar.gz" ||
         die "could not download gh ${GH_VER}"
     tar -xzf "$TMP/gh.tar.gz" -C "$TMP" "gh_${GH_VER}_linux_amd64/bin/gh" ||
         die "could not unpack gh"
@@ -438,7 +612,7 @@ fi
 PROFILE_DIR="$HOME/.agents"
 mkdir -p "$PROFILE_DIR"
 
-curl -sSfL "$RAW/profiles/$PROFILE/AGENTS.md" -o "$TMP/AGENTS.md" ||
+fetch "$RAW/profiles/$PROFILE/AGENTS.md" "$TMP/AGENTS.md" ||
     die "could not fetch profile '$PROFILE' from $REF — check the name against profiles/ in the repo"
 
 # Same 404-as-content guard as everything else here: a bad ref or a mistyped
@@ -465,7 +639,7 @@ log "policy  -> $PROFILE_DIR/AGENTS.md (profile: $PROFILE)"
 # claims that path is the one Codex reads.
 case "$PROFILE" in
     claude-*)
-        curl -sSfL "$RAW/profiles/$PROFILE/CLAUDE.md" -o "$TMP/CLAUDE.md" ||
+        fetch "$RAW/profiles/$PROFILE/CLAUDE.md" "$TMP/CLAUDE.md" ||
             die "could not fetch the Claude adapter for profile '$PROFILE' from $REF"
         head -1 "$TMP/CLAUDE.md" | grep -q "^<!-- GENERATED" ||
             die "fetched Claude adapter is not a composed artefact"
@@ -543,7 +717,7 @@ BIN_SCRIPTS="start-session-gather-state start-session-claude-drift end-session-g
 mkdir -p "$HOME/.claude/bin"
 
 for script in $BIN_SCRIPTS; do
-    curl -sSfL "$RAW/home/bin/$script" -o "$TMP/$script" ||
+    fetch "$RAW/home/bin/$script" "$TMP/$script" ||
         die "could not fetch helper script $script from $REF"
     head -1 "$TMP/$script" | grep -q '^#!' ||
         die "fetched $script is not a script — check that $REF exists"
@@ -560,7 +734,7 @@ for skill in $SKILLS $COMPOSED_SKILLS; do
         *) src="home/skills/$skill/SKILL.md" ;;
     esac
 
-    curl -sSfL "$RAW/$src" -o "$TMP/$skill.SKILL.md" ||
+    fetch "$RAW/$src" "$TMP/$skill.SKILL.md" ||
         die "could not fetch the $skill skill from $REF ($src) — a composed skill needs a profiles/$PROFILE/skills/ entry in context/manifest.json"
 
     # Same 404-as-content guard as the helper: a bad ref returns an HTML error
@@ -613,13 +787,13 @@ if [ "$WITH_HOOKS" -eq 1 ]; then
     command -v jq > /dev/null 2>&1 || die "--with-hooks needs jq to merge settings.json"
 
     for script in prchecks-wait-claude-hook prepush-guard-claude-hook precommit-claude-hook; do
-        curl -sSfL "$RAW/home/bin/$script" -o "$TMP/$script" ||
+        fetch "$RAW/home/bin/$script" "$TMP/$script" ||
             die "could not fetch hook script $script from $REF"
         head -1 "$TMP/$script" | grep -q '^#!' || die "fetched $script is not a script"
         install -m 0755 "$TMP/$script" "$HOME/.claude/bin/$script"
     done
 
-    curl -sSfL "$RAW/home/settings.json" -o "$TMP/settings.json" ||
+    fetch "$RAW/home/settings.json" "$TMP/settings.json" ||
         die "could not fetch home/settings.json from $REF"
     jq -e '.hooks' "$TMP/settings.json" > "$TMP/hooks.json" ||
         die "home/settings.json has no .hooks block"
@@ -695,6 +869,7 @@ fi
     echo "helpers=$BIN_SCRIPTS"
     echo "precommit=$WITH_PRECOMMIT"
     echo "gcloud=$WITH_GCLOUD"
+    echo "hooks=$WITH_HOOKS"
     echo "gh=$WITH_GH"
 } > "$MANIFEST"
 log "manifst -> $MANIFEST ($kind $(echo "$resolved" | cut -c1-12))"
