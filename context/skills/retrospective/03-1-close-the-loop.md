@@ -2,7 +2,7 @@
 
 Before analysing this session, read what the last few retros produced and what became of it:
 
-- **Recent journal entries** — the last 3–5. If `<pc>` resolved, read `<pc>/journal/` (newest by filename date) plus any drafts still in `<pc>/_incoming/`. Otherwise list recent `journal-draft`-labeled Issues on `pmgledhill102/paul-context` — `mcp__github__list_issues` when connected, else `gh issue list --repo pmgledhill102/paul-context --label journal-draft --state all`.
+- **Recent journal entries** — the last 3–5. List recent `journal-draft`-labeled Issues on `pmgledhill102/paul-context` (`mcp__github__list_issues` when connected, else `gh issue list --repo pmgledhill102/paul-context --label journal-draft --state all`), which covers everything not yet promoted. If a `paul-context` checkout happens to be at hand — you are standing in it, or it sits beside the current repo — also read its `journal/` (newest by filename date) for the promoted ones. This lookup is **read-only and best-effort**: missing it costs a little history, never a lost draft, which is why it carries none of the care that resolving a *write* destination used to need.
 - **Retro-filed Issues** — their bodies carry the `From retro: paul-context/journal/...` backlink. Check the repos the recent journals routed to, listing both open and closed Issues. These are historical, so body-text search is acceptable here (the never-search rule guards *time-sensitive* reads; a week-old issue is safely indexed).
 
 Report a short fate summary before proposing anything new:

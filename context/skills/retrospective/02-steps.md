@@ -1,21 +1,13 @@
 ## Steps
 
-**First, resolve the `paul-context` tree.** Steps 1 and 8 both need it, so work it
-out once here and refer to it as `<pc>` throughout. Take the first rule that
-hits:
+Journal drafts are filed as `journal-draft` Issues on
+`pmgledhill102/paul-context`, on every surface, with no local-tree branch.
+Nothing below needs to resolve where that repo is checked out in order to
+*write*; only step 1 looks for a tree, and only to read.
 
-1. **The checkout you are standing in.** If `basename "$(git rev-parse --show-toplevel)"` is `paul-context`, that is the tree — wherever it sits on disk.
-2. **The conventional location.** Else, if `~/dev/paul-context` is a directory, that is the tree.
-3. **No local tree.** Else `<pc>` is unset, and every step that would have used it takes its Issue route instead.
-
-**Never name `~/dev/paul-context` outside rule 2.** It is one machine's layout,
-not a property of the repo — the delivery assumption ADR-0016 principle 3 and
-ADR-0018 principle 6 both forbid in portable text. A cloud session working on
-`paul-context` has it checked out at `/home/user/paul-context`; hardcoding the
-`~/dev` spelling is what filed four journal drafts as Issues while their
-destination sat in the working directory
-([#286](https://github.com/pmgledhill102/agentic-coding-config/issues/286)).
-
-Rule 3 is a real answer rather than a failure — it is correct whenever this
-retro runs in some other repo, which is most of the time. What rule 1 fixes is
-the case where the tree is *right there* and the skill could not see it.
+That uniformity is the point. The route used to depend on whether a
+`paul-context` checkout happened to be at hand, and the preferred arm of that
+branch wrote into a gitignored `_incoming/`, so a draft could evaporate with
+the container. One route, durable the instant it is created, is worth the one
+API call it costs
+([#336](https://github.com/pmgledhill102/agentic-coding-config/issues/336)).
