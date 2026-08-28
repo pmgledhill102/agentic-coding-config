@@ -68,6 +68,14 @@ is repo-meta and never deploys.
 - `home/settings.json` and `home/settings.json.md` must change together
   (CI enforces the sync; the `.md` carries the rationale)
 - ADRs in `adrs/` record decisions; `docs/` holds workflow docs and runbooks
+- **Comments carry mechanism, not incident history.** A comment earns its place
+  if it changes what a future editor does. How the code came to be this way is
+  the commit, the issue and the PR — all durable, all linked. The distinction
+  that is easy to get wrong: a *surprising fact* stays, because it stops someone
+  "correcting" the design back into a bug; the experiment that established it
+  goes. Keep "`github.com` 403s this sandbox's curl while its release assets
+  resolve fine"; drop "measured 2026-08-18 by planting one and watching a hook
+  fire eight seconds later"
 - **Anything with a `GENERATED` banner is composed — edit the fragment.**
   `context/manifest.json` says which fragments build which output;
   `context/fragments/` holds policy fragments and `context/skills/` holds
