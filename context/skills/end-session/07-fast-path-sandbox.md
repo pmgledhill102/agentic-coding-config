@@ -1,6 +1,6 @@
 ### 1.5. Fast-path when state is fully clean (Tier 1 — narration optimisation)
 
-When the gather output shows nothing actionable, skip the per-step narration entirely and jump straight to step 14 (summary). This keeps a typical short-session `end-session` to ~12 lines of output instead of ~24 (one redundant "Step N — none" line per step).
+When the gather output shows nothing actionable, skip the per-step narration entirely and jump straight to step 15 (summary). This keeps a typical short-session `end-session` to ~12 lines of output instead of ~24 (one redundant "Step N — none" line per step).
 
 Apply when **all** of the following hold (single-pass check over already-collected results — no extra calls):
 
@@ -16,7 +16,7 @@ Three sections the workstation predicate checks are absent here, because the ste
 
 If the predicate holds:
 
-1. Emit step 14's summary directly. Every actionable line says "none"; static lines (main rebased) reflect the already-clean state.
+1. Emit step 15's summary directly. Every actionable line says "none"; static lines (main rebased) reflect the already-clean state.
 2. Do **not** narrate steps 2–13 individually. No "Step 4 — pass", no "Step 6 — nothing to prune", no per-step status lines. The summary IS the output.
 3. Phase 2 still runs the retrospective — the fast-path shortens Phase 1 narration, not the session-closing work.
 

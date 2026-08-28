@@ -18,6 +18,7 @@ Output is a sectioned stream. Each section starts with `===<name> (exit=<N>)===`
 | `open_prs` | 8 | Empty content = no open PRs. Otherwise one row per open PR authored by me. |
 | `gh_assigned` | 10 | Content `not-github` / `jq-unavailable` = silent skip. Empty content = nothing in flight. Otherwise one `#<n> <title>` line per open issue assigned to me. |
 | `stale_claude_files` | 11 | Content `chezmoi-unavailable` = silent skip. Empty body (exit=0) = nothing stale. Otherwise: one path per line under `.claude/commands/` or `.claude/bin/` that's present locally but not tracked by chezmoi. |
+| `gcp_projects` | 14 | Always exit 0. First line is `state=` (`no-grant` / `grant` / `helper-unavailable`); `created=` lines follow only when this session's approval built the repo's sandbox project. Step 14 has the mapping, including why `no-grant` and `none` are different answers. |
 
 Rules for interpreting exit codes:
 

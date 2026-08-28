@@ -88,7 +88,7 @@ canned() {
 
 reset_state() {
     rm -f "$CB_DIR"/grant.json "$CB_DIR"/pending.json "$CB_DIR"/access_token \
-        "$CB_DIR"/refresh.pid "$CB_DIR"/refresh.log
+        "$CB_DIR"/refresh.pid "$CB_DIR"/refresh.log "$CB_DIR"/created-projects.jsonl
     rm -f "$STUB_DIR"/*.status "$STUB_DIR"/*.json 2> /dev/null
     : > "$STUB_DIR/calls.log"
 }
@@ -344,6 +344,50 @@ expect_rc "revoke" 0
 expect_no_file "grant removed" "$CB_DIR/grant.json"
 run revoke
 expect_rc "revoke with nothing to revoke" 2
+
+# --- created-project ledger --------------------------------------------------
+#
+# end-session reads `created` to tell whoever caused a repo's sandbox project to
+# exist that they did (#282). What is tested here is the read contract, because
+# that is where the two failure modes live: reporting "nothing was created" when
+# the truth is "nobody asked", and reporting another grant's project as this
+# session's doing.
+#
+# Not covered end to end: that a provisioning approval actually appends an
+# entry. The stub serves one canned body per endpoint and cannot sequence
+# provisioning -> approved, which is what that path needs. The write is one
+# guarded call inside the `provisioning` branch the decisions block already
+# exercises.
+
+echo "created-project ledger"
+reset_state
+run created
+expect_rc "created with no grant" 0
+expect_out "reports no-grant, not none" "state=no-grant"
+expect_no_out "does not claim a clean result" "^created="
+
+reset_state
+printf '%s' '{"request_id":"req-A","session_token":"t"}' > "$CB_DIR/grant.json"
+run created
+expect_rc "created with a grant and no ledger" 0
+expect_out "reports the grant" "state=grant"
+expect_no_out "nothing created under it" "^created="
+
+# The entry a session that built a project would have left behind.
+printf '%s\n' '{"project":"proj-A","request_id":"req-A","origin":"git@github.com:o/r.git","created_at":"2026-08-28T10:00:00Z"}' \
+    > "$CB_DIR/created-projects.jsonl"
+run created
+expect_out "names the project built under this grant" "created=proj-A"
+expect_out "carries the timestamp" "at=2026-08-28T10:00:00Z"
+
+# The property that makes one mechanism correct on both surfaces: a workstation
+# $HOME persists, so an entry from an earlier grant must not report as this
+# session's doing. A sandbox would pass this trivially on a fresh container.
+printf '%s\n' '{"project":"proj-OLD","request_id":"req-EARLIER","origin":"git@github.com:o/r.git","created_at":"2026-07-01T10:00:00Z"}' \
+    >> "$CB_DIR/created-projects.jsonl"
+run created
+expect_out "still names this grant's project" "created=proj-A"
+expect_no_out "does not claim an earlier grant's project" "proj-OLD"
 
 # --- the invariant -----------------------------------------------------------
 

@@ -167,6 +167,31 @@ run_sh stale_claude_files '
     comm -23 "$actual" "$managed"
 '
 
+# The broker client owns the question of what "created under this grant" means,
+# so this section only has to find the helper and relay its answer. Resolving it
+# by hand rather than trusting PATH: the bootstrap installs it to /usr/local/bin
+# and links ~/.claude/bin, and neither is guaranteed to be on a login PATH.
+# shellcheck disable=SC2016  # Intentional single quotes: expansion happens inside `sh -c`.
+run_sh gcp_projects '
+    for c in gcp-credentials "$HOME/.claude/bin/gcp-credentials" /usr/local/bin/gcp-credentials; do
+        if command -v "$c" > /dev/null 2>&1; then
+            out=$("$c" created 2>&1) || out=""
+            # A container pins the helper at the SHA its bootstrap ran, while
+            # the skill arrives with whatever composed it, so a helper with no
+            # `created` subcommand is a normal state rather than a fault -- it
+            # answers with a usage dump on stderr. Anything that is not the
+            # documented contract is reported as one value the skill can render,
+            # instead of leaking an error into a section that promises state=.
+            case "$out" in
+                state=*) printf "%s\n" "$out" ;;
+                *) echo "state=helper-too-old" ;;
+            esac
+            exit 0
+        fi
+    done
+    echo "state=helper-unavailable"
+'
+
 wait
 progress "all sections complete"
 
@@ -184,6 +209,6 @@ printf '===fetch (exit=%s)===\n' "$FETCH_EXIT"
 cat "$TMP/fetch.out"
 printf '\n'
 
-for s in local_state stashes worktrees merged_brs open_prs gh_assigned stale_claude_files; do
+for s in local_state stashes worktrees merged_brs open_prs gh_assigned stale_claude_files gcp_projects; do
     [ -f "$TMP/$s.exit" ] && emit "$s"
 done
