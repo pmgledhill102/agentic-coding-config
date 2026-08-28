@@ -4,10 +4,8 @@
 #
 # A chezmoi-managed file can be fixed in the repo and keep running the old
 # version on a machine for as long as nobody applies there, and nothing says
-# so. On 2026-08-13 that produced a two-commit gap on `bin/gcp-credentials`:
-# the repo had the request/wait split, the Mac had a helper from the day
-# before, and local and cloud had silently diverged in behaviour on a security
-# control. It was only found by comparing line counts on a hunch.
+# so — including when the drift is in a security control, and including when
+# local and cloud have diverged from each other.
 #
 # The failure is not forgetting to apply. It is that nothing distinguishes
 # "this machine is current" from "this machine is a day behind", so there is

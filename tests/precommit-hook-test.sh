@@ -2,10 +2,10 @@
 # Classification tests for home/bin/precommit-claude-hook.
 #
 # The hook fires on EVERY Bash call Claude makes, so what it does and does not
-# classify as a commit/push is the whole of its cost. It used to match by
-# substring, which meant any command merely *containing* "git commit" -- writing
-# the phrase into a notes file, an issue body, this very file -- triggered a
-# full pre-commit run (#191).
+# classify as a commit/push is the whole of its cost. The invariant these tests
+# guard: matching is not by substring, so a command merely *containing* "git
+# commit" -- writing the phrase into a notes file, an issue body, this very
+# file -- must not trigger a full pre-commit run (#191).
 #
 # The hook exits 0 both when it declines to act and when the lint passes, so
 # these tests observe classification indirectly: they run it in a directory
