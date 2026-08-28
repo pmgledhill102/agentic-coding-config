@@ -21,8 +21,9 @@ or in the environment's setup script.
   asking a human to run `gcloud` commands by hand. The trigger is not "I
   need to change something in GCP" but **"I am about to assert something
   about live GCP state"**.
-- **Skills delivered by the bootstrap**, listed in `cloud/README.md`.
-  A command that exists on the workstation is not necessarily present here.
+- **Skills delivered by the bootstrap.** Those offered here are the whole set —
+  a skill on the workstation but absent here was held back deliberately, not
+  lost. Say that rather than improvising its behaviour from its name.
 
 ## `gh` is not installed here
 
