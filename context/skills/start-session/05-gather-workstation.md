@@ -10,7 +10,9 @@ Output is a sectioned stream. Each section starts with `===<name> (exit=<N>)===`
 
 | Section | Drives step(s) | Notes on exit code |
 | --- | --- | --- |
-| `not_a_git_repo` | pre-flight | Only present when the gather ran outside a git repo, in which case it is the **only** section and the script exits 1. Print the line it contains and stop; every other step assumes a repo. |
+| `repo_resolution` | 1a, 7 | Only present when cwd was **not** itself a repo and exactly one repo sat directly beneath it — the script resolved to it and gathered there. Gives `repo=` and `name=`. `cd` to `repo=` before any later step, because the script's own `cd` died with it, and name the repo and the reason in the brief. No prompt: one candidate is not a choice. |
+| `repo_candidates` | 1a | Only present when cwd was not a repo and **several** repos sat directly beneath it, in which case it is the **only** section and the script exits 2. Gives `cwd=` and one `candidate=` line each. Tier 3: list them, ask which, `cd` there and re-run the gather. Never guess. |
+| `not_a_git_repo` | pre-flight | Only present when cwd was not a repo and no repo sat beneath it either, in which case it is the **only** section and the script exits 1. Print the line it contains and stop; every other step assumes a repo. |
 | `fetch` | 2 (folded in) | Body is empty on success (exit=0). Non-zero = network/auth issue — body contains the error; surface before proceeding. |
 | `local_state` | 3, 7 | Includes branch, dirty/clean, ahead/behind upstream, ahead/behind `origin/<default>`. |
 | `recent_main_commits` | 5 | First line is `count=<N>` (commits that merged into `origin/<default>` since the previous local tip). When non-zero, subsequent lines are `<short-sha> <subject>`, capped at 10. Empty when caught up. |

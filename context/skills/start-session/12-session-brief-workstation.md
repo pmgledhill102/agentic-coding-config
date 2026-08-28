@@ -5,6 +5,7 @@ Always print, even when everything is clean. This is the user-facing payoff — 
 ```text
 ── Session brief ──────────────────────────────
 Repo:     <repo>             Branch: <branch> (<clean|dirty>)
+          [ran in <name>; cwd <cwd> is not a repo]   (only when repo_resolution present)
 Sync:     <default> <ahead/behind/even>   upstream <ahead/behind/even/gone/n/a>
           [auto-switched <feature> → <default> (upstream gone)]    (only when Step 3 auto-switched)
 
@@ -32,6 +33,7 @@ Needs attention:
 
 Rules:
 
+- When `repo_resolution` is present, the `Repo:` line carries the second line naming which repo was resolved and why. It is never silent: a session that resolved its own repo should be able to see that it did.
 - Sections with nothing to say collapse to a single `none` line; "Needs attention" is omitted entirely when empty.
 - "Ready to pick up next" is sourced from gather section `gh_ready`. Each row is already pipe-separated `#<n>|P<pri>|<title>` — split on `|`, sort by priority label (P0 first, `-` last), and emit the top 5. Ready = open and not directly blocked; the filter is direct-blocks-only, so eyeball the blocked icon before claiming work.
 - "In progress" is sourced from gather section `gh_assigned`. Same `#<n>|P<pri>|<title>` row shape; no cap (usually 0–3 items).
