@@ -1,4 +1,4 @@
-### 14. Phase 1 summary
+### 15. Phase 1 summary
 
 Print a concise summary. Each line says "none" loudly when clean, so noise scales with actual mess. (Step 1.5's fast-path also lands here directly when the predicate holds — same format, all "none" lines.)
 
@@ -14,4 +14,5 @@ Print a concise summary. Each line says "none" loudly when clean, so noise scale
 - Other worktrees: `<count, or "none">`
 - Background processes (reaped): `<count>`
 - Background processes (user-owned, surfaced): `<count>`
+- GCP sandbox project created this session: `<project, "none", "n/a (no GCP grant this session)", or "n/a (broker client absent)", or "n/a (broker client predates this check)">` — surface only; it is the repo's, shared and durable, never deleted here
 - Anything skipped/surfaced: `<list>`

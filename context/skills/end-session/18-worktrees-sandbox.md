@@ -4,7 +4,7 @@
 state on a disk that is about to be discarded. Surfacing it would ask the user
 to think about tidying something the container is going to take with it anyway.
 
-Report `n/a (sandbox — container discarded)` in the step 14 summary rather than
+Report `n/a (sandbox — container discarded)` in the step 15 summary rather than
 omitting the line, so "nothing to report" stays distinguishable from "not
 checked".
 

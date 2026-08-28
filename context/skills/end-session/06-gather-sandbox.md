@@ -21,6 +21,7 @@ Output is a sectioned stream. Each section starts with `===<name> (exit=<N>)===`
 | `merged_brs` | 6 Batch A | Script appends `\|\| true` — exit 0 even if no matches. |
 | `open_prs`, `gh_assigned` | — | `gh-unavailable` or `gh-unauthorized` on this surface, every time (see §Surface). Ignore both; part (b) is where that data comes from. They are still emitted because the script is one file shared with the workstation composition. |
 | `stale_claude_files` | — | `chezmoi-unavailable` on this surface, every time. Silent skip; step 11 says why. |
+| `gcp_projects` | 14 | Always exit 0. First line is `state=` (`no-grant` / `grant` / `helper-unavailable`); `created=` lines follow only when this session's approval built the repo's sandbox project. Step 14 has the mapping, including why `no-grant` and `none` are different answers. |
 
 **(b) The GitHub queries.** Two calls, sendable together as soon as you have
 `<owner>/<repo>` from the `---origin---` line:

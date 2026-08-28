@@ -3,7 +3,7 @@
 **Skipped on this surface.** Local branches live on a disk that is about to be
 discarded — the container is reclaimed after a period of inactivity, usually
 soon after this skill finishes — so deleting them achieves nothing and costs a
-prompt. Report `n/a (sandbox — container discarded)` in the step 14 summary and
+prompt. Report `n/a (sandbox — container discarded)` in the step 15 summary and
 move on.
 
 Do not run `end-session-squash-merged` here either. It exists to decide which
