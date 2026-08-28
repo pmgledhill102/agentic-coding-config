@@ -36,6 +36,15 @@ role set, and at most an hour — the broker's job is to make token theft boring
 Three levels. Pick by what you are actually worried about, because they differ
 in blast radius and in how fast they take effect.
 
+**All three end *access*. None of them deletes the project, and none should.**
+The broker resolves a repo to its sandbox project and creates one only when the
+repo has none, so the project belongs to the repo rather than to whichever session
+was first to ask: later sessions on the same repo resolve to it, and others may
+hold live grants on it right now. `gcp-credentials created` reports such a project
+so its monthly spend is visible to whoever caused it — it is not a teardown list.
+Retiring a sandbox project is a deliberate act taken knowing what else depends on
+it, not a tidy-up at the end of a session.
+
 ### 1. `release` — this machine stops using the credentials
 
 ```sh
@@ -147,6 +156,11 @@ the one that covers both.
   anything is wrong with the access — `refresh --background` fixes it and needs
   no human. Do not respond to it by requesting again; that spends an approval on
   a local process problem.
+- `~/.claude/bin/gcp-credentials created` — the sandbox projects this client
+  watched being created, scoped to the grant in hand. `end-session` reads it to
+  surface a project the session's own approval brought into existence. Holds no
+  secret; safe to run and safe to paste. `state=no-grant` means the question was
+  never asked and is not the same answer as no projects.
 
 ## Verified end to end
 
