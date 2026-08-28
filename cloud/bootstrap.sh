@@ -48,6 +48,15 @@
 # #257, cleanup on #273. Off for every profile; the flag exists for surfaces
 # whose egress genuinely reaches the GitHub API, e.g. self-hosted environments.
 #
+# --with-terraform installs terraform, tflint and checkov, so a repo whose
+# .pre-commit-config.yaml calls the Terraform hooks can actually run them.
+# Off for every profile: terraform alone is a large download for a container
+# that may never open a .tf file. Their absence no longer blocks anything --
+# precommit-claude-hook reports a hook whose binary is missing as not checked
+# rather than failed (#335) -- so this buys coverage, not the ability to push.
+# Installed inside --with-precommit, since serving that config is the whole
+# reason they are here: --with-terraform --no-precommit installs nothing.
+#
 # <REF> is what everything else is fetched from, and should match the ref this
 # script was itself fetched from, so a run cannot straddle two versions. Pin it
 # to a tag or commit in anything durable — a branch means
@@ -86,6 +95,7 @@ WITH_GCLOUD=
 WITH_PRECOMMIT=
 WITH_HOOKS=
 WITH_GH=
+WITH_TERRAFORM=
 PROFILE=claude-cloud-sandbox
 
 while [ $# -gt 0 ]; do
@@ -98,6 +108,8 @@ while [ $# -gt 0 ]; do
         --no-hooks) WITH_HOOKS=0 ;;
         --with-gh) WITH_GH=1 ;;
         --no-gh) WITH_GH=0 ;;
+        --with-terraform) WITH_TERRAFORM=1 ;;
+        --no-terraform) WITH_TERRAFORM=0 ;;
         --profile)
             shift
             [ $# -gt 0 ] || die "--profile needs a value"
@@ -157,6 +169,14 @@ WITH_GCLOUD=$(resolve "$WITH_GCLOUD" "$def_gcloud")
 WITH_PRECOMMIT=$(resolve "$WITH_PRECOMMIT" "$def_precommit")
 WITH_HOOKS=$(resolve "$WITH_HOOKS" "$def_hooks")
 WITH_GH=$(resolve "$WITH_GH" 0)
+# terraform/tflint/checkov are off by default for the same reason gh is: they
+# are a large download for a container that may never open a .tf file, and the
+# repos that do need them know who they are. What makes off-by-default safe is
+# that their absence is no longer a blocked push -- precommit-claude-hook now
+# reports a hook whose binary is missing as not checked rather than failed
+# (#335). Before that fix, "off" meant every push in the container needed
+# --no-verify, which is why installing them looked mandatory.
+WITH_TERRAFORM=$(resolve "$WITH_TERRAFORM" 0)
 
 RAW="https://raw.githubusercontent.com/pmgledhill102/agentic-coding-config/${REF}"
 
@@ -259,7 +279,7 @@ log "installing from ${REF}"
 # often than the setup script that built it.
 on_off() { [ "$1" -eq 1 ] && echo "yes" || echo "no"; }
 log "profile -> $PROFILE"
-log "caps    :  gcloud=$(on_off "$WITH_GCLOUD") precommit=$(on_off "$WITH_PRECOMMIT") hooks=$(on_off "$WITH_HOOKS") gh=$(on_off "$WITH_GH")"
+log "caps    :  gcloud=$(on_off "$WITH_GCLOUD") precommit=$(on_off "$WITH_PRECOMMIT") hooks=$(on_off "$WITH_HOOKS") gh=$(on_off "$WITH_GH") terraform=$(on_off "$WITH_TERRAFORM")"
 
 # There is deliberately no apt step here.
 #
@@ -540,6 +560,53 @@ if [ "$WITH_PRECOMMIT" -eq 1 ]; then
     command -v markdownlint-cli2 > /dev/null 2>&1 ||
         die "markdownlint-cli2 installed but is not on PATH"
     log "mdlint  -> $(command -v markdownlint-cli2) ($(markdownlint-cli2 --version 2>&1 | head -1))"
+
+    # The Terraform toolchain, opt-in. A repo's .pre-commit-config.yaml can
+    # call terraform_fmt, terraform_validate, terraform_tflint and checkov;
+    # without the binaries those hooks fail with exit 127 rather than finding
+    # anything. precommit-claude-hook classifies that as not-checked and lets
+    # the push through (#335), so this is about being able to CHECK, not about
+    # being able to push.
+    #
+    # Off by default because terraform alone is a large download for a
+    # container that may never open a .tf file. An environment doing Terraform
+    # work adds --with-terraform to its one line.
+    if [ "$WITH_TERRAFORM" -eq 1 ]; then
+        # Same pinned-release pattern, and the same github.com 403 note, as
+        # actionlint above.
+        if ! command -v terraform > /dev/null 2>&1; then
+            TF_VER=1.9.8
+            fetch "https://releases.hashicorp.com/terraform/${TF_VER}/terraform_${TF_VER}_linux_amd64.zip" \
+                "$TMP/terraform.zip" ||
+                die "could not download terraform ${TF_VER}"
+            unzip -o -q "$TMP/terraform.zip" -d "$TMP" terraform ||
+                die "could not unpack terraform — is unzip present?"
+            install -m 0755 "$TMP/terraform" /usr/local/bin/terraform ||
+                die "could not install terraform"
+        fi
+        log "terrafm -> $(command -v terraform) ($(terraform version | head -1))"
+
+        if ! command -v tflint > /dev/null 2>&1; then
+            TFL_VER=0.53.0
+            fetch "https://github.com/terraform-linters/tflint/releases/download/v${TFL_VER}/tflint_linux_amd64.zip" \
+                "$TMP/tflint.zip" ||
+                die "could not download tflint ${TFL_VER}"
+            unzip -o -q "$TMP/tflint.zip" -d "$TMP" tflint ||
+                die "could not unpack tflint"
+            install -m 0755 "$TMP/tflint" /usr/local/bin/tflint ||
+                die "could not install tflint"
+        fi
+        log "tflint  -> $(command -v tflint)"
+
+        # checkov is a Python tool, so it takes the same pip route as
+        # pre-commit rather than a release tarball.
+        command -v checkov > /dev/null 2>&1 ||
+            pip_install checkov ||
+            die "could not install checkov from PyPI"
+        command -v checkov > /dev/null 2>&1 ||
+            die "checkov reported installed but is not on PATH"
+        log "checkov -> $(command -v checkov)"
+    fi
 
     command -v pre-commit > /dev/null 2>&1 ||
         pip_install pre-commit ||
