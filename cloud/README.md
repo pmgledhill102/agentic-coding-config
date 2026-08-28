@@ -252,9 +252,22 @@ Revocation levels and what to do about a possibly-exposed token or request key:
 | `/usr/local/bin/gh` | the GitHub CLI, pinned release, with `--with-gh` |
 
 Whitelisted today: `promote-journal-inbox`, `retrospective`, `start-session`,
-`end-session`. The 15 `setup-*` skills are held back pending a currency review
-— they are repo-scaffolding procedures a sandbox session rarely needs, and they
-predate this surface.
+`end-session`. The other **16** skills under `home/skills/` are held back
+pending the currency review on
+[#247](https://github.com/pmgledhill102/agentic-coding-config/issues/247):
+
+- the **15 `setup-*` skills** — repo-scaffolding procedures a sandbox session
+  rarely needs, and they predate this surface;
+- **`repo-review`**, added to that hold on 2026-08-28. It was absent without
+  ever having been decided about — the arithmetic never closed, and #239 found
+  it as the unaccounted sixteenth. Folding it in rather than whitelisting it
+  keeps one decision in one place, but note what the hold costs while it
+  stands: `README.md` calls the skill portable, and ADR-0015 names it as the
+  audit for whether an ADR still fits its tier, so a decision recorded from a
+  sandbox cannot be currency-checked from one.
+
+That list being 16 rather than 15 is the only thing the hold is claiming. It is
+not a claim that any of the 16 is unwanted here — #247 is where that is decided.
 
 The script keeps two lists, because there are two sources:
 
