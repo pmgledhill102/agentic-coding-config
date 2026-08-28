@@ -248,7 +248,7 @@ Revocation levels and what to do about a possibly-exposed token or request key:
 | `~/.config/git/hooks/pre-commit` | global git hook, with `--with-precommit` |
 | `~/.claude/settings.json` | harness hook wiring, with `--with-hooks` (merged, not replaced) |
 | `~/.claude/bin/*-claude-hook` | the three harness hook scripts, with `--with-hooks` |
-| `/usr/local/bin/pre-commit`, `/usr/bin/shellcheck`, `/usr/local/bin/actionlint` | with `--with-precommit` |
+| `/usr/local/bin/pre-commit`, `/usr/bin/shellcheck`, `/usr/local/bin/actionlint`, `markdownlint-cli2` (npm global) | with `--with-precommit` |
 | `/usr/local/bin/gh` | the GitHub CLI, pinned release, with `--with-gh` |
 
 Whitelisted today: `promote-journal-inbox`, `retrospective`, `start-session`,
@@ -302,6 +302,13 @@ estate's config runs as `language: system` hooks — they use the binary on
 if the binaries are present. Installing them is the point; the config's `SKIP=`
 escape is for a laptop missing one, and normalising it would leave enforcement
 that is routinely skipped.
+
+It also installs `markdownlint-cli2` from npm, pinned to the rev
+`.pre-commit-config.yaml` declares. That one is *not* a `language: system`
+hook — the hook builds its own node environment and CI uses the action — so
+committing and CI both worked without it, and only `markdownlint-cli2
+"**/*.md"`, the gate this repo documents first, could not run. Bump the pin and
+the pre-commit rev together.
 
 It used to be opt-in for two reasons: it is the only part of this script needing
 the Ubuntu archives, so an environment that cannot reach them keeps working by
