@@ -27,8 +27,19 @@ three-word phrase as the session — that match is what binds an approval to
 and trust model: ADR 021 in `pmgledhill102/gcp-org-management`.
 
 If the repo has no sandbox project yet, the same approval **also creates one**,
-so the card may be authorising a project and its monthly spend as well as the
-access. The build takes two to three minutes, during which the helper reports
+so the card is authorising a project as well as the access — and says so, on
+fixed terms the broker composes rather than the agent: today a £25/mo budget cap
+and auto-deletion after 7 days, extendable to at most 30 (ADR 008, ADR 022).
+Read the terms off the card rather than from here; the numbers live in that repo
+and this is a copy.
+
+That TTL is why a grant can come back shorter than asked for — see [The grant
+may be shorter than you asked for](#the-grant-may-be-shorter-than-you-asked-for)
+— and why an idle sandbox is **not** a cost that accumulates: it is deleted,
+with the budget capping what it can spend before then. Do not treat a sandbox as
+something to be tidied up.
+
+The build takes two to three minutes, during which the helper reports
 `provisioning` — see [Waiting on a human, then waiting on
 GCP](#waiting-on-a-human-then-waiting-on-gcp). Design: ADR 022.
 
