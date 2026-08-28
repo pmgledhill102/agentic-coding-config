@@ -304,11 +304,11 @@ escape is for a laptop missing one, and normalising it would leave enforcement
 that is routinely skipped.
 
 It also installs `markdownlint-cli2` from npm, pinned to the rev
-`.pre-commit-config.yaml` declares. That one is *not* a `language: system`
-hook — the hook builds its own node environment and CI uses the action — so
-committing and CI both worked without it, and only `markdownlint-cli2
-"**/*.md"`, the gate this repo documents first, could not run. Bump the pin and
-the pre-commit rev together.
+`.pre-commit-config.yaml` declares — bump the two together. That one is *not* a
+`language: system` hook: the pre-commit hook builds its own node environment
+and CI uses the action, so this install is what makes `markdownlint-cli2
+"**/*.md"` — the gate this repo documents first — runnable, since that needs
+the binary on `PATH`.
 
 It used to be opt-in for two reasons: it is the only part of this script needing
 the Ubuntu archives, so an environment that cannot reach them keeps working by

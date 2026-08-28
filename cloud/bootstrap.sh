@@ -530,22 +530,11 @@ if [ "$WITH_PRECOMMIT" -eq 1 ]; then
     fi
     log "actionl -> $(command -v actionlint)"
 
-    # markdownlint-cli2 completes the trio this block exists for. The comment
-    # opening it names markdownlint first among the three that went unenforced
-    # on 2026-08-18, yet only shellcheck and actionlint were ever installed --
-    # so `markdownlint-cli2 "**/*.md"`, the first gate CLAUDE.md documents, was
-    # the one command in that list a sandbox could not run.
-    #
-    # It hid because the other two routes were fine. Unlike those linters this
-    # is not a `language: system` hook: .pre-commit-config.yaml pulls it from
-    # the upstream repo, which builds its own node environment, and CI uses the
-    # action. So committing worked and CI worked, and only a session running
-    # the documented gate by hand got "command not found" -- which reads as a
-    # broken container rather than a missing install, and invites skipping the
-    # gate instead of fixing it.
-    #
-    # Pinned to the rev .pre-commit-config.yaml declares, so the binary on PATH
-    # and the one the hook builds are the same version. Bump them together.
+    # Serves `markdownlint-cli2 "**/*.md"`, the gate CLAUDE.md documents, which
+    # needs the binary on PATH. Unlike the two above this is not a
+    # `language: system` hook -- the pre-commit hook builds its own node
+    # environment -- so the pin here and the rev in .pre-commit-config.yaml are
+    # two versions of the same tool. Bump them together.
     if ! command -v markdownlint-cli2 > /dev/null 2>&1; then
         ML_VER=0.23.2
         command -v npm > /dev/null 2>&1 ||
@@ -553,9 +542,8 @@ if [ "$WITH_PRECOMMIT" -eq 1 ]; then
         npm install -g --silent "markdownlint-cli2@${ML_VER}" > /dev/null 2>&1 ||
             die "could not install markdownlint-cli2 ${ML_VER} from npm"
     fi
-    # npm exiting 0 is not the same as the shim being reachable -- npm's global
-    # prefix is not guaranteed to be on PATH. Same post-condition as pre-commit
-    # below, and for the same reason (#319).
+    # This image carries several node installs with different global prefixes,
+    # so npm exiting 0 does not mean the shim landed anywhere on PATH.
     command -v markdownlint-cli2 > /dev/null 2>&1 ||
         die "markdownlint-cli2 installed but is not on PATH"
     log "mdlint  -> $(command -v markdownlint-cli2) ($(markdownlint-cli2 --version 2>&1 | head -1))"
