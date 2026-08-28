@@ -71,12 +71,8 @@ set -eu
 log() { echo "[bootstrap] $*"; }
 die() { echo "[bootstrap] error: $*" >&2; exit 1; }
 
-# The ref is positional and first. Guard it against a flag, because taking $1
-# unconditionally makes a caller who omits the ref install from a ref named
-# "--profile" -- and the failure surfaces as `unknown argument:
-# claude-cloud-sandbox` from the loop below, which names the profile's VALUE
-# and points at the wrong token entirely. The documented snippet always passes
-# the ref first, so this bites whoever runs the script by hand.
+# The ref is positional and first. A leading flag is left for the argument loop
+# rather than taken as the ref, so omitting the ref reports the real problem.
 REF=main
 case "${1:-}" in
     "") ;;
@@ -477,11 +473,8 @@ rm -f "$HOME/.claude/commands/gcp-credentials.md"
 
 # --- pre-commit, on request ---------------------------------------------------
 #
-# Sandboxes bypassed the pre-commit framework entirely: the binary was absent
-# and no `.git/hooks/pre-commit` existed, so a repo's committed
-# .pre-commit-config.yaml did nothing here (#254). Four consecutive PRs on
-# 2026-08-18 were committed with markdownlint, shellcheck and actionlint
-# unenforced -- they passed only because a human-equivalent ran them by hand.
+# Installs the pre-commit framework and the linters its config calls, so a
+# repo's committed .pre-commit-config.yaml actually runs here (#254).
 #
 # This is the vendor-neutral half of enforcement, and the reason it is worth
 # doing before the harness-hook half: git runs .git/hooks itself, so nothing
@@ -530,17 +523,32 @@ if [ "$WITH_PRECOMMIT" -eq 1 ]; then
     fi
     log "actionl -> $(command -v actionlint)"
 
+    # Serves `markdownlint-cli2 "**/*.md"`, the gate CLAUDE.md documents, which
+    # needs the binary on PATH. Unlike the two above this is not a
+    # `language: system` hook -- the pre-commit hook builds its own node
+    # environment -- so the pin here and the rev in .pre-commit-config.yaml are
+    # two versions of the same tool. Bump them together.
+    if ! command -v markdownlint-cli2 > /dev/null 2>&1; then
+        ML_VER=0.23.2
+        command -v npm > /dev/null 2>&1 ||
+            die "markdownlint-cli2 needs npm, which is not on PATH"
+        npm install -g --silent "markdownlint-cli2@${ML_VER}" > /dev/null 2>&1 ||
+            die "could not install markdownlint-cli2 ${ML_VER} from npm"
+    fi
+    # This image carries several node installs with different global prefixes,
+    # so npm exiting 0 does not mean the shim landed anywhere on PATH.
+    command -v markdownlint-cli2 > /dev/null 2>&1 ||
+        die "markdownlint-cli2 installed but is not on PATH"
+    log "mdlint  -> $(command -v markdownlint-cli2) ($(markdownlint-cli2 --version 2>&1 | head -1))"
+
     command -v pre-commit > /dev/null 2>&1 ||
         pip_install pre-commit ||
         die "could not install pre-commit from PyPI"
-    # pip exiting 0 is not the same as the console script existing. An image
+    # pip exiting 0 is not the same as the console script existing: an image
     # carrying the pre_commit package without its shim, or a pip whose scripts
-    # directory is off PATH, both satisfy the install and leave nothing to run
-    # -- observed on a live sandbox, which logged `precmit ->  ()` and stamped
-    # the manifest precommit=1 anyway (#319). The manifest is read as an
-    # attestation that the gate is *present* (#254's checklist opens with
-    # "expect precommit=1"), so observe the binary rather than inferring it
-    # from an exit code.
+    # directory is off PATH, both satisfy the install and leave nothing to run.
+    # The manifest's precommit= is read as an attestation that the gate is
+    # present, so observe the binary rather than infer it from an exit code.
     command -v pre-commit > /dev/null 2>&1 ||
         die "pre-commit reported installed but is not on PATH"
     log "precmit -> $(command -v pre-commit) ($(pre-commit --version))"
@@ -611,10 +619,8 @@ fi
 
 # --- the agent policy ---------------------------------------------------------
 #
-# Until now a sandbox got no policy at all: `ls ~/.claude/*.md` was empty, and
-# the 200-odd lines of working policy reached workstations through chezmoi and
-# nowhere else. Every session on this surface ran on whatever the opened repo
-# happened to commit (#245).
+# Delivers the working policy to a surface chezmoi never reaches, so a session
+# is not left running on whatever the opened repo happens to commit (#245).
 #
 # What lands here is a COMPOSED PROFILE, not the raw fragments. ADR-0018
 # resolves surface differences at delivery: the sandbox profile is built from
@@ -726,10 +732,7 @@ COMPOSED_SKILLS="retrospective start-session end-session"
 # diagnose.
 #
 # They land in ~/.claude/bin because that is where the skills spell their
-# invocation: "~/.claude/bin/<script>", on every surface. The skills used to say
-# "${CLAUDE_PLUGIN_ROOT:-$HOME/.claude}/bin/<script>" so one line could serve a
-# plugin install too; that channel was withdrawn (#312) and the fallback was the
-# only branch this surface ever took, so the spelling is now plain.
+# invocation: "~/.claude/bin/<script>", on every surface.
 BIN_SCRIPTS="start-session-gather-state start-session-claude-drift end-session-gather-state end-session-squash-merged"
 
 # Defensive: the credential-helper section above already creates this, but the
@@ -786,22 +789,17 @@ done
 # and return the failure into its context, where it can read the message and
 # fix the cause rather than just being stopped. Both are worth having.
 #
-# Viable because a container-created ~/.claude/settings.json IS honoured --
-# measured 2026-08-18 by planting one and watching a PreToolUse hook fire eight
-# seconds later, with no session restart (#254). That is the third
-# documented-as-unavailable user-scope path to work from inside the container,
-# after ~/.claude/skills and ~/.claude/CLAUDE.md.
+# Viable because a container-created ~/.claude/settings.json IS honoured, with
+# no session restart -- despite user scope being documented as unavailable from
+# inside the container, as it also is for ~/.claude/skills and CLAUDE.md (#254).
 #
 # The wiring is taken from home/settings.json rather than restated here. That
 # file is the workstation's, and it already invokes ~/.claude/bin/<hook>
 # directly -- the same paths this script installs to -- so the two surfaces run
 # identical hooks from one source instead of a copy that drifts.
 #
-# There is one copy of each hook and one declaration of it. A dispatcher used to
-# sit in front of the three script hooks so a plugin-enabled workstation would
-# not run every hook twice; the plugin channel was withdrawn (#312) and the
-# dispatcher went with it. The settings file names each script directly, exactly
-# as chezmoi's does.
+# There is one copy of each hook and one declaration of it: the settings file
+# names each script directly, exactly as chezmoi's does.
 
 if [ "$WITH_HOOKS" -eq 1 ]; then
     command -v jq > /dev/null 2>&1 || die "--with-hooks needs jq to merge settings.json"
@@ -844,10 +842,8 @@ if [ "$WITH_HOOKS" -eq 1 ]; then
     # failing, which is why hooks have no hard dependency on those -- but the
     # trio is what makes them worth having.
     #
-    # Report the resolved state rather than naming the flags. Since #322 either
-    # capability can arrive from the profile with no flag typed, so a fixed
-    # "(needs --with-precommit)" told the reader the opposite of the truth in
-    # every *-cloud-sandbox container -- which turns it on by default.
+    # Report the resolved state rather than naming flags: either capability can
+    # arrive from the profile with no flag typed.
     if [ "$WITH_GH" -eq 1 ]; then gh_note=""; else gh_note=" (inactive: no gh)"; fi
     if [ "$WITH_PRECOMMIT" -eq 1 ]; then pc_note=""; else pc_note=" (inactive: no pre-commit)"; fi
     log "hooks   :  prchecks-wait, prepush-guard$gh_note, precommit$pc_note"
@@ -861,9 +857,9 @@ fi
 # days pass, so pushing to a branch does not reach new sessions -- they keep
 # restoring the snapshot built the first time (#246).
 #
-# The credential helper solved its half server-side, by sending a version the
-# broker can refuse (#182). Skills, policy and helper scripts have no server on
-# the other end, so the skew is silent unless something writes down what it did.
+# Skills, policy and helper scripts have no server on the other end to refuse a
+# stale client the way the credential helper's broker can (#182), so the skew is
+# silent unless something writes down what it did.
 #
 # `git ls-remote` rather than the GitHub API: no token, no JSON parsing, and git
 # is already required to be here. A REF that is already a commit SHA will not
