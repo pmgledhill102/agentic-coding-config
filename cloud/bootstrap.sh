@@ -49,13 +49,14 @@
 # whose egress genuinely reaches the GitHub API, e.g. self-hosted environments.
 #
 # --with-terraform installs terraform, tflint and checkov, so a repo whose
-# .pre-commit-config.yaml calls the Terraform hooks can actually run them.
-# Off for every profile: terraform alone is a large download for a container
-# that may never open a .tf file. Their absence no longer blocks anything --
-# precommit-claude-hook reports a hook whose binary is missing as not checked
-# rather than failed (#335) -- so this buys coverage, not the ability to push.
-# Installed inside --with-precommit, since serving that config is the whole
-# reason they are here: --with-terraform --no-precommit installs nothing.
+# .pre-commit-config.yaml calls the Terraform hooks can actually run them. On
+# by default for a sandbox, like pre-commit; --no-terraform is the refund for
+# an environment that does no Terraform work and wants the download back.
+# This buys coverage, not the ability to push: their absence no longer blocks
+# anything, since precommit-claude-hook reports a hook whose binary is missing
+# as not checked rather than failed (#335). Installed inside --with-precommit,
+# since serving that config is the whole reason they are here:
+# --with-terraform --no-precommit installs nothing.
 #
 # <REF> is what everything else is fetched from, and should match the ref this
 # script was itself fetched from, so a run cannot straddle two versions. Pin it
@@ -161,22 +162,27 @@ case "$PROFILE" in
     *) def_hooks=0 ;;
 esac
 case "$PROFILE" in
-    *-cloud-sandbox) def_precommit=1; def_gcloud=1 ;;
-    *) def_precommit=0; def_gcloud=0 ;;
+    *-cloud-sandbox) def_precommit=1; def_gcloud=1; def_terraform=1 ;;
+    *) def_precommit=0; def_gcloud=0; def_terraform=0 ;;
 esac
 
 WITH_GCLOUD=$(resolve "$WITH_GCLOUD" "$def_gcloud")
 WITH_PRECOMMIT=$(resolve "$WITH_PRECOMMIT" "$def_precommit")
 WITH_HOOKS=$(resolve "$WITH_HOOKS" "$def_hooks")
 WITH_GH=$(resolve "$WITH_GH" 0)
-# terraform/tflint/checkov are off by default for the same reason gh is: they
-# are a large download for a container that may never open a .tf file, and the
-# repos that do need them know who they are. What makes off-by-default safe is
-# that their absence is no longer a blocked push -- precommit-claude-hook now
-# reports a hook whose binary is missing as not checked rather than failed
-# (#335). Before that fix, "off" meant every push in the container needed
-# --no-verify, which is why installing them looked mandatory.
-WITH_TERRAFORM=$(resolve "$WITH_TERRAFORM" 0)
+# terraform/tflint/checkov follow pre-commit: on for a sandbox, off elsewhere.
+# Same argument as --with-precommit above -- a sandbox is disposable and rebuilt
+# from a script, so there is no laptop here whose setup someone is protecting,
+# and a gate that is present is worth more than a download that is avoided.
+# --no-terraform is the refund for an environment that does no Terraform work.
+#
+# The download is the real cost and it is why this is a per-profile default
+# rather than unconditional. What it is NOT is a way to unblock pushes:
+# precommit-claude-hook reports a hook whose binary is missing as not checked
+# rather than failed (#335), so a container without these tools pushes fine.
+# Before that fix "off" meant every push needed --no-verify, which made
+# installing them look mandatory for the wrong reason.
+WITH_TERRAFORM=$(resolve "$WITH_TERRAFORM" "$def_terraform")
 
 RAW="https://raw.githubusercontent.com/pmgledhill102/agentic-coding-config/${REF}"
 
@@ -568,9 +574,10 @@ if [ "$WITH_PRECOMMIT" -eq 1 ]; then
     # the push through (#335), so this is about being able to CHECK, not about
     # being able to push.
     #
-    # Off by default because terraform alone is a large download for a
-    # container that may never open a .tf file. An environment doing Terraform
-    # work adds --with-terraform to its one line.
+    # On by default for a sandbox, off elsewhere -- the same reasoning as
+    # pre-commit itself: a disposable container rebuilt from a script has no
+    # developer setup to protect, so enforcement that is present beats a
+    # download that is avoided. --no-terraform is the refund.
     if [ "$WITH_TERRAFORM" -eq 1 ]; then
         # Same pinned-release pattern, and the same github.com 403 note, as
         # actionlint above.

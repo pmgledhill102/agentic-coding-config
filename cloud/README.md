@@ -117,7 +117,7 @@ line no longer says what happened:
 
 ```text
 [bootstrap] profile -> claude-cloud-sandbox
-[bootstrap] caps    :  gcloud=yes precommit=yes hooks=yes gh=no terraform=no
+[bootstrap] caps    :  gcloud=yes precommit=yes hooks=yes gh=no terraform=yes
 ```
 
 The same set is written to `~/.agents/.bootstrap-manifest`, which is where to
@@ -125,18 +125,20 @@ look when a container is behaving as though something is missing.
 
 `--with-terraform` installs `terraform`, `tflint` and `checkov`, so a repo
 whose `.pre-commit-config.yaml` calls the Terraform hooks can actually run
-them. Off for every profile — `terraform` alone is a large download for a
-container that may never open a `.tf` file. It installs inside
-`--with-precommit`, since serving that config is the whole reason the binaries
-are here: `--with-terraform --no-precommit` installs nothing.
+them. **On by default for a sandbox**, like `--with-precommit` and for the
+same reason: a disposable container rebuilt from a script has no developer
+setup to protect, so a gate that is present beats a download that is avoided.
+`--no-terraform` is the refund for an environment that does no Terraform work.
+It installs inside `--with-precommit`, since serving that config is the whole
+reason the binaries are here: `--with-terraform --no-precommit` installs
+nothing.
 
-Their absence is no longer a blocked push. `precommit-claude-hook` classifies
-a hook that fails purely because its binary is missing as *not checked* and
-lets the command through, naming what went unchecked (#335). Before that,
-every push in a container without these tools needed `--no-verify` — five out
-of five in one session, which is how a guard stops being a guard. So this flag
-buys **coverage**, not the ability to push: add it to an environment that
-genuinely does Terraform work and wants those hooks enforced.
+This buys **coverage**, not the ability to push. A container without these
+tools pushes fine: `precommit-claude-hook` classifies a hook that fails purely
+because its binary is missing as *not checked* and lets the command through,
+naming what went unchecked (#335). Before that fix, every push in such a
+container needed `--no-verify` — five out of five in one session, which is how
+a guard stops being a guard.
 
 `--with-gh` installs the GitHub CLI from a pinned release — but **do not add
 it to Anthropic-hosted environments**. Measured 2026-08-19: the egress proxy
