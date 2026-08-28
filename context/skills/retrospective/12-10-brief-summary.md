@@ -6,7 +6,7 @@ Print a compact wrap-up:
 Retrospective complete.
 
   Closed loop:                4 accepted / 3 rejected / 1 pending; MCP-opportunity category retired
-  Journal:                    paul-context/journal/2026-08-19-agentic-coding-config-foo.md (drafted to _incoming/; pending /promote-journal-inbox)
+  Journal:                    paul-context/journal/2026-08-19-agentic-coding-config-foo.md (filed as Issue #57; pending /promote-journal-inbox)
   Proposals:                  2 of 3 cap used — 1 removal, 1 addition
   Issues created (here):      1 — #41
   Issues raised cross-repo:   1 — github.com/.../issues/14

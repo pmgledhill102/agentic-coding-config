@@ -1,6 +1,6 @@
 ---
 name: retrospective
-description: 'Run an end-of-session retrospective: close the loop on past retro output, name the biggest costs of the session, propose at most three tier-priced changes (removals co-equal with additions), draft a per-session journal entry into paul-context/_incoming/ (or a journal-draft-labelled Issue when the local clone is unavailable), and route findings into GitHub Issues same-repo and cross-repo. Use when a work session is wrapping up, when the user asks for a retro or retrospective, or when end-session hands off to one.'
+description: 'Run an end-of-session retrospective: close the loop on past retro output, name the biggest costs of the session, propose at most three tier-priced changes (removals co-equal with additions), draft a per-session journal entry as a journal-draft-labelled Issue on paul-context, and route findings into GitHub Issues same-repo and cross-repo. Use when a work session is wrapping up, when the user asks for a retro or retrospective, or when end-session hands off to one.'
 ---
 
 # Run a session retrospective
@@ -22,31 +22,23 @@ This command was redesigned by #263 around one measurement: the owner accepted 2
 
 ## Steps
 
-**First, resolve the `paul-context` tree.** Steps 1 and 8 both need it, so work it
-out once here and refer to it as `<pc>` throughout. Take the first rule that
-hits:
+Journal drafts are filed as `journal-draft` Issues on
+`pmgledhill102/paul-context`, on every surface, with no local-tree branch.
+Nothing below needs to resolve where that repo is checked out in order to
+*write*; only step 1 looks for a tree, and only to read.
 
-1. **The checkout you are standing in.** If `basename "$(git rev-parse --show-toplevel)"` is `paul-context`, that is the tree — wherever it sits on disk.
-2. **The conventional location.** Else, if `~/dev/paul-context` is a directory, that is the tree.
-3. **No local tree.** Else `<pc>` is unset, and every step that would have used it takes its Issue route instead.
-
-**Never name `~/dev/paul-context` outside rule 2.** It is one machine's layout,
-not a property of the repo — the delivery assumption ADR-0016 principle 3 and
-ADR-0018 principle 6 both forbid in portable text. A cloud session working on
-`paul-context` has it checked out at `/home/user/paul-context`; hardcoding the
-`~/dev` spelling is what filed four journal drafts as Issues while their
-destination sat in the working directory
-([#286](https://github.com/pmgledhill102/agentic-coding-config/issues/286)).
-
-Rule 3 is a real answer rather than a failure — it is correct whenever this
-retro runs in some other repo, which is most of the time. What rule 1 fixes is
-the case where the tree is *right there* and the skill could not see it.
+That uniformity is the point. The route used to depend on whether a
+`paul-context` checkout happened to be at hand, and the preferred arm of that
+branch wrote into a gitignored `_incoming/`, so a draft could evaporate with
+the container. One route, durable the instant it is created, is worth the one
+API call it costs
+([#336](https://github.com/pmgledhill102/agentic-coding-config/issues/336)).
 
 ### 1. Close the loop (always first)
 
 Before analysing this session, read what the last few retros produced and what became of it:
 
-- **Recent journal entries** — the last 3–5. If `<pc>` resolved, read `<pc>/journal/` (newest by filename date) plus any drafts still in `<pc>/_incoming/`. Otherwise list recent `journal-draft`-labeled Issues on `pmgledhill102/paul-context` — `mcp__github__list_issues` when connected, else `gh issue list --repo pmgledhill102/paul-context --label journal-draft --state all`.
+- **Recent journal entries** — the last 3–5. List recent `journal-draft`-labeled Issues on `pmgledhill102/paul-context` (`mcp__github__list_issues` when connected, else `gh issue list --repo pmgledhill102/paul-context --label journal-draft --state all`), which covers everything not yet promoted. If a `paul-context` checkout happens to be at hand — you are standing in it, or it sits beside the current repo — also read its `journal/` (newest by filename date) for the promoted ones. This lookup is **read-only and best-effort**: missing it costs a little history, never a lost draft, which is why it carries none of the care that resolving a *write* destination used to need.
 - **Retro-filed Issues** — their bodies carry the `From retro: paul-context/journal/...` backlink. Check the repos the recent journals routed to, listing both open and closed Issues. These are historical, so body-text search is acceptable here (the never-search rule guards *time-sensitive* reads; a week-old issue is safely indexed).
 
 Report a short fate summary before proposing anything new:
@@ -194,28 +186,22 @@ Wait for explicit confirmation. Don't proceed on ambiguous input.
 
 1. **journal** (always first):
    - **Derive the filename.** `<source-repo-slug>` = sanitised basename of `git remote get-url origin` from the current cwd (lowercase, `[a-z0-9-]+`). If no git remote, use `basename "$PWD"`. `<topic-slug>` = kebab-cased session summary, ≤5 words. `<filename>` = `<YYYY-MM-DD>-<source-repo-slug>-<topic-slug>.md`.
-   - **Resolve same-project same-day collisions** at write-time: if the target already exists, append `-2`, `-3`, … before `.md` until unique. Filesystem path checks `<pc>/_incoming/<filename>`; Issue path checks for an open Issue with the same title (rare in practice — same project, same day, same topic — but the suffix prevents silent merge of two distinct retros).
-   - **Stage the draft first, always.** `Write` the journal markdown to `/tmp/<filename>`. `Edit(/tmp/**)` is auto-allowed on every surface (and `Edit` rules cover the `Write` tool), so this write always succeeds and the draft exists on disk before any route is chosen. Nothing below can lose it.
-   - **Then deliver it:**
-     - **Filesystem inbox** (preferred): if `<pc>` resolved and `[ -w "<pc>/_incoming" ]`, `cp /tmp/<filename> "<pc>/_incoming/<filename>"`. `Bash(cp *)` is auto-allowed, so this needs no permission rule naming a checkout root and works wherever the clone sits. **No git operations against `paul-context`.** If the copy fails, fall through to the Issue route rather than stopping.
-     - **GitHub Issue fallback** (`<pc>` unset, its `_incoming/` is not writable, or the copy above failed): file the already-staged `/tmp/<filename>` as a labeled Issue:
+   - **Resolve same-project same-day collisions** at write-time: if an open Issue with the same title already exists, append `-2`, `-3`, … before `.md` until unique. Rare in practice — same project, same day, same topic — but the suffix prevents silent merge of two distinct retros.
+   - **Stage the draft first, always.** `Write` the journal markdown to `/tmp/<filename>`. `Edit(/tmp/**)` is auto-allowed on every surface (and `Edit` rules cover the `Write` tool), so this write always succeeds and the draft exists on disk before any network call. Nothing below can lose it.
+   - **Then file it as an Issue — on every surface, with no branch.** Create the issue on `pmgledhill102/paul-context` with the `journal-draft` label and the title `journal: <filename-without-.md>`, body taken from the staged file. Prefer `mcp__github__issue_write`; the `gh` form is the portable fallback:
 
-       Create the issue on `pmgledhill102/paul-context` with the
-       `journal-draft` label and the title `journal: <filename-without-.md>`,
-       body taken from the staged file. Prefer `mcp__github__issue_write`;
-       the `gh` form below is the portable fallback, and matters here because
-       this path fires precisely when the session is in a sandbox:
+     ```sh
+     gh issue create --repo pmgledhill102/paul-context \
+         --label journal-draft \
+         --title "journal: <filename-without-.md>" \
+         --body-file /tmp/<filename>
+     ```
 
-       ```sh
-       gh issue create --repo pmgledhill102/paul-context \
-           --label journal-draft \
-           --title "journal: <filename-without-.md>" \
-           --body-file /tmp/<filename>
-       ```
+     The `journal-draft` label and the `journal:` (with trailing space) title prefix are how `/promote-journal-inbox` finds the draft. Promotion infers the eventual filename by stripping `journal:` (with trailing space) from the Issue title and appending `.md`, so the filename is stable from draft → committed.
 
-       The `journal-draft` label and the `journal:` (with trailing space) title prefix are how `/promote-journal-inbox` finds the draft. Promotion infers the eventual filename by stripping `journal:` (with trailing space) from the Issue title and appending `.md`, so the filename is stable from draft → committed.
-     - **Both unreachable** (rare — offline AND no local clone): print the full draft to the session log with clear `===BEGIN JOURNAL===` / `===END JOURNAL===` delimiters and stop. Don't silently discard content. Tell the user to save it manually.
-   - Capture `paul-context/journal/<filename>` (the eventual post-promotion path) for cross-references in subsequent issues. The path is stable across both inbox paths because both preserve `<filename>` exactly.
+     **Never copy the draft into a local `_incoming/` instead.** That route used to be preferred and was the worse of the two: `_incoming/*` is gitignored, so a copy there cannot be committed and dies with the container — during `end-session`, exactly when the container is about to be walked away from. An Issue is durable the instant it is created, and is the same route on every surface.
+   - **If the Issue create fails** (offline, no GitHub route): print the full draft to the session log with clear `===BEGIN JOURNAL===` / `===END JOURNAL===` delimiters and tell the user to save it manually. The staged `/tmp` copy also still exists. Don't silently discard content.
+   - Capture `paul-context/journal/<filename>` (the eventual post-promotion path) for cross-references in subsequent issues.
 2. **durable lesson**: execute whatever route step 6 named for this surface. Step 6 is where that decision lives; do not restate or second-guess it here.
 3. **issue** (same-repo): create it against the current repo, with a `type:` label and a `P<n>` priority — `mcp__github__issue_write`, else `gh issue create --title="..." --body-file=... --label "type: <type>,P<n>"` from the **current cwd**. Body **MUST** include `From retro: paul-context/journal/<file>.md` near the top, and the proposal's lever and tier price — the closed loop in step 1 reads these back later. Capture the issue number for the summary.
 4. **issue** (cross-repo): create it against `pmgledhill102/<repo>`, naming the repo explicitly — `mcp__github__issue_write` with `owner`/`repo`, else `gh issue create --repo pmgledhill102/<repo>`. Filed from wherever the retro runs; never `cd` into the target repo (see 6a). Body **MUST** include `From retro: paul-context/journal/<file>.md`, plus lever and tier price. Capture the URL.
@@ -262,7 +248,7 @@ Print a compact wrap-up:
 Retrospective complete.
 
   Closed loop:                4 accepted / 3 rejected / 1 pending; MCP-opportunity category retired
-  Journal:                    paul-context/journal/2026-08-19-agentic-coding-config-foo.md (drafted to _incoming/; pending /promote-journal-inbox)
+  Journal:                    paul-context/journal/2026-08-19-agentic-coding-config-foo.md (filed as Issue #57; pending /promote-journal-inbox)
   Proposals:                  2 of 3 cap used — 1 removal, 1 addition
   Issues created (here):      1 — #41
   Issues raised cross-repo:   1 — github.com/.../issues/14
@@ -290,7 +276,7 @@ Dimensions suspected of persistent rejection records (shell-friction and MCP-opp
 
 ## What changed from the previous versions
 
-This command used to append a markdown entry to `~/.claude/retros.md` (the original flow), then was rewritten to output tracker items only without any journal (rev 1 of the new flow), then revised to include a per-session journal in `paul-context`. A 2026-05-06 revision replaced the direct-write-to-`journal/` flow with the **inbox/promote** pattern: drafts land in `paul-context/_incoming/` (or as a `journal-draft`-labeled Issue when the local clone isn't available), and `/promote-journal-inbox` (run from a `paul-context` checkout) drains both inboxes into `journal/` — see `paul-context/decisions/2026-05-05-journal-inbox-promotion.md`. A 2026-07 revision retired the `bd` tracker in favour of GitHub Issues; a 2026-08 revision (now 6b) made settings findings route as `agentic-coding-config` Issues only, after a near-miss where a managed permission was almost applied as a project-local edit.
+This command used to append a markdown entry to `~/.claude/retros.md` (the original flow), then was rewritten to output tracker items only without any journal (rev 1 of the new flow), then revised to include a per-session journal in `paul-context`. A 2026-05-06 revision replaced the direct-write-to-`journal/` flow with the **inbox/promote** pattern: drafts land in `paul-context/_incoming/` (or as a `journal-draft`-labeled Issue when the local clone isn't available), and `/promote-journal-inbox` (run from a `paul-context` checkout) drains both inboxes into `journal/` — see `paul-context/decisions/2026-05-05-journal-inbox-promotion.md`. A 2026-07 revision retired the `bd` tracker in favour of GitHub Issues; a 2026-08 revision (now 6b) made settings findings route as `agentic-coding-config` Issues only, after a near-miss where a managed permission was almost applied as a project-local edit. A later 2026-08 revision deleted the filesystem-vs-Issue branch outright: drafts are now **always** filed as `journal-draft` Issues. The branch chose between two arms with different durability guarantees, on the incidental basis of where a `cd` had left the shell, and its preferred arm wrote into a gitignored `_incoming/` that cannot be committed ([#336](https://github.com/pmgledhill102/agentic-coding-config/issues/336)).
 
 The plumbing built by those revisions survives intact because it works: per-entry journal files (the single-master `retros.md` decayed), privacy-gives-candour (`paul-context` is private, so retros can be honest), cross-repo Issues with journal backlinks, and no git operations against `paul-context` from arbitrary projects.
 
