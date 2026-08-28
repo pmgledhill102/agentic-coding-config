@@ -316,13 +316,17 @@ From gather section `gcp_projects`. The first line is `state=`:
 
 For each `created=` line, surface:
 
-> created `<project>` — this repo's sandbox, built by this session's approval. Shared, durable, and carrying monthly spend.
+> created `<project>` — this repo's sandbox, built by this session's approval. Shared with every later session on the repo, and already scheduled to expire.
 
 **Surface only. Never offer to delete it, and never delete it.**
 
-That prohibition is the whole point of the step, so it is worth stating why rather than leaving it as a rule to be reasoned around. The broker resolves a repo to its sandbox project and creates one only when the repo has none. The project therefore belongs to the **repo**, not to the session that happened to be first: every later session on that repo resolves to the same project, and other sessions may hold live grants on it right now. Deleting it at session end would take out shared infrastructure that nothing else recreates, on the reasoning that this session made it — which is true and irrelevant.
+That prohibition is the whole point of the step, so it is worth stating why rather than leaving it as a rule to be reasoned around, and there are two independent reasons.
 
-What this step is for is the other half of that fact. An approval can authorise a project *and its ongoing monthly spend*, and the session that caused it is the one walking away minutes later. Naming it here puts the commitment in front of the person who made it, at the one moment they are looking.
+**It is not yours to delete.** The broker resolves a repo to its sandbox project and creates one only when the repo has none, so the project belongs to the **repo**, not to the session that happened to be first. Every later session on that repo resolves to it, and another session may hold a live grant on it right now — the helper warns about exactly that. Deleting it would strand that work and cost the next session a fresh human approval plus the two-to-three minute provisioning wait, on the reasoning that this session made it: true, and irrelevant.
+
+**There is nothing to clean up anyway.** A sandbox carries its own expiry and the broker deletes it when it lapses; a grant is clamped to that expiry, which is why a 24h grant against a sandbox with 12h left comes back as 12h. So an unattended sandbox is not a leak accumulating cost — it is a thing already scheduled to disappear. Nothing at session end needs to act on it, which is precisely why this step reports and stops.
+
+What the step is for, then, is neither cleanup nor cost: it is telling whoever caused shared infrastructure to exist that they did, at the one moment they are looking at it. If the sandbox should outlive its expiry, that is `/sandbox extend` during the work, not a decision to take on the way out.
 
 If the project genuinely should not exist — wrong repo, an experiment abandoned — that is a deliberate teardown someone does knowing what else depends on it, not a tidy-up at the end of a session.
 
@@ -342,7 +346,7 @@ Print a concise summary. Each line says "none" loudly when clean, so noise scale
 - Other worktrees: `n/a (sandbox — container discarded)`
 - Background processes (reaped): `<count>`
 - Background processes (user-owned, surfaced): `<count>`
-- GCP sandbox project created this session: `<project, "none", "n/a (no GCP grant this session)", or "n/a (broker client absent)", or "n/a (broker client predates this check)">` — surface only; it is the repo's, shared and durable, never deleted here
+- GCP sandbox project created this session: `<project, "none", "n/a (no GCP grant this session)", or "n/a (broker client absent)", or "n/a (broker client predates this check)">` — surface only; it is the repo's, shared, and expires on its own, so it is never deleted here
 - Could not prune (remote ref deletion refused): `<list or omit>`
 - Anything skipped/surfaced: `<list>`
 

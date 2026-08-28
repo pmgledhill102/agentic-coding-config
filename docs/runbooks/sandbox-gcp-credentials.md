@@ -40,10 +40,13 @@ in blast radius and in how fast they take effect.
 The broker resolves a repo to its sandbox project and creates one only when the
 repo has none, so the project belongs to the repo rather than to whichever session
 was first to ask: later sessions on the same repo resolve to it, and others may
-hold live grants on it right now. `gcp-credentials created` reports such a project
-so its monthly spend is visible to whoever caused it — it is not a teardown list.
-Retiring a sandbox project is a deliberate act taken knowing what else depends on
-it, not a tidy-up at the end of a session.
+hold live grants on it right now. A sandbox also carries its own expiry and the
+broker deletes it when that lapses — a grant is clamped to it, which is why a 24h
+grant against a sandbox with 12h left comes back as 12h. So an unattended sandbox
+is not a leak accumulating cost, and `gcp-credentials created` is a record of what
+this session brought into being, not a teardown list. Retiring one early is a
+deliberate act taken knowing what else depends on it; extending one past its
+expiry is `/sandbox extend`.
 
 ### 1. `release` — this machine stops using the credentials
 
