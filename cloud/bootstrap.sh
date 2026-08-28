@@ -726,14 +726,15 @@ COMPOSED_SKILLS="retrospective start-session end-session"
 # skills invoke them by name, and a skill whose helper is missing fails at the
 # point of use rather than at install, which is the worst time to find out.
 #
-# start-session-claude-drift is here because start-session-gather-state runs it
-# as "$(dirname "$0")/start-session-claude-drift" -- a sibling dependency that
-# nothing in the skill text mentions, so it would be easy to omit and hard to
-# diagnose.
+# start-session-claude-drift and session-repo-resolve are here because the
+# gather scripts run them as "$(dirname "$0")/<name>" -- sibling dependencies
+# that nothing in the skill text mentions, so they would be easy to omit and
+# hard to diagnose. session-repo-resolve is the shared one: both gathers call
+# it, and without it both silently fall back to the old cwd-only check.
 #
 # They land in ~/.claude/bin because that is where the skills spell their
 # invocation: "~/.claude/bin/<script>", on every surface.
-BIN_SCRIPTS="start-session-gather-state start-session-claude-drift end-session-gather-state end-session-squash-merged"
+BIN_SCRIPTS="start-session-gather-state start-session-claude-drift session-repo-resolve end-session-gather-state end-session-squash-merged"
 
 # Defensive: the credential-helper section above already creates this, but the
 # dependency is invisible from here and a reordering would break it silently.

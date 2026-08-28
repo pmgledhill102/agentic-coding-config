@@ -20,13 +20,56 @@ set -uo pipefail
 
 progress() { printf '[gather] %s\n' "$*" >&2; }
 
-# --- Phase 0: pre-flight ------------------------------------------------
+# --- Phase 0: resolve the repo ------------------------------------------
 # Everything below assumes a git repo, so this has to come before the fetch.
-if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-    printf '===not_a_git_repo (exit=1)===\n'
-    printf '/start-session requires a git-backed repo — nothing to sync.\n\n'
-    exit 1
+#
+# "Not a repo" is not the same as "no repo": a container handed several repos
+# as siblings starts the session in their parent, so the repo being worked in
+# is one level down. session-repo-resolve does that lookup; this script only
+# acts on its verdict. A sibling helper rather than inline code because
+# end-session-gather-state needs the identical answer.
+RESOLVE_OUT=$("$(dirname "$0")/session-repo-resolve" 2>/dev/null)
+RESOLVE_STATE=$(printf '%s\n' "$RESOLVE_OUT" | sed -n 's/^state=//p' | head -1)
+
+# A container installed before session-repo-resolve existed has no helper to
+# run. Degrade to the old inline check rather than reporting every repo as
+# unresolvable.
+if [ -z "$RESOLVE_STATE" ]; then
+    if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+        RESOLVE_STATE=cwd
+    else
+        RESOLVE_STATE=none
+    fi
 fi
+
+RESOLVED_REPO=""
+case "$RESOLVE_STATE" in
+    cwd)
+        : # ordinary case: the session is already standing in the repo
+        ;;
+    resolved-child)
+        RESOLVED_REPO=$(printf '%s\n' "$RESOLVE_OUT" | sed -n 's/^repo=//p' | head -1)
+        cd "$RESOLVED_REPO" || {
+            printf '===not_a_git_repo (exit=1)===\n'
+            printf 'resolved %s but could not enter it — nothing to sync.\n\n' "$RESOLVED_REPO"
+            exit 1
+        }
+        ;;
+    ambiguous)
+        # Several candidates is the one case the script must not decide. It
+        # reports them and stops; the skill asks which.
+        printf '===repo_candidates (exit=2)===\n'
+        printf 'cwd=%s\n' "$(pwd)"
+        printf '%s\n' "$RESOLVE_OUT" | sed -n 's/^candidate=/candidate=/p'
+        printf '\n'
+        exit 2
+        ;;
+    *)
+        printf '===not_a_git_repo (exit=1)===\n'
+        printf '/start-session requires a git-backed repo — nothing to sync.\n\n'
+        exit 1
+        ;;
+esac
 
 TMP=$(mktemp -d -t start-session-gather.XXXXXX)
 trap 'rm -rf "$TMP"' EXIT
@@ -309,6 +352,17 @@ emit() {
     cat "$TMP/$name.out" 2>/dev/null
     printf '\n'
 }
+
+# Only present when the repo was not the one the caller was standing in —
+# there is nothing to report when cwd was already the repo, and the caller
+# needs to chdir here itself, since this script's own cd died with it.
+if [ -n "$RESOLVED_REPO" ]; then
+    printf '===repo_resolution (exit=0)===\n'
+    printf 'state=resolved-child\n'
+    printf 'repo=%s\n' "$RESOLVED_REPO"
+    printf 'name=%s\n' "$(basename "$RESOLVED_REPO")"
+    printf '\n'
+fi
 
 printf '===fetch (exit=%s)===\n' "$FETCH_EXIT"
 # Suppress verbose fetch output on success (it's normal "From <remote>..." chatter

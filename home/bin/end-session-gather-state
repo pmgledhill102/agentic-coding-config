@@ -21,6 +21,58 @@ set -uo pipefail
 
 progress() { printf '[gather] %s\n' "$*" >&2; }
 
+# --- Phase 0: resolve the repo ------------------------------------------
+# The pre-flight used to live in the skill text as a bare `git rev-parse`,
+# which stopped the command whenever cwd was not itself a repo. A container
+# handed several repos as siblings starts the session in their parent, so that
+# stopped on a session that plainly had a repo one level down.
+#
+# Same helper, same verdict, same handling as start-session-gather-state — the
+# resolution is identical on both surfaces and in both commands, so it is one
+# script rather than four copies (ADR-0018 principle 8, step 0).
+RESOLVE_OUT=$("$(dirname "$0")/session-repo-resolve" 2>/dev/null)
+RESOLVE_STATE=$(printf '%s\n' "$RESOLVE_OUT" | sed -n 's/^state=//p' | head -1)
+
+# A container installed before session-repo-resolve existed has no helper to
+# run. Degrade to the old inline check rather than reporting every repo as
+# unresolvable.
+if [ -z "$RESOLVE_STATE" ]; then
+    if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+        RESOLVE_STATE=cwd
+    else
+        RESOLVE_STATE=none
+    fi
+fi
+
+RESOLVED_REPO=""
+case "$RESOLVE_STATE" in
+    cwd)
+        : # ordinary case: the session is already standing in the repo
+        ;;
+    resolved-child)
+        RESOLVED_REPO=$(printf '%s\n' "$RESOLVE_OUT" | sed -n 's/^repo=//p' | head -1)
+        cd "$RESOLVED_REPO" || {
+            printf '===not_a_git_repo (exit=1)===\n'
+            printf 'resolved %s but could not enter it — nothing to tidy.\n\n' "$RESOLVED_REPO"
+            exit 1
+        }
+        ;;
+    ambiguous)
+        # Several candidates is the one case the script must not decide. It
+        # reports them and stops; the skill asks which.
+        printf '===repo_candidates (exit=2)===\n'
+        printf 'cwd=%s\n' "$(pwd)"
+        printf '%s\n' "$RESOLVE_OUT" | sed -n 's/^candidate=/candidate=/p'
+        printf '\n'
+        exit 2
+        ;;
+    *)
+        printf '===not_a_git_repo (exit=1)===\n'
+        printf 'end-session requires a git-backed repo — nothing to tidy.\n\n'
+        exit 1
+        ;;
+esac
+
 TMP=$(mktemp -d -t end-session-gather.XXXXXX)
 trap 'rm -rf "$TMP"' EXIT
 
@@ -204,6 +256,17 @@ emit() {
     cat "$TMP/$name.out" 2>/dev/null
     printf '\n'
 }
+
+# Only present when the repo was not the one the caller was standing in —
+# there is nothing to report when cwd was already the repo, and the caller
+# needs to chdir here itself, since this script's own cd died with it.
+if [ -n "$RESOLVED_REPO" ]; then
+    printf '===repo_resolution (exit=0)===\n'
+    printf 'state=resolved-child\n'
+    printf 'repo=%s\n' "$RESOLVED_REPO"
+    printf 'name=%s\n' "$(basename "$RESOLVED_REPO")"
+    printf '\n'
+fi
 
 printf '===fetch (exit=%s)===\n' "$FETCH_EXIT"
 cat "$TMP/fetch.out"

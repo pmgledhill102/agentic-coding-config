@@ -62,7 +62,7 @@ more here than on a machine that will still be there tomorrow.
 
 ## Phase 1 — Sync
 
-Everything starts with one script call. The pre-flight check is inside it, so
+Everything starts with one script call. The pre-flight check is inside it — including working out which repo this session is in when cwd is their parent — so
 this command makes **no standalone Bash calls before the gather**.
 
 ### 1. Gather state (Tier 1 — one script call, one MCP call)
@@ -81,7 +81,9 @@ Output is a sectioned stream. Each section starts with `===<name> (exit=<N>)===`
 
 | Section | Drives step(s) | Notes on exit code |
 | --- | --- | --- |
-| `not_a_git_repo` | pre-flight | Only present when the gather ran outside a git repo, in which case it is the **only** section and the script exits 1. Print the line it contains and stop; every other step assumes a repo. |
+| `repo_resolution` | 1a, 7 | Only present when cwd was **not** itself a repo and exactly one repo sat directly beneath it — the script resolved to it and gathered there. Gives `repo=` and `name=`. `cd` to `repo=` before any later step, because the script's own `cd` died with it, and name the repo and the reason in the brief. No prompt: one candidate is not a choice. |
+| `repo_candidates` | 1a | Only present when cwd was not a repo and **several** repos sat directly beneath it, in which case it is the **only** section and the script exits 2. Gives `cwd=` and one `candidate=` line each. Tier 3: list them, ask which, `cd` there and re-run the gather. Never guess. |
+| `not_a_git_repo` | pre-flight | Only present when cwd was not a repo and no repo sat beneath it either, in which case it is the **only** section and the script exits 1. Print the line it contains and stop; every other step assumes a repo. |
 | `fetch` | 2 (folded in) | Body is empty on success (exit=0). Non-zero = network/auth issue — body contains the error; surface before proceeding. |
 | `local_state` | 3, 7 | Includes branch, dirty/clean, ahead/behind upstream, ahead/behind `origin/<default>`, and, under `---origin---`, the remote URL that gives you `<owner>/<repo>` for part (b). |
 | `recent_main_commits` | 5 | First line is `count=<N>` (commits that merged into `origin/<default>` since the previous local tip). When non-zero, subsequent lines are `<short-sha> <subject>`, capped at 10. Empty when caught up. |
@@ -233,6 +235,7 @@ Always print, even when everything is clean. This is the user-facing payoff — 
 ```text
 ── Session brief ──────────────────────────────
 Repo:     <repo>             Branch: <branch> (<clean|dirty>)
+          [ran in <name>; cwd <cwd> is not a repo]   (only when repo_resolution present)
 Sync:     <default> <ahead/behind/even>   upstream <ahead/behind/even/gone/n/a>
           [auto-switched <feature> → <default> (upstream gone)]    (only when Step 3 auto-switched)
 
@@ -259,6 +262,7 @@ Needs attention:
 
 Rules:
 
+- When `repo_resolution` is present, the `Repo:` line carries the second line naming which repo was resolved and why. It is never silent: a session that resolved its own repo should be able to see that it did.
 - Sections with nothing to say collapse to a single `none` line; "Needs attention" is omitted entirely when empty.
 - The issue list is titled **"Open issues (blocked filter unavailable)"**, not "Ready to pick up next". That is not a cosmetic difference: the query in step 1(b) cannot express `-is:blocked`, so some rows may be blocked. Titling it as a ready list would assert a filter that was never applied. Sort by priority label (P0 first, `-` last), emit the top 5, and check an issue's blockers before claiming it.
 - "In progress" is the same response filtered client-side to the authenticated login. Report the real answer — including `none` when the filter genuinely returned nothing. It reads `n/a (no GitHub route)` **only** when the MCP call itself failed.
@@ -269,7 +273,8 @@ Rules:
 
 ## Guardrails
 
-- **Pre-flight gate is non-negotiable.** Never proceed when not in a git repo.
+- **Pre-flight gate is non-negotiable.** Never proceed when there is no repo — but "cwd is not a repo" is not that. The gather looks one level down first, so the gate fires on `not_a_git_repo` (nothing beneath either), not on the bare fact that cwd is a parent directory.
+- **Never guess between candidate repos.** `repo_candidates` means several sat beneath cwd; list them and ask. One candidate resolves silently, several never do.
 - **Never auto-rebase a feature branch** onto an advanced default branch. Surface the gap and stop. The user picks the strategy.
 - **Never switch branches except when the upstream is gone and the tree is clean.** That single case (PR merged + branch auto-deleted on remote, no local uncommitted work) is auto-handled per Step 3. Otherwise, `start-session` reports state on whatever branch the user is on.
 - **Don't push anything.** Pushes belong to `end-session` (for git/`main`). `start-session` is read-mostly. (Note: if the user says yes to the journal-promote prompt, `/promote-journal-inbox` runs its own commit + push against `paul-context` — that's the promote command's contract, not a carve-out here.)
