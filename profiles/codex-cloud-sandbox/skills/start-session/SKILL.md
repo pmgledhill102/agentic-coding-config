@@ -209,11 +209,21 @@ skills, policy and helper scripts with nothing saying so.
   toolkit is present, one toolchain is not. What it changes is what you may
   conclude from a later absence — a lint or scan that cannot run here is
   unverified work to report, never a gate that passed.
-- **`state=behind`**: say so plainly at the top of the brief and give the
-  remedy verbatim from `remedy=`. Re-running the bootstrap takes effect
-  immediately and needs no restart. Everything the container delivers —
-  skills, policy, helpers — is as old as that SHA, which is why this is worth
-  a line of its own rather than a footnote.
+- **`state=behind`**: say so plainly at the top of the brief and give **both**
+  lines verbatim — `remedy=` and `recurrence=`. Everything the container
+  delivers — skills, policy, helpers — is as old as that SHA, which is why
+  this is worth a line of its own rather than a footnote.
+
+  Reporting only `remedy=` is the failure mode to avoid, and it is an easy one
+  because the re-run visibly works. It fixes **this session and nothing else**:
+  the environment re-runs its setup script only when the script text changes,
+  the domains change, or roughly seven days pass, and `REF=main` never changes
+  as a string — so the next session restores the same snapshot and lands right
+  back here. `recurrence=` carries the other half, bumping the `Rev:` line in
+  the environment setup script, which is the only thing that stops it. That
+  field lives in the vendor's settings UI, outside this repo, so no skill and
+  no merge can do it: surfacing it to the human is the entire mechanism
+  (`cloud/README.md:506`, #347).
 - **`state=unknown`**: the ref could not be resolved (no network). Mention it
   once; do not retry.
 
@@ -290,6 +300,7 @@ Needs attention:
   • <branch upstream gone but tree dirty>      (omit unless that case fires)
   • <unpushed commits: N — this container is disposable>   (omit when 0)
   • container config is behind <installed> → <head> — re-run the bootstrap: <remedy>
+    …and to stop it recurring: <recurrence>  (both lines, or the fix is half done)
                                                (omit unless state=behind)
   • capabilities missing: <degraded> — lint/scan gates that need them cannot run
                                                (omit unless a degraded= line is present)

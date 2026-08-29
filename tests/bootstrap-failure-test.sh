@@ -197,6 +197,23 @@ check "a manifest with no status= is not read as failed" \
     "state=pinned ref=main sha=abc123 installed_at=2026-08-20T00:00:00Z" \
     "$(currency "$H")"
 
+# A behind container must be told BOTH halves. Reporting only the re-run is
+# what makes the drift recur: it fixes the session in front of you and leaves
+# the next one restoring the same snapshot (#347).
+cat > "$H/.agents/.bootstrap-manifest" << 'EOF'
+status=ok
+ref=main
+ref_kind=ref
+sha=0000000000000000000000000000000000000000
+installed_at=2026-08-01T00:00:00Z
+EOF
+behind=$(HOME="$H" "$GATHER" 2> /dev/null |
+    sed -n '/^===bootstrap_currency/,/^===[a-z]/p')
+check "a behind container gets the in-session remedy" "1" \
+    "$(printf '%s\n' "$behind" | grep -c '^remedy=re-run the bootstrap')"
+check "  and the recurrence half (bump Rev:)" "1" \
+    "$(printf '%s\n' "$behind" | grep -c '^recurrence=.*Rev:')"
+
 rm -f "$H/.agents/.bootstrap-manifest"
 check "no manifest still means no-manifest, not failed" \
     "state=no-manifest" "$(currency "$H")"

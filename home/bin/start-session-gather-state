@@ -317,6 +317,13 @@ run_sh bootstrap_currency '
         else
             echo "state=behind ref=$ref installed=$installed head=$head installed_at=$at"
             echo "remedy=re-run the bootstrap; it takes effect immediately and needs no restart"
+            # The re-run fixes THIS session and nothing else: the environment
+            # re-runs its setup script only when the script text changes, the
+            # allowed domains change, or roughly seven days pass, and REF=main
+            # never changes as a string. So the next session restores the same
+            # snapshot and lands here again. cloud/README.md:506 says to do
+            # both; only saying the first half is what makes this recur (#347).
+            echo "recurrence=re-running does NOT stop this returning — bump the Rev: line in the environment setup script (claude.ai -> environment settings) to force a rebuild for every future session"
         fi
     fi
 
