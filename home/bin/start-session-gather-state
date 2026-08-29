@@ -280,6 +280,21 @@ run_sh bootstrap_currency '
         exit 0
     fi
 
+    # A run that died partway writes status=failed and stops; a run that
+    # finished writes status=ok. Neither the ref comparison below nor anything
+    # else in the brief means much until this is cleared, because the container
+    # holds an unknown subset of what it should, so it reports first and alone.
+    # A manifest with no status line predates the field and can only have come
+    # from a run that finished (#345).
+    if [ "$(sed -n "s/^status=//p" "$manifest")" = "failed" ]; then
+        echo "state=failed step=$(sed -n "s/^failed_step=//p" "$manifest")"
+        echo "exit_code=$(sed -n "s/^exit_code=//p" "$manifest")"
+        echo "failed_at=$(sed -n "s/^failed_at=//p" "$manifest")"
+        echo "log=$(sed -n "s/^log=//p" "$manifest")"
+        echo "remedy=re-run the bootstrap; it takes effect immediately and needs no restart"
+        exit 0
+    fi
+
     ref=$(sed -n "s/^ref=//p" "$manifest")
     kind=$(sed -n "s/^ref_kind=//p" "$manifest")
     installed=$(sed -n "s/^sha=//p" "$manifest")

@@ -39,6 +39,7 @@ No build step. Quality gates (run before pushing; CI runs the same):
 markdownlint-cli2 "**/*.md"              # markdown lint
 sh tests/gcp-credentials-test.sh         # credential-helper behaviour
 sh tests/precommit-hook-test.sh          # pre-commit hook matching
+sh tests/bootstrap-failure-test.sh       # a half-installed bootstrap reports itself
 sh tests/retired-paths.sh                # the prune list is safe and sectioned
 sh tests/retired-paths-test.sh           # ...and its validator still catches
 python3 tests/compose-context.py         # composed profiles and skills match their fragments

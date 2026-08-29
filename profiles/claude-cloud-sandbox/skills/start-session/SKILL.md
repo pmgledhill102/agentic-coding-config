@@ -89,7 +89,7 @@ Output is a sectioned stream. Each section starts with `===<name> (exit=<N>)===`
 | `recent_main_commits` | 5 | First line is `count=<N>` (commits that merged into `origin/<default>` since the previous local tip). When non-zero, subsequent lines are `<short-sha> <subject>`, capped at 10. Empty when caught up. |
 | `gh_ready`, `gh_assigned` | — | `gh-unavailable` or `gh-unauthorized` on this surface, every time (see §Surface). Ignore both; part (b) is where the issue data comes from. They are still emitted because the script is one file shared with the workstation composition. |
 | `claude_drift` | — | `state=absent` on this surface: nothing here is chezmoi-managed, so there is no deployed tree to be behind. Silent skip. |
-| `bootstrap_currency` | 5b, 7 | `state=current` = silent skip. `state=no-manifest` = a container built before manifests existed; silent, and it self-heals when the snapshot next expires. `state=pinned` names the ref the environment froze to — report only if something else looks stale. `state=behind` gives `installed=`, `head=` and a `remedy=` line: surface it, because everything the container ships is that old. `state=unknown` = the ref could not be resolved (no network); mention once, do not retry. |
+| `bootstrap_currency` | 5b, 7 | `state=failed` = the bootstrap died partway and the container is missing an unknown subset of its toolkit; report it first, alone, and above everything else, quoting `step=`, `exit_code=` and `log=`. `state=current` = silent skip. `state=no-manifest` = a container built before manifests existed; silent, and it self-heals when the snapshot next expires. `state=pinned` names the ref the environment froze to — report only if something else looks stale. `state=behind` gives `installed=`, `head=` and a `remedy=` line: surface it, because everything the container ships is that old. `state=unknown` = the ref could not be resolved (no network); mention once, do not retry. |
 
 **(b) The issue query.** One MCP call answers both issue sections of the brief.
 Send it as soon as you have `<owner>/<repo>` — from the `---origin---` line above, or
@@ -184,9 +184,20 @@ changes, the allowed hosts change, or roughly seven days pass — so pushing to 
 branch does not reach new sessions, and a sandbox can be running week-old
 skills, policy and helper scripts with nothing saying so.
 
+- **`state=failed`**: the bootstrap **died partway** and this container holds
+  an unknown subset of the skills, helpers, hooks and policy it should. Report
+  it first and on its own, above every other line in the brief, with `step=`,
+  `exit_code=` and `log=` verbatim — then stop and let the human decide, rather
+  than working around whatever turns out to be missing. Nothing else in the
+  brief is trustworthy while this is set: a container this far from what it
+  claims to be will misreport in ways that look like ordinary absence. Treat a
+  missing skill, command or helper for the rest of the session as unproven, not
+  as evidence the machine does not do that thing.
 - **`state=current`**, **`state=no-manifest`**: silent. `no-manifest` is a
   container built before manifests existed; it self-heals when the snapshot
-  next expires.
+  next expires. It does **not** mean a crashed run — a failed bootstrap writes
+  `status=failed` rather than nothing (#345), so absence again means only what
+  it used to.
 - **`state=pinned`**: names the ref the environment froze to. Report only if
   something else looks stale.
 - **`state=behind`**: say so plainly at the top of the brief and give the
@@ -201,6 +212,15 @@ Two honest limits, worth knowing rather than implying more than it does. The
 check ships inside the thing it checks, so a container older than the check
 cannot report it — that resolves itself after one cache cycle, not immediately.
 And this runs only when this skill runs; it is advisory, not a guarantee.
+
+That second limit bites hardest on `state=failed`, because this skill is
+installed near the end of the bootstrap: a failure early enough takes the
+reporting away with everything else, and there is no `start-session` left to
+run. That case is covered outside this skill — the same trap that writes the
+manifest prepends a banner to `~/.claude/CLAUDE.md` and `~/.agents/AGENTS.md`,
+which are read whether or not any skill survived. So a banner and this section
+are two views of one event: if you have already seen the banner, do not report
+it twice.
 
 **Never re-run the bootstrap unasked, and never offer to as a Tier 1 action.**
 This is surface-only by design: reinstalling the harness the agent is running
@@ -233,6 +253,11 @@ Note: this surface only counts the **filesystem** half of the inbox. The Issue-s
 Always print, even when everything is clean. This is the user-facing payoff — one screenful, scannable, no surprises. Format:
 
 ```text
+⚠ BOOTSTRAP FAILED — this container's toolkit is incomplete   (only when state=failed)
+  step: <step>    exit: <exit_code>    log: <log>
+  An unknown subset of skills, helpers, hooks and policy is missing, so
+  nothing below is reliable. Remedy: <remedy>
+
 ── Session brief ──────────────────────────────
 Repo:     <repo>             Branch: <branch> (<clean|dirty>)
           [ran in <name>; cwd <cwd> is not a repo]   (only when repo_resolution present)
@@ -263,6 +288,7 @@ Needs attention:
 Rules:
 
 - When `repo_resolution` is present, the `Repo:` line carries the second line naming which repo was resolved and why. It is never silent: a session that resolved its own repo should be able to see that it did.
+- `state=failed` from `bootstrap_currency` prints **above** the brief, not inside "Needs attention", and it is the only thing that does. A half-installed container misreports its own state, so burying it in a bullet list next to a stale-branch count would rank it as one item among several when it invalidates the rest. Print it, then print the brief anyway — the git lines are still gathered from the repo and remain true — but say plainly that the GitHub and skill-dependent lines may not be.
 - Sections with nothing to say collapse to a single `none` line; "Needs attention" is omitted entirely when empty.
 - The issue list is titled **"Open issues (blocked filter unavailable)"**, not "Ready to pick up next". That is not a cosmetic difference: the query in step 1(b) cannot express `-is:blocked`, so some rows may be blocked. Titling it as a ready list would assert a filter that was never applied. Sort by priority label (P0 first, `-` last), emit the top 5, and check an issue's blockers before claiming it.
 - "In progress" is the same response filtered client-side to the authenticated login. Report the real answer — including `none` when the filter genuinely returned nothing. It reads `n/a (no GitHub route)` **only** when the MCP call itself failed.

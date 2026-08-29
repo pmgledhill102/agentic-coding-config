@@ -79,7 +79,101 @@
 set -eu
 
 log() { echo "[bootstrap] $*"; }
-die() { echo "[bootstrap] error: $*" >&2; exit 1; }
+
+# FAILED_STEP is what the exit trap reports. `die` is the only place that can
+# name the step in words, so it records one on the way past; a `set -e` death
+# that never reaches `die` leaves it empty and the trap says so rather than
+# inventing a cause.
+FAILED_STEP=
+die() { FAILED_STEP="$*"; echo "[bootstrap] error: $*" >&2; exit 1; }
+
+# Where the caller's setup script tees this run's output. cloud/README.md's
+# snippet uses /tmp/bootstrap.log; an environment that puts it elsewhere can
+# say so, because the path is quoted into the failure report and a wrong one
+# sends a reader looking for a file that is not there.
+BOOTSTRAP_LOG="${BOOTSTRAP_LOG:-/tmp/bootstrap.log}"
+
+BANNER_START="<!-- acc:bootstrap-failed:start -->"
+BANNER_END="<!-- acc:bootstrap-failed:end -->"
+
+strip_banner() {
+    # Drop a banner left by an earlier failed run, so repeated failures do not
+    # stack. Success needs no equivalent: both policy files are overwritten
+    # wholesale by a run that gets that far, which takes the banner with them.
+    sed "/^${BANNER_START}\$/,/^${BANNER_END}\$/d" "$1"
+}
+
+# --- record_failure: leave something a session can actually find --------------
+#
+# The manifest is written at the very end of a successful run, so before this
+# existed a run that died partway left no artefact at all -- and the setup
+# script's `exit 0` (correct: a non-zero setup script fails the whole session)
+# meant the container came up looking clean with half a toolkit in it. The log
+# said so loudly and nothing read the log (#345).
+#
+# Two artefacts, because they cover different failures. The manifest is the
+# structured one, and start-session reads it -- but start-session is itself
+# installed near the end, so an early failure leaves nothing able to report the
+# manifest. Hence the banner in the policy files, which are read unconditionally
+# and by whatever is running (see the CLAUDE.md note further down): it is the
+# only channel that survives a failure early enough to take the reporting skill
+# out with it.
+#
+# Every step here is best-effort. This runs while the script is already failing,
+# and a trap that dies on its own mkdir replaces a diagnosable failure with a
+# confusing one.
+record_failure() {
+    _rc="$1"
+    _step="${FAILED_STEP:-unknown - exited without reaching a die}"
+    _when=$(date -u +%Y-%m-%dT%H:%M:%SZ 2> /dev/null || echo unknown)
+
+    mkdir -p "$HOME/.agents" 2> /dev/null || return 0
+    {
+        echo "status=failed"
+        echo "exit_code=$_rc"
+        echo "failed_step=$_step"
+        echo "failed_at=$_when"
+        echo "ref=$REF"
+        echo "profile=$PROFILE"
+        echo "log=$BOOTSTRAP_LOG"
+    } > "$HOME/.agents/.bootstrap-manifest" 2> /dev/null || true
+
+    # AGENTS.md always; CLAUDE.md only for the profiles that install one, or a
+    # codex container would keep a banner nothing there ever overwrites.
+    _targets="$HOME/.agents/AGENTS.md"
+    case "$PROFILE" in
+        claude-*) _targets="$_targets $HOME/.claude/CLAUDE.md" ;;
+    esac
+
+    for _t in $_targets; do
+        mkdir -p "$(dirname "$_t")" 2> /dev/null || continue
+        {
+            echo "$BANNER_START"
+            echo "# This container's toolkit is incomplete"
+            echo
+            echo "\`cloud/bootstrap.sh\` exited $_rc before it finished, so an unknown"
+            echo "number of the skills, helper scripts, hooks and policy that normally"
+            echo "arrive with this file were never installed."
+            echo
+            echo "- failed step: $_step"
+            echo "- ref: $REF, profile: $PROFILE, at: $_when"
+            echo "- full log: $BOOTSTRAP_LOG"
+            echo
+            echo "Do not read a missing skill, command or helper as \"this machine does"
+            echo "not do that\" — check the log before concluding anything about what is"
+            echo "available. Say so before starting work that depends on the toolkit."
+            echo "Re-running the bootstrap fixes it and needs no restart, but it is the"
+            echo "human's call: never re-run it unasked."
+            echo "$BANNER_END"
+            echo
+        } > "$_t.bootstrap-tmp" 2> /dev/null || continue
+        if [ -f "$_t" ]; then
+            strip_banner "$_t" >> "$_t.bootstrap-tmp" 2> /dev/null || true
+        fi
+        mv "$_t.bootstrap-tmp" "$_t" 2> /dev/null || true
+    done
+    return 0
+}
 
 # The ref is positional and first. A leading flag is left for the argument loop
 # rather than taken as the ref, so omitting the ref reports the real problem.
@@ -98,6 +192,29 @@ WITH_HOOKS=
 WITH_GH=
 WITH_TERRAFORM=
 PROFILE=claude-cloud-sandbox
+
+# The trap goes on before anything that can fail, which is why TMP is declared
+# empty here and filled in much further down: an exit trap installed after the
+# first `die` does not cover it. Both gaps that existed were real -- the arg
+# loop immediately below, and `curl is required` -- so this sits above the
+# earliest `die` in the file rather than next to the mktemp it also cleans up.
+# Everything record_failure reads (REF, PROFILE, BOOTSTRAP_LOG) is defaulted by
+# this point, so a usage error reports against the defaults rather than dying
+# inside the handler.
+TMP=
+on_exit() {
+    _rc=$?
+    [ -n "$TMP" ] && rm -rf "$TMP"
+    if [ "$_rc" -ne 0 ]; then
+        record_failure "$_rc" || true
+    fi
+    return 0
+}
+# EXIT alone does not fire on a signal in every POSIX shell, so INT and TERM
+# re-exit rather than being trapped directly -- one handler, one code path.
+trap on_exit EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -189,7 +306,6 @@ RAW="https://raw.githubusercontent.com/pmgledhill102/agentic-coding-config/${REF
 command -v curl > /dev/null 2>&1 || die "curl is required"
 
 TMP=$(mktemp -d)
-trap 'rm -rf "$TMP"' EXIT INT TERM
 
 # --- fetch: every download in this script goes through here ---------------
 #
@@ -265,6 +381,18 @@ apt_update() {
 # Refusing is right on a workstation and pointless in a container that exists
 # for one session and is thrown away, so retry with --break-system-packages --
 # a flag pip only grew in 23.0, hence the retry rather than passing it first.
+#
+# The third attempt is for a different failure that looks the same in a log.
+# Where a package needs to UPGRADE a dependency that apt installed, pip cannot
+# uninstall the old one -- a dpkg-installed distribution carries no RECORD file
+# -- and gives up with "Cannot uninstall packaging 24.0, RECORD file not found".
+# --break-system-packages does not help: that bypasses the PEP 668 marker, and
+# this is a missing-metadata problem in the package being replaced. Only
+# --ignore-installed clears it, by installing over the top rather than removing
+# first. That is why it is last: it skips the satisfied-dependency check for the
+# whole transaction, so a run that reaches it re-downloads more than it needs.
+# checkov against the sandbox image's apt-managed `packaging` is the case that
+# found this, and it took the whole bootstrap down with it (#344).
 pip_install() {
     _pkg="$1"
     for _pip in "pip" "pip3" "python3 -m pip"; do
@@ -274,6 +402,9 @@ pip_install() {
         # shellcheck disable=SC2086
         $_pip install --quiet --no-input --break-system-packages "$_pkg" \
             > /dev/null 2>&1 && return 0
+        # shellcheck disable=SC2086
+        $_pip install --quiet --no-input --break-system-packages \
+            --ignore-installed "$_pkg" > /dev/null 2>&1 && return 0
     done
     return 1
 }
@@ -957,6 +1088,12 @@ else
 fi
 
 {
+    # Written only here, at the end of a run that reached it. The exit trap
+    # writes status=failed instead, so the two are mutually exclusive and a
+    # reader never has to date one against the other. A manifest from before
+    # this line existed carries no status at all, which readers take as ok --
+    # it could only have been written by a run that finished.
+    echo "status=ok"
     echo "ref=$REF"
     echo "ref_kind=$kind"
     echo "sha=$resolved"
