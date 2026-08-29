@@ -61,6 +61,10 @@ jobs:
       # classify as a commit/push is the whole of its cost.
       - name: Run the pre-commit hook classification tests
         run: sh tests/precommit-hook-test.sh
+      # A bootstrap that dies partway must say so: the container it leaves
+      # behind looks healthy and is not, and nothing else in a session checks.
+      - name: Run the bootstrap failure-reporting tests
+        run: sh tests/bootstrap-failure-test.sh
 
   context-composition:
     name: composed context profiles

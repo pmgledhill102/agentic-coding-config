@@ -3,6 +3,11 @@
 Always print, even when everything is clean. This is the user-facing payoff — one screenful, scannable, no surprises. Format:
 
 ```text
+⚠ BOOTSTRAP FAILED — this container's toolkit is incomplete   (only when state=failed)
+  step: <step>    exit: <exit_code>    log: <log>
+  An unknown subset of skills, helpers, hooks and policy is missing, so
+  nothing below is reliable. Remedy: <remedy>
+
 ── Session brief ──────────────────────────────
 Repo:     <repo>             Branch: <branch> (<clean|dirty>)
           [ran in <name>; cwd <cwd> is not a repo]   (only when repo_resolution present)
@@ -26,13 +31,17 @@ Needs attention:
   • <branch upstream gone but tree dirty>      (omit unless that case fires)
   • <unpushed commits: N — this container is disposable>   (omit when 0)
   • container config is behind <installed> → <head> — re-run the bootstrap: <remedy>
+    …and to stop it recurring: <recurrence>  (both lines, or the fix is half done)
                                                (omit unless state=behind)
+  • capabilities missing: <degraded> — lint/scan gates that need them cannot run
+                                               (omit unless a degraded= line is present)
 ───────────────────────────────────────────────
 ```
 
 Rules:
 
 - When `repo_resolution` is present, the `Repo:` line carries the second line naming which repo was resolved and why. It is never silent: a session that resolved its own repo should be able to see that it did.
+- `state=failed` from `bootstrap_currency` prints **above** the brief, not inside "Needs attention", and it is the only thing that does. A half-installed container misreports its own state, so burying it in a bullet list next to a stale-branch count would rank it as one item among several when it invalidates the rest. Print it, then print the brief anyway — the git lines are still gathered from the repo and remain true — but say plainly that the GitHub and skill-dependent lines may not be.
 - Sections with nothing to say collapse to a single `none` line; "Needs attention" is omitted entirely when empty.
 - The issue list is titled **"Open issues (blocked filter unavailable)"**, not "Ready to pick up next". That is not a cosmetic difference: the query in step 1(b) cannot express `-is:blocked`, so some rows may be blocked. Titling it as a ready list would assert a filter that was never applied. Sort by priority label (P0 first, `-` last), emit the top 5, and check an issue's blockers before claiming it.
 - "In progress" is the same response filtered client-side to the authenticated login. Report the real answer — including `none` when the filter genuinely returned nothing. It reads `n/a (no GitHub route)` **only** when the MCP call itself failed.

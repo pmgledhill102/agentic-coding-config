@@ -271,12 +271,30 @@ run_sh bootstrap_currency '
     if [ ! -f "$manifest" ]; then
         # Either a workstation, or a container built before manifests existed.
         # The second cannot be distinguished from here, and self-heals: once the
-        # snapshot expires, the next build writes one.
+        # snapshot expires, the next build writes one. It does NOT mean a
+        # crashed run — a failed bootstrap writes status=failed (#345).
         if [ -d "$HOME/.agents/skills" ]; then
             echo "state=no-manifest"
         else
             echo "state=not-a-container"
         fi
+        exit 0
+    fi
+
+    status=$(sed -n "s/^status=//p" "$manifest")
+    degraded=$(sed -n "s/^degraded=//p" "$manifest")
+
+    # A run that died partway writes status=failed and stops. Nothing else in
+    # the brief means much until that is cleared, because the container holds
+    # an unknown subset of what it should, so it reports first and alone. A
+    # manifest with no status line predates the field and can only have come
+    # from a run that finished.
+    if [ "$status" = "failed" ]; then
+        echo "state=failed step=$(sed -n "s/^failed_step=//p" "$manifest")"
+        echo "exit_code=$(sed -n "s/^exit_code=//p" "$manifest")"
+        echo "failed_at=$(sed -n "s/^failed_at=//p" "$manifest")"
+        echo "log=$(sed -n "s/^log=//p" "$manifest")"
+        echo "remedy=re-run the bootstrap; it takes effect immediately and needs no restart"
         exit 0
     fi
 
@@ -290,22 +308,33 @@ run_sh bootstrap_currency '
     # intent rather than by neglect.
     if [ "$kind" != "ref" ]; then
         echo "state=pinned ref=$ref sha=$installed installed_at=$at"
-        exit 0
+    else
+        head=$(git ls-remote "$repo" "$ref" 2>/dev/null | head -1 | cut -f1)
+        if [ -z "$head" ]; then
+            echo "state=unknown ref=$ref installed_at=$at"
+        elif [ "$head" = "$installed" ]; then
+            echo "state=current ref=$ref installed_at=$at"
+        else
+            echo "state=behind ref=$ref installed=$installed head=$head installed_at=$at"
+            echo "remedy=re-run the bootstrap; it takes effect immediately and needs no restart"
+            # The re-run fixes THIS session and nothing else: the environment
+            # re-runs its setup script only when the script text changes, the
+            # allowed domains change, or roughly seven days pass, and REF=main
+            # never changes as a string. So the next session restores the same
+            # snapshot and lands here again. cloud/README.md:506 says to do
+            # both; only saying the first half is what makes this recur (#347).
+            echo "recurrence=re-running does NOT stop this returning — bump the Rev: line in the environment setup script (claude.ai -> environment settings) to force a rebuild for every future session"
+        fi
     fi
 
-    head=$(git ls-remote "$repo" "$ref" 2>/dev/null | head -1 | cut -f1)
-    if [ -z "$head" ]; then
-        echo "state=unknown ref=$ref installed_at=$at"
-        exit 0
+    # Orthogonal to every state above: a container can be perfectly current and
+    # still be missing a Tier 2 capability, so this is its own line rather than
+    # a state of its own (#346). The toolkit is present in all of these cases —
+    # a missing one is fatal and reports state=failed instead.
+    if [ -n "$degraded" ]; then
+        echo "degraded=$degraded"
+        echo "degraded_remedy=re-run the bootstrap to retry the missing capabilities"
     fi
-
-    if [ "$head" = "$installed" ]; then
-        echo "state=current ref=$ref installed_at=$at"
-        exit 0
-    fi
-
-    echo "state=behind ref=$ref installed=$installed head=$head installed_at=$at"
-    echo "remedy=re-run the bootstrap; it takes effect immediately and needs no restart"
 '
 
 

@@ -63,9 +63,22 @@
 # to a tag or commit in anything durable — a branch means
 # any compromise of this repo reaches every sandbox that starts afterwards.
 #
-# This script fails loudly: a half-installed toolkit is worse than none, and the
-# caller is better placed to decide tolerance. A cloud setup script, which fails
-# the whole session on a non-zero exit, should end with `exit 0`.
+# HOW THIS SCRIPT FAILS: hard on the toolkit, visibly on capabilities.
+#
+# It used to fail loudly at the first problem of any kind, on the reasoning that
+# a half-installed toolkit is worse than none. That is still true of the
+# toolkit, and Tier 1 below still aborts the run. It was never true of the
+# toolchains -- a container with skills, policy and hooks but no checkov is a
+# working container missing one gate, and killing the run over it threw away
+# everything of value to protect something of much less (#346).
+#
+# So Tier 2 records what it could not install and carries on, and the manifest
+# says `status=degraded` with the names. Nothing is swallowed: #335 made a
+# missing binary report as NOT CHECKED rather than passed, so lost coverage
+# shows up downstream as unverified work rather than false green.
+#
+# A cloud setup script, which fails the whole session on a non-zero exit,
+# should still end with `exit 0`.
 #
 # What it should NOT carry is a shebang. A vendor setup-script field is pasted
 # into a generated script beneath a header of the harness's own, so the line is
@@ -79,7 +92,113 @@
 set -eu
 
 log() { echo "[bootstrap] $*"; }
-die() { echo "[bootstrap] error: $*" >&2; exit 1; }
+
+# FAILED_STEP is what the exit trap reports. `die` is the only place that can
+# name the step in words, so it records one on the way past; a `set -e` death
+# that never reaches `die` leaves it empty and the trap says so rather than
+# inventing a cause.
+FAILED_STEP=
+
+# FAIL_FILE is how a reason escapes a Tier 2 capability, which runs in a
+# subshell where an assignment to FAILED_STEP dies with the subshell. Empty
+# until TMP exists; every Tier 2 capability runs long after that, and a Tier 1
+# die is in this process and reads the variable directly.
+FAIL_FILE=
+
+die() {
+    FAILED_STEP="$*"
+    if [ -n "$FAIL_FILE" ]; then echo "$*" > "$FAIL_FILE" 2> /dev/null || true; fi
+    echo "[bootstrap] error: $*" >&2
+    exit 1
+}
+
+# Where the caller's setup script tees this run's output. cloud/README.md's
+# snippet uses /tmp/bootstrap.log; an environment that puts it elsewhere can
+# say so, because the path is quoted into the failure report and a wrong one
+# sends a reader looking for a file that is not there.
+BOOTSTRAP_LOG="${BOOTSTRAP_LOG:-/tmp/bootstrap.log}"
+
+BANNER_START="<!-- acc:bootstrap-failed:start -->"
+BANNER_END="<!-- acc:bootstrap-failed:end -->"
+
+strip_banner() {
+    # Drop a banner left by an earlier failed run, so repeated failures do not
+    # stack. Success needs no equivalent: both policy files are overwritten
+    # wholesale by a run that gets that far, which takes the banner with them.
+    sed "/^${BANNER_START}\$/,/^${BANNER_END}\$/d" "$1"
+}
+
+# --- record_failure: leave something a session can actually find --------------
+#
+# The manifest is written at the very end of a successful run, so before this
+# existed a run that died partway left no artefact at all -- and the setup
+# script's `exit 0` (correct: a non-zero setup script fails the whole session)
+# meant the container came up looking clean with half a toolkit in it. The log
+# said so loudly and nothing read the log (#345).
+#
+# Two artefacts, because they cover different failures. The manifest is the
+# structured one, and start-session reads it -- but start-session is itself
+# installed near the end, so an early failure leaves nothing able to report the
+# manifest. Hence the banner in the policy files, which are read unconditionally
+# and by whatever is running (see the CLAUDE.md note further down): it is the
+# only channel that survives a failure early enough to take the reporting skill
+# out with it.
+#
+# Every step here is best-effort. This runs while the script is already failing,
+# and a trap that dies on its own mkdir replaces a diagnosable failure with a
+# confusing one.
+record_failure() {
+    _rc="$1"
+    _step="${FAILED_STEP:-unknown - exited without reaching a die}"
+    _when=$(date -u +%Y-%m-%dT%H:%M:%SZ 2> /dev/null || echo unknown)
+
+    mkdir -p "$HOME/.agents" 2> /dev/null || return 0
+    {
+        echo "status=failed"
+        echo "exit_code=$_rc"
+        echo "failed_step=$_step"
+        echo "failed_at=$_when"
+        echo "ref=$REF"
+        echo "profile=$PROFILE"
+        echo "log=$BOOTSTRAP_LOG"
+    } > "$HOME/.agents/.bootstrap-manifest" 2> /dev/null || true
+
+    # AGENTS.md always; CLAUDE.md only for the profiles that install one, or a
+    # codex container would keep a banner nothing there ever overwrites.
+    _targets="$HOME/.agents/AGENTS.md"
+    case "$PROFILE" in
+        claude-*) _targets="$_targets $HOME/.claude/CLAUDE.md" ;;
+    esac
+
+    for _t in $_targets; do
+        mkdir -p "$(dirname "$_t")" 2> /dev/null || continue
+        {
+            echo "$BANNER_START"
+            echo "# This container's toolkit is incomplete"
+            echo
+            echo "\`cloud/bootstrap.sh\` exited $_rc before it finished, so an unknown"
+            echo "number of the skills, helper scripts, hooks and policy that normally"
+            echo "arrive with this file were never installed."
+            echo
+            echo "- failed step: $_step"
+            echo "- ref: $REF, profile: $PROFILE, at: $_when"
+            echo "- full log: $BOOTSTRAP_LOG"
+            echo
+            echo "Do not read a missing skill, command or helper as \"this machine does"
+            echo "not do that\" — check the log before concluding anything about what is"
+            echo "available. Say so before starting work that depends on the toolkit."
+            echo "Re-running the bootstrap fixes it and needs no restart, but it is the"
+            echo "human's call: never re-run it unasked."
+            echo "$BANNER_END"
+            echo
+        } > "$_t.bootstrap-tmp" 2> /dev/null || continue
+        if [ -f "$_t" ]; then
+            strip_banner "$_t" >> "$_t.bootstrap-tmp" 2> /dev/null || true
+        fi
+        mv "$_t.bootstrap-tmp" "$_t" 2> /dev/null || true
+    done
+    return 0
+}
 
 # The ref is positional and first. A leading flag is left for the argument loop
 # rather than taken as the ref, so omitting the ref reports the real problem.
@@ -98,6 +217,29 @@ WITH_HOOKS=
 WITH_GH=
 WITH_TERRAFORM=
 PROFILE=claude-cloud-sandbox
+
+# The trap goes on before anything that can fail, which is why TMP is declared
+# empty here and filled in much further down: an exit trap installed after the
+# first `die` does not cover it. Both gaps that existed were real -- the arg
+# loop immediately below, and `curl is required` -- so this sits above the
+# earliest `die` in the file rather than next to the mktemp it also cleans up.
+# Everything record_failure reads (REF, PROFILE, BOOTSTRAP_LOG) is defaulted by
+# this point, so a usage error reports against the defaults rather than dying
+# inside the handler.
+TMP=
+on_exit() {
+    _rc=$?
+    [ -n "$TMP" ] && rm -rf "$TMP"
+    if [ "$_rc" -ne 0 ]; then
+        record_failure "$_rc" || true
+    fi
+    return 0
+}
+# EXIT alone does not fire on a signal in every POSIX shell, so INT and TERM
+# re-exit rather than being trapped directly -- one handler, one code path.
+trap on_exit EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -189,7 +331,7 @@ RAW="https://raw.githubusercontent.com/pmgledhill102/agentic-coding-config/${REF
 command -v curl > /dev/null 2>&1 || die "curl is required"
 
 TMP=$(mktemp -d)
-trap 'rm -rf "$TMP"' EXIT INT TERM
+FAIL_FILE="$TMP/fail-reason"
 
 # --- fetch: every download in this script goes through here ---------------
 #
@@ -265,6 +407,18 @@ apt_update() {
 # Refusing is right on a workstation and pointless in a container that exists
 # for one session and is thrown away, so retry with --break-system-packages --
 # a flag pip only grew in 23.0, hence the retry rather than passing it first.
+#
+# The third attempt is for a different failure that looks the same in a log.
+# Where a package needs to UPGRADE a dependency that apt installed, pip cannot
+# uninstall the old one -- a dpkg-installed distribution carries no RECORD file
+# -- and gives up with "Cannot uninstall packaging 24.0, RECORD file not found".
+# --break-system-packages does not help: that bypasses the PEP 668 marker, and
+# this is a missing-metadata problem in the package being replaced. Only
+# --ignore-installed clears it, by installing over the top rather than removing
+# first. That is why it is last: it skips the satisfied-dependency check for the
+# whole transaction, so a run that reaches it re-downloads more than it needs.
+# checkov against the sandbox image's apt-managed `packaging` is the case that
+# found this, and it took the whole bootstrap down with it (#344).
 pip_install() {
     _pkg="$1"
     for _pip in "pip" "pip3" "python3 -m pip"; do
@@ -274,6 +428,9 @@ pip_install() {
         # shellcheck disable=SC2086
         $_pip install --quiet --no-input --break-system-packages "$_pkg" \
             > /dev/null 2>&1 && return 0
+        # shellcheck disable=SC2086
+        $_pip install --quiet --no-input --break-system-packages \
+            --ignore-installed "$_pkg" > /dev/null 2>&1 && return 0
     done
     return 1
 }
@@ -308,106 +465,21 @@ log "caps    :  gcloud=$(on_off "$WITH_GCLOUD") precommit=$(on_off "$WITH_PRECOM
 # dependency. It stays behind a flag so the archive requirement is opted into
 # rather than imposed on every environment.
 
-# --- gcloud, on request -------------------------------------------------------
+# =============================================================================
+# TIER 1 -- the toolkit. Runs first, and a failure here is fatal.
+# =============================================================================
 #
-# Opt-in, because a repo with no GCP work should not pay a 96 MB download, and
-# because an environment naming --with-gcloud in its one line is declaring what
-# kind of environment it is. That is the capability-profile model ADR-0016
-# describes, made visible in the place the choice is actually made.
+# Policy, skills, helper scripts and hooks: the config channel this script
+# exists to be. Every section below is a curl from raw.githubusercontent plus a
+# file write, which makes it both the most valuable work in the file and the
+# least likely to fail -- so it goes first, ahead of anything that downloads a
+# toolchain. It used to go last, behind a 96 MB SDK, apt, npm, pip and three
+# release tarballs, and a checkov that could not install took the skills down
+# with it (#344, #346).
 #
-# It must land BEFORE the first `gcp-credentials request`: the helper wires up a
-# gcloud configuration only if gcloud is on PATH at that moment. Installed
-# afterwards, the token file ends up with nothing pointing at it, and correcting
-# that costs a second human approval.
-
-if [ "$WITH_GCLOUD" -eq 1 ] && ! command -v gcloud > /dev/null 2>&1; then
-    fetch https://dl.google.com/dl/cloudsdk/channels/rapid/downloads/google-cloud-cli-linux-x86_64.tar.gz \
-        "$TMP/gcloud.tar.gz" ||
-        die "could not download the gcloud SDK — is dl.google.com on the allowlist?"
-    tar -xzf "$TMP/gcloud.tar.gz" -C /opt || die "could not unpack the gcloud SDK"
-    # --path-update false, then symlink: a PATH line appended to a shell profile
-    # is not reliably sourced by the non-interactive shells tool calls run in.
-    /opt/google-cloud-sdk/install.sh --quiet --usage-reporting false \
-        --path-update false --command-completion false > /dev/null || true
-    # A wrapper rather than a symlink, because the sandbox image presets
-    # CLOUDSDK_AUTH_ACCESS_TOKEN and that variable outranks the
-    # auth/access_token_file the broker configures. Every call then fails
-    # ACCESS_TOKEN_TYPE_UNSUPPORTED while the helper, `status` and the token file
-    # all report healthy — confirmed in two independent fresh sandboxes.
-    #
-    # The documented workaround is `env -u CLOUDSDK_AUTH_ACCESS_TOKEN` on every
-    # invocation, which fails the moment anyone forgets, and fails silently by
-    # picking the wrong identity rather than erroring. Better to make the right
-    # thing the default.
-    #
-    # Narrow on purpose: it drops the variable only when a broker token actually
-    # exists. With no grant installed, the preset token is whatever the sandbox
-    # intended and is left alone.
-    cat > /usr/local/bin/gcloud << 'WRAPPER'
-#!/bin/sh
-# Installed by agentic-coding-config cloud/bootstrap.sh.
-#
-# Two jobs, both because gcloud otherwise gets the wrong credential:
-#
-#   1. Prefer a broker-issued token over the sandbox image's preset
-#      CLOUDSDK_AUTH_ACCESS_TOKEN, which outranks auth/access_token_file.
-#   2. Re-mint a stale token before the call, rather than relying on a
-#      background loop that this environment reaps.
-#
-# The second replaces a daemon with a check. Detached refresh loops die here --
-# twice in one session, once across an idle gap and once during active work --
-# and when they do the grant stays valid for days while the token quietly ages
-# out. Checking an mtime at the point of use has nothing to keep alive and
-# nothing to reap, and it covers gcloud called from inside a script, which a
-# session hook never sees.
-CB_HOME="${CREDENTIAL_BROKER_HOME:-$HOME/.config/claude/credential-broker}"
-CB_TOKEN="$CB_HOME/access_token"
-
-# The threshold is really a floor on how much token life a call can start with:
-# a token renewed at age T has 3600 - T seconds left, so T is chosen from how
-# long a single invocation might run.
-#
-# 1800 against a 3600s token guarantees 30 minutes in hand. Observed scripts
-# here run 10-25 minutes, which 2700 would have failed -- it leaves as little as
-# 15. The extra renewals cost one HTTP call each and are not worth optimising.
-#
-# A script that calls gcloud repeatedly is covered for any duration, because
-# every invocation re-checks and renews when stale. What this cannot save is a
-# *single* call that blocks longer than the remaining life: Apigee provisioning
-# at 70-80 minutes will still expire mid-flight and need re-running. That is
-# accepted rather than solved, and it is why the floor matters more than the
-# ceiling.
-CB_MAX_AGE="${CREDENTIAL_BROKER_MAX_TOKEN_AGE:-1800}"
-
-# CB_NO_RENEW stops a renew that shells out to gcloud from recursing. It does
-# not today, but a wrapper that can loop forever is not worth the risk.
-if [ -f "$CB_TOKEN" ] && [ -z "${CB_NO_RENEW:-}" ]; then
-    cb_now=$(date +%s)
-    cb_mtime=$(stat -c %Y "$CB_TOKEN" 2> /dev/null || stat -f %m "$CB_TOKEN" 2> /dev/null || echo "$cb_now")
-    if [ $((cb_now - cb_mtime)) -ge "$CB_MAX_AGE" ]; then
-        cb_helper=$(command -v gcp-credentials 2> /dev/null || echo "$HOME/.claude/bin/gcp-credentials")
-        if [ -x "$cb_helper" ]; then
-            # Quiet on success: this runs before an unrelated command and must
-            # not pollute output a script may be parsing. Failure is worth a
-            # line, but is not fatal here -- gcloud reports its own auth error
-            # better than a wrapper can guess at one.
-            CB_NO_RENEW=1 "$cb_helper" renew > /dev/null 2>&1 ||
-                echo "gcloud: broker token is stale and renew failed; run 'gcp-credentials status'" >&2
-        fi
-    fi
-fi
-
-if [ -n "${CLOUDSDK_AUTH_ACCESS_TOKEN:-}" ] && [ -f "$CB_TOKEN" ]; then
-    exec env -u CLOUDSDK_AUTH_ACCESS_TOKEN /opt/google-cloud-sdk/bin/gcloud "$@"
-fi
-exec /opt/google-cloud-sdk/bin/gcloud "$@"
-WRAPPER
-    chmod 0755 /usr/local/bin/gcloud || true
-    ln -sf /opt/google-cloud-sdk/bin/gsutil /usr/local/bin/gsutil || true
-    log "gcloud  -> $(gcloud --version 2> /dev/null | head -1 || echo 'installed')"
-elif [ "$WITH_GCLOUD" -eq 1 ]; then
-    log "gcloud  : already present, left alone"
-fi
+# Fatal is right here in a way it is not for Tier 2. A container with no policy
+# and no skills is not a degraded sandbox, it is a different machine, and an
+# agent cannot discover from the inside that its instructions never arrived.
 
 # --- the helper --------------------------------------------------------------
 #
@@ -496,200 +568,6 @@ log "adapter -> $HOME/.claude/skills/gcp-credentials"
 # skill that already works from the neutral path. Remove it rather than leave
 # two sources for one command.
 rm -f "$HOME/.claude/commands/gcp-credentials.md"
-
-# --- pre-commit, on request ---------------------------------------------------
-#
-# Installs the pre-commit framework and the linters its config calls, so a
-# repo's committed .pre-commit-config.yaml actually runs here (#254).
-#
-# This is the vendor-neutral half of enforcement, and the reason it is worth
-# doing before the harness-hook half: git runs .git/hooks itself, so nothing
-# here depends on agent configuration, on which harness is running, or on the
-# unsettled question of whether a container-created ~/.claude/settings.json is
-# honoured. It covers Codex, Claude, and a human typing `git commit`, all the
-# same way.
-
-if [ "$WITH_PRECOMMIT" -eq 1 ]; then
-    # Both linters are `language: system` hooks in this estate's config -- they
-    # run the binary on PATH rather than a pinned mirror, so the hook and CI
-    # cannot drift to different versions.
-    #
-    # (Written as "both linters" rather than naming the first one at the start
-    # of a comment line: `# shellcheck ...` is parsed as a shellcheck directive
-    # and fails the lint, which this script is itself subject to.) That only works if the
-    # binaries are here. Installing them is the whole point; SKIP= exists for a
-    # laptop missing one, and normalising it would leave enforcement that is
-    # routinely skipped, which is not enforcement.
-    if ! command -v shellcheck > /dev/null 2>&1; then
-        # A failed refresh is reported, not fatal. It used to die here, which
-        # meant a blocked PPA -- a repository nothing in this script wants --
-        # took down an install that the image's existing package lists would
-        # have satisfied. apt_update narrows the sources to Ubuntu's own, so
-        # a failure now means the archives really are unreachable; even then,
-        # let the install be the thing that decides.
-        apt_update || log "warn: apt refresh failed, trying the install anyway"
-        if ! DEBIAN_FRONTEND=noninteractive apt-get install -y -qq shellcheck \
-            > /dev/null 2>&1; then
-            die "could not install shellcheck — are the Ubuntu archives reachable?"
-        fi
-    fi
-    log "shellck -> $(command -v shellcheck)"
-
-    # actionlint is not packaged in Ubuntu, so it comes from a pinned release.
-    # Note github.com answers 403 to this sandbox's curl while the release asset
-    # itself resolves fine through the redirect -- a naive reachability probe
-    # against github.com reads as an egress block and is not one.
-    if ! command -v actionlint > /dev/null 2>&1; then
-        AL_VER=1.7.7
-        fetch "https://github.com/rhysd/actionlint/releases/download/v${AL_VER}/actionlint_${AL_VER}_linux_amd64.tar.gz" \
-            "$TMP/actionlint.tar.gz" ||
-            die "could not download actionlint ${AL_VER}"
-        tar -xzf "$TMP/actionlint.tar.gz" -C "$TMP" actionlint || die "could not unpack actionlint"
-        install -m 0755 "$TMP/actionlint" /usr/local/bin/actionlint || die "could not install actionlint"
-    fi
-    log "actionl -> $(command -v actionlint)"
-
-    # Serves `markdownlint-cli2 "**/*.md"`, the gate CLAUDE.md documents, which
-    # needs the binary on PATH. Unlike the two above this is not a
-    # `language: system` hook -- the pre-commit hook builds its own node
-    # environment -- so the pin here and the rev in .pre-commit-config.yaml are
-    # two versions of the same tool. Bump them together.
-    if ! command -v markdownlint-cli2 > /dev/null 2>&1; then
-        ML_VER=0.23.2
-        command -v npm > /dev/null 2>&1 ||
-            die "markdownlint-cli2 needs npm, which is not on PATH"
-        npm install -g --silent "markdownlint-cli2@${ML_VER}" > /dev/null 2>&1 ||
-            die "could not install markdownlint-cli2 ${ML_VER} from npm"
-    fi
-    # This image carries several node installs with different global prefixes,
-    # so npm exiting 0 does not mean the shim landed anywhere on PATH.
-    command -v markdownlint-cli2 > /dev/null 2>&1 ||
-        die "markdownlint-cli2 installed but is not on PATH"
-    log "mdlint  -> $(command -v markdownlint-cli2) ($(markdownlint-cli2 --version 2>&1 | head -1))"
-
-    # The Terraform toolchain, opt-in. A repo's .pre-commit-config.yaml can
-    # call terraform_fmt, terraform_validate, terraform_tflint and checkov;
-    # without the binaries those hooks fail with exit 127 rather than finding
-    # anything. precommit-claude-hook classifies that as not-checked and lets
-    # the push through (#335), so this is about being able to CHECK, not about
-    # being able to push.
-    #
-    # On by default for a sandbox, off elsewhere -- the same reasoning as
-    # pre-commit itself: a disposable container rebuilt from a script has no
-    # developer setup to protect, so enforcement that is present beats a
-    # download that is avoided. --no-terraform is the refund.
-    if [ "$WITH_TERRAFORM" -eq 1 ]; then
-        # Same pinned-release pattern, and the same github.com 403 note, as
-        # actionlint above.
-        if ! command -v terraform > /dev/null 2>&1; then
-            TF_VER=1.9.8
-            fetch "https://releases.hashicorp.com/terraform/${TF_VER}/terraform_${TF_VER}_linux_amd64.zip" \
-                "$TMP/terraform.zip" ||
-                die "could not download terraform ${TF_VER}"
-            unzip -o -q "$TMP/terraform.zip" -d "$TMP" terraform ||
-                die "could not unpack terraform — is unzip present?"
-            install -m 0755 "$TMP/terraform" /usr/local/bin/terraform ||
-                die "could not install terraform"
-        fi
-        log "terrafm -> $(command -v terraform) ($(terraform version | head -1))"
-
-        if ! command -v tflint > /dev/null 2>&1; then
-            TFL_VER=0.53.0
-            fetch "https://github.com/terraform-linters/tflint/releases/download/v${TFL_VER}/tflint_linux_amd64.zip" \
-                "$TMP/tflint.zip" ||
-                die "could not download tflint ${TFL_VER}"
-            unzip -o -q "$TMP/tflint.zip" -d "$TMP" tflint ||
-                die "could not unpack tflint"
-            install -m 0755 "$TMP/tflint" /usr/local/bin/tflint ||
-                die "could not install tflint"
-        fi
-        log "tflint  -> $(command -v tflint)"
-
-        # checkov is a Python tool, so it takes the same pip route as
-        # pre-commit rather than a release tarball.
-        command -v checkov > /dev/null 2>&1 ||
-            pip_install checkov ||
-            die "could not install checkov from PyPI"
-        command -v checkov > /dev/null 2>&1 ||
-            die "checkov reported installed but is not on PATH"
-        log "checkov -> $(command -v checkov)"
-    fi
-
-    command -v pre-commit > /dev/null 2>&1 ||
-        pip_install pre-commit ||
-        die "could not install pre-commit from PyPI"
-    # pip exiting 0 is not the same as the console script existing: an image
-    # carrying the pre_commit package without its shim, or a pip whose scripts
-    # directory is off PATH, both satisfy the install and leave nothing to run.
-    # The manifest's precommit= is read as an attestation that the gate is
-    # present, so observe the binary rather than infer it from an exit code.
-    command -v pre-commit > /dev/null 2>&1 ||
-        die "pre-commit reported installed but is not on PATH"
-    log "precmit -> $(command -v pre-commit) ($(pre-commit --version))"
-
-    # A GLOBAL hook via core.hooksPath, not `pre-commit install` per repo.
-    #
-    # `pre-commit install` writes into an existing clone's .git/hooks, and this
-    # script runs from an environment setup script whose ordering against the
-    # session's clone is not something it can rely on -- the repository may not
-    # exist yet, and may not be the only one. core.hooksPath is set once and
-    # applies to every repo in the container however and whenever it arrives.
-    #
-    # The trade-off, stated because it is real: core.hooksPath REPLACES a repo's
-    # own .git/hooks rather than adding to it, and `pre-commit install` will warn
-    # that it is being overridden. In this estate hooks come from pre-commit
-    # anyway, so nothing is lost; a container that needed bespoke per-repo hooks
-    # would want the other mechanism.
-    HOOK_DIR="$HOME/.config/git/hooks"
-    mkdir -p "$HOOK_DIR"
-    cat > "$HOOK_DIR/pre-commit" << 'HOOK'
-#!/bin/sh
-# Installed by agentic-coding-config cloud/bootstrap.sh.
-#
-# Global pre-commit hook: runs the repo's own pre-commit configuration when it
-# has one, and gets out of the way when it does not. A repo with no
-# .pre-commit-config.yaml is not opting out of anything -- it simply has no
-# configuration to run, and blocking its commits would be this container
-# inventing policy the repo never asked for.
-[ -f .pre-commit-config.yaml ] || exit 0
-command -v pre-commit > /dev/null 2>&1 || exit 0
-exec pre-commit run --hook-stage pre-commit
-HOOK
-    chmod 0755 "$HOOK_DIR/pre-commit"
-    git config --global core.hooksPath "$HOOK_DIR"
-    log "githook -> $HOOK_DIR/pre-commit (core.hooksPath, all repos)"
-fi
-
-# --- gh, on request -----------------------------------------------------------
-#
-# From a pinned release tarball, exactly like actionlint above: no
-# Ubuntu-archive dependency, so an environment that cannot reach the archives
-# can still have it, and the version is a decision rather than whatever the
-# distro froze. The same 403-vs-redirect note as actionlint applies — a naive
-# reachability probe against github.com reads as an egress block and is not
-# one.
-#
-# No auth step, deliberately. These containers carry a GH_TOKEN sentinel the
-# egress proxy substitutes with a real credential — but on Anthropic-hosted
-# web sandboxes only for identity endpoints (user, rate_limit); every
-# repo-scoped API path 403s by policy, which is why the flag is not for that
-# surface (#257 lane map, #273). The gather scripts probe once and degrade to
-# a gh-unauthorized sentinel there, and pass -R explicitly everywhere rather
-# than trusting repo inference behind a proxy.
-
-if [ "$WITH_GH" -eq 1 ] && ! command -v gh > /dev/null 2>&1; then
-    GH_VER=2.97.0
-    fetch "https://github.com/cli/cli/releases/download/v${GH_VER}/gh_${GH_VER}_linux_amd64.tar.gz" \
-        "$TMP/gh.tar.gz" ||
-        die "could not download gh ${GH_VER}"
-    tar -xzf "$TMP/gh.tar.gz" -C "$TMP" "gh_${GH_VER}_linux_amd64/bin/gh" ||
-        die "could not unpack gh"
-    install -m 0755 "$TMP/gh_${GH_VER}_linux_amd64/bin/gh" /usr/local/bin/gh ||
-        die "could not install gh"
-    log "gh      -> $(gh --version 2> /dev/null | head -1 || echo 'installed')"
-elif [ "$WITH_GH" -eq 1 ]; then
-    log "gh      : already present, left alone"
-fi
 
 # --- the agent policy ---------------------------------------------------------
 #
@@ -924,6 +802,358 @@ if [ "$WITH_HOOKS" -eq 1 ]; then
     log "hooks   :  prchecks-wait, prepush-guard$gh_note, precommit$pc_note"
 fi
 
+# =============================================================================
+# TIER 2 -- capabilities. Runs after the toolkit, and degrades instead of dying.
+# =============================================================================
+#
+# Toolchains a repo's own tooling calls: the GCP SDK, the pre-commit framework
+# and its linters, gh. Expensive, network-heavy, and each new one is another
+# chance to abort the run -- #254, #240, #316 and #344 are the same failure
+# arriving through four different tools, and the list only grows.
+#
+# So a capability that cannot install is recorded and skipped rather than
+# fatal. Each runs in a subshell with `set -e` re-armed, which is what lets the
+# `die` calls inside them stay as they are: a die exits the subshell, the
+# wrapper reads the reason it left behind, and the next capability still gets
+# its turn. Verified in dash and bash that the EXIT trap does not misfire on
+# subshell exit.
+#
+# WHY THIS IS NOT SILENTLY LOWERING THE BAR: #335 made precommit-claude-hook
+# report a missing binary as NOT CHECKED rather than passed. A degraded
+# capability therefore surfaces downstream as unverified work rather than as
+# false green -- it loses coverage without manufacturing confidence. The
+# manifest records `status=degraded` and names what is missing, and
+# start-session reports it. Degrading quietly would be the sloppy version;
+# this is the visible one.
+
+# --- gcloud, on request -------------------------------------------------------
+#
+# Opt-in, because a repo with no GCP work should not pay a 96 MB download, and
+# because an environment naming --with-gcloud in its one line is declaring what
+# kind of environment it is. That is the capability-profile model ADR-0016
+# describes, made visible in the place the choice is actually made.
+#
+# It must land BEFORE the first `gcp-credentials request`: the helper wires up a
+# gcloud configuration only if gcloud is on PATH at that moment. Installed
+# afterwards, the token file ends up with nothing pointing at it, and correcting
+# that costs a second human approval.
+
+cap_gcloud() {
+    if command -v gcloud > /dev/null 2>&1; then
+        log "gcloud  : already present, left alone"
+        return 0
+    fi
+    fetch https://dl.google.com/dl/cloudsdk/channels/rapid/downloads/google-cloud-cli-linux-x86_64.tar.gz \
+        "$TMP/gcloud.tar.gz" ||
+        die "could not download the gcloud SDK — is dl.google.com on the allowlist?"
+    tar -xzf "$TMP/gcloud.tar.gz" -C /opt || die "could not unpack the gcloud SDK"
+    # --path-update false, then symlink: a PATH line appended to a shell profile
+    # is not reliably sourced by the non-interactive shells tool calls run in.
+    /opt/google-cloud-sdk/install.sh --quiet --usage-reporting false \
+        --path-update false --command-completion false > /dev/null || true
+    # A wrapper rather than a symlink, because the sandbox image presets
+    # CLOUDSDK_AUTH_ACCESS_TOKEN and that variable outranks the
+    # auth/access_token_file the broker configures. Every call then fails
+    # ACCESS_TOKEN_TYPE_UNSUPPORTED while the helper, `status` and the token file
+    # all report healthy — confirmed in two independent fresh sandboxes.
+    #
+    # The documented workaround is `env -u CLOUDSDK_AUTH_ACCESS_TOKEN` on every
+    # invocation, which fails the moment anyone forgets, and fails silently by
+    # picking the wrong identity rather than erroring. Better to make the right
+    # thing the default.
+    #
+    # Narrow on purpose: it drops the variable only when a broker token actually
+    # exists. With no grant installed, the preset token is whatever the sandbox
+    # intended and is left alone.
+    cat > /usr/local/bin/gcloud << 'WRAPPER'
+#!/bin/sh
+# Installed by agentic-coding-config cloud/bootstrap.sh.
+#
+# Two jobs, both because gcloud otherwise gets the wrong credential:
+#
+#   1. Prefer a broker-issued token over the sandbox image's preset
+#      CLOUDSDK_AUTH_ACCESS_TOKEN, which outranks auth/access_token_file.
+#   2. Re-mint a stale token before the call, rather than relying on a
+#      background loop that this environment reaps.
+#
+# The second replaces a daemon with a check. Detached refresh loops die here --
+# twice in one session, once across an idle gap and once during active work --
+# and when they do the grant stays valid for days while the token quietly ages
+# out. Checking an mtime at the point of use has nothing to keep alive and
+# nothing to reap, and it covers gcloud called from inside a script, which a
+# session hook never sees.
+CB_HOME="${CREDENTIAL_BROKER_HOME:-$HOME/.config/claude/credential-broker}"
+CB_TOKEN="$CB_HOME/access_token"
+
+# The threshold is really a floor on how much token life a call can start with:
+# a token renewed at age T has 3600 - T seconds left, so T is chosen from how
+# long a single invocation might run.
+#
+# 1800 against a 3600s token guarantees 30 minutes in hand. Observed scripts
+# here run 10-25 minutes, which 2700 would have failed -- it leaves as little as
+# 15. The extra renewals cost one HTTP call each and are not worth optimising.
+#
+# A script that calls gcloud repeatedly is covered for any duration, because
+# every invocation re-checks and renews when stale. What this cannot save is a
+# *single* call that blocks longer than the remaining life: Apigee provisioning
+# at 70-80 minutes will still expire mid-flight and need re-running. That is
+# accepted rather than solved, and it is why the floor matters more than the
+# ceiling.
+CB_MAX_AGE="${CREDENTIAL_BROKER_MAX_TOKEN_AGE:-1800}"
+
+# CB_NO_RENEW stops a renew that shells out to gcloud from recursing. It does
+# not today, but a wrapper that can loop forever is not worth the risk.
+if [ -f "$CB_TOKEN" ] && [ -z "${CB_NO_RENEW:-}" ]; then
+    cb_now=$(date +%s)
+    cb_mtime=$(stat -c %Y "$CB_TOKEN" 2> /dev/null || stat -f %m "$CB_TOKEN" 2> /dev/null || echo "$cb_now")
+    if [ $((cb_now - cb_mtime)) -ge "$CB_MAX_AGE" ]; then
+        cb_helper=$(command -v gcp-credentials 2> /dev/null || echo "$HOME/.claude/bin/gcp-credentials")
+        if [ -x "$cb_helper" ]; then
+            # Quiet on success: this runs before an unrelated command and must
+            # not pollute output a script may be parsing. Failure is worth a
+            # line, but is not fatal here -- gcloud reports its own auth error
+            # better than a wrapper can guess at one.
+            CB_NO_RENEW=1 "$cb_helper" renew > /dev/null 2>&1 ||
+                echo "gcloud: broker token is stale and renew failed; run 'gcp-credentials status'" >&2
+        fi
+    fi
+fi
+
+if [ -n "${CLOUDSDK_AUTH_ACCESS_TOKEN:-}" ] && [ -f "$CB_TOKEN" ]; then
+    exec env -u CLOUDSDK_AUTH_ACCESS_TOKEN /opt/google-cloud-sdk/bin/gcloud "$@"
+fi
+exec /opt/google-cloud-sdk/bin/gcloud "$@"
+WRAPPER
+    chmod 0755 /usr/local/bin/gcloud || true
+    ln -sf /opt/google-cloud-sdk/bin/gsutil /usr/local/bin/gsutil || true
+    log "gcloud  -> $(gcloud --version 2> /dev/null | head -1 || echo 'installed')"
+}
+
+# --- pre-commit, on request ---------------------------------------------------
+#
+# Installs the pre-commit framework and the linters its config calls, so a
+# repo's committed .pre-commit-config.yaml actually runs here (#254).
+#
+# This is the vendor-neutral half of enforcement, and the reason it is worth
+# doing before the harness-hook half: git runs .git/hooks itself, so nothing
+# here depends on agent configuration, on which harness is running, or on the
+# unsettled question of whether a container-created ~/.claude/settings.json is
+# honoured. It covers Codex, Claude, and a human typing `git commit`, all the
+# same way.
+
+cap_precommit() {
+    # Both linters are `language: system` hooks in this estate's config -- they
+    # run the binary on PATH rather than a pinned mirror, so the hook and CI
+    # cannot drift to different versions.
+    #
+    # (Written as "both linters" rather than naming the first one at the start
+    # of a comment line: `# shellcheck ...` is parsed as a shellcheck directive
+    # and fails the lint, which this script is itself subject to.) That only works if the
+    # binaries are here. Installing them is the whole point; SKIP= exists for a
+    # laptop missing one, and normalising it would leave enforcement that is
+    # routinely skipped, which is not enforcement.
+    if ! command -v shellcheck > /dev/null 2>&1; then
+        # A failed refresh is reported, not fatal. It used to die here, which
+        # meant a blocked PPA -- a repository nothing in this script wants --
+        # took down an install that the image's existing package lists would
+        # have satisfied. apt_update narrows the sources to Ubuntu's own, so
+        # a failure now means the archives really are unreachable; even then,
+        # let the install be the thing that decides.
+        apt_update || log "warn: apt refresh failed, trying the install anyway"
+        if ! DEBIAN_FRONTEND=noninteractive apt-get install -y -qq shellcheck \
+            > /dev/null 2>&1; then
+            die "could not install shellcheck — are the Ubuntu archives reachable?"
+        fi
+    fi
+    log "shellck -> $(command -v shellcheck)"
+
+    # actionlint is not packaged in Ubuntu, so it comes from a pinned release.
+    # Note github.com answers 403 to this sandbox's curl while the release asset
+    # itself resolves fine through the redirect -- a naive reachability probe
+    # against github.com reads as an egress block and is not one.
+    if ! command -v actionlint > /dev/null 2>&1; then
+        AL_VER=1.7.7
+        fetch "https://github.com/rhysd/actionlint/releases/download/v${AL_VER}/actionlint_${AL_VER}_linux_amd64.tar.gz" \
+            "$TMP/actionlint.tar.gz" ||
+            die "could not download actionlint ${AL_VER}"
+        tar -xzf "$TMP/actionlint.tar.gz" -C "$TMP" actionlint || die "could not unpack actionlint"
+        install -m 0755 "$TMP/actionlint" /usr/local/bin/actionlint || die "could not install actionlint"
+    fi
+    log "actionl -> $(command -v actionlint)"
+
+    # Serves `markdownlint-cli2 "**/*.md"`, the gate CLAUDE.md documents, which
+    # needs the binary on PATH. Unlike the two above this is not a
+    # `language: system` hook -- the pre-commit hook builds its own node
+    # environment -- so the pin here and the rev in .pre-commit-config.yaml are
+    # two versions of the same tool. Bump them together.
+    if ! command -v markdownlint-cli2 > /dev/null 2>&1; then
+        ML_VER=0.23.2
+        command -v npm > /dev/null 2>&1 ||
+            die "markdownlint-cli2 needs npm, which is not on PATH"
+        npm install -g --silent "markdownlint-cli2@${ML_VER}" > /dev/null 2>&1 ||
+            die "could not install markdownlint-cli2 ${ML_VER} from npm"
+    fi
+    # This image carries several node installs with different global prefixes,
+    # so npm exiting 0 does not mean the shim landed anywhere on PATH.
+    command -v markdownlint-cli2 > /dev/null 2>&1 ||
+        die "markdownlint-cli2 installed but is not on PATH"
+    log "mdlint  -> $(command -v markdownlint-cli2) ($(markdownlint-cli2 --version 2>&1 | head -1))"
+
+    # The Terraform toolchain, opt-in. A repo's .pre-commit-config.yaml can
+    # call terraform_fmt, terraform_validate, terraform_tflint and checkov;
+    # without the binaries those hooks fail with exit 127 rather than finding
+    # anything. precommit-claude-hook classifies that as not-checked and lets
+    # the push through (#335), so this is about being able to CHECK, not about
+    # being able to push.
+    #
+    # On by default for a sandbox, off elsewhere -- the same reasoning as
+    # pre-commit itself: a disposable container rebuilt from a script has no
+    # developer setup to protect, so enforcement that is present beats a
+    # download that is avoided. --no-terraform is the refund.
+    if [ "$WITH_TERRAFORM" -eq 1 ]; then
+        # Same pinned-release pattern, and the same github.com 403 note, as
+        # actionlint above.
+        if ! command -v terraform > /dev/null 2>&1; then
+            TF_VER=1.9.8
+            fetch "https://releases.hashicorp.com/terraform/${TF_VER}/terraform_${TF_VER}_linux_amd64.zip" \
+                "$TMP/terraform.zip" ||
+                die "could not download terraform ${TF_VER}"
+            unzip -o -q "$TMP/terraform.zip" -d "$TMP" terraform ||
+                die "could not unpack terraform — is unzip present?"
+            install -m 0755 "$TMP/terraform" /usr/local/bin/terraform ||
+                die "could not install terraform"
+        fi
+        log "terrafm -> $(command -v terraform) ($(terraform version | head -1))"
+
+        if ! command -v tflint > /dev/null 2>&1; then
+            TFL_VER=0.53.0
+            fetch "https://github.com/terraform-linters/tflint/releases/download/v${TFL_VER}/tflint_linux_amd64.zip" \
+                "$TMP/tflint.zip" ||
+                die "could not download tflint ${TFL_VER}"
+            unzip -o -q "$TMP/tflint.zip" -d "$TMP" tflint ||
+                die "could not unpack tflint"
+            install -m 0755 "$TMP/tflint" /usr/local/bin/tflint ||
+                die "could not install tflint"
+        fi
+        log "tflint  -> $(command -v tflint)"
+
+        # checkov is a Python tool, so it takes the same pip route as
+        # pre-commit rather than a release tarball.
+        command -v checkov > /dev/null 2>&1 ||
+            pip_install checkov ||
+            die "could not install checkov from PyPI"
+        command -v checkov > /dev/null 2>&1 ||
+            die "checkov reported installed but is not on PATH"
+        log "checkov -> $(command -v checkov)"
+    fi
+
+    command -v pre-commit > /dev/null 2>&1 ||
+        pip_install pre-commit ||
+        die "could not install pre-commit from PyPI"
+    # pip exiting 0 is not the same as the console script existing: an image
+    # carrying the pre_commit package without its shim, or a pip whose scripts
+    # directory is off PATH, both satisfy the install and leave nothing to run.
+    # The manifest's precommit= is read as an attestation that the gate is
+    # present, so observe the binary rather than infer it from an exit code.
+    command -v pre-commit > /dev/null 2>&1 ||
+        die "pre-commit reported installed but is not on PATH"
+    log "precmit -> $(command -v pre-commit) ($(pre-commit --version))"
+
+    # A GLOBAL hook via core.hooksPath, not `pre-commit install` per repo.
+    #
+    # `pre-commit install` writes into an existing clone's .git/hooks, and this
+    # script runs from an environment setup script whose ordering against the
+    # session's clone is not something it can rely on -- the repository may not
+    # exist yet, and may not be the only one. core.hooksPath is set once and
+    # applies to every repo in the container however and whenever it arrives.
+    #
+    # The trade-off, stated because it is real: core.hooksPath REPLACES a repo's
+    # own .git/hooks rather than adding to it, and `pre-commit install` will warn
+    # that it is being overridden. In this estate hooks come from pre-commit
+    # anyway, so nothing is lost; a container that needed bespoke per-repo hooks
+    # would want the other mechanism.
+    HOOK_DIR="$HOME/.config/git/hooks"
+    mkdir -p "$HOOK_DIR"
+    cat > "$HOOK_DIR/pre-commit" << 'HOOK'
+#!/bin/sh
+# Installed by agentic-coding-config cloud/bootstrap.sh.
+#
+# Global pre-commit hook: runs the repo's own pre-commit configuration when it
+# has one, and gets out of the way when it does not. A repo with no
+# .pre-commit-config.yaml is not opting out of anything -- it simply has no
+# configuration to run, and blocking its commits would be this container
+# inventing policy the repo never asked for.
+[ -f .pre-commit-config.yaml ] || exit 0
+command -v pre-commit > /dev/null 2>&1 || exit 0
+exec pre-commit run --hook-stage pre-commit
+HOOK
+    chmod 0755 "$HOOK_DIR/pre-commit"
+    git config --global core.hooksPath "$HOOK_DIR"
+    log "githook -> $HOOK_DIR/pre-commit (core.hooksPath, all repos)"
+}
+
+# --- gh, on request -----------------------------------------------------------
+#
+# From a pinned release tarball, exactly like actionlint above: no
+# Ubuntu-archive dependency, so an environment that cannot reach the archives
+# can still have it, and the version is a decision rather than whatever the
+# distro froze. The same 403-vs-redirect note as actionlint applies — a naive
+# reachability probe against github.com reads as an egress block and is not
+# one.
+#
+# No auth step, deliberately. These containers carry a GH_TOKEN sentinel the
+# egress proxy substitutes with a real credential — but on Anthropic-hosted
+# web sandboxes only for identity endpoints (user, rate_limit); every
+# repo-scoped API path 403s by policy, which is why the flag is not for that
+# surface (#257 lane map, #273). The gather scripts probe once and degrade to
+# a gh-unauthorized sentinel there, and pass -R explicitly everywhere rather
+# than trusting repo inference behind a proxy.
+
+cap_gh() {
+    if command -v gh > /dev/null 2>&1; then
+        log "gh      : already present, left alone"
+        return 0
+    fi
+    GH_VER=2.97.0
+    fetch "https://github.com/cli/cli/releases/download/v${GH_VER}/gh_${GH_VER}_linux_amd64.tar.gz" \
+        "$TMP/gh.tar.gz" ||
+        die "could not download gh ${GH_VER}"
+    tar -xzf "$TMP/gh.tar.gz" -C "$TMP" "gh_${GH_VER}_linux_amd64/bin/gh" ||
+        die "could not unpack gh"
+    install -m 0755 "$TMP/gh_${GH_VER}_linux_amd64/bin/gh" /usr/local/bin/gh ||
+        die "could not install gh"
+    log "gh      -> $(gh --version 2> /dev/null | head -1 || echo 'installed')"
+}
+
+DEGRADED=
+
+capability() {
+    # capability <enabled> <name> <function>
+    [ "$1" -eq 1 ] || return 0
+
+    # set +e around the call because the subshell's status is the whole point
+    # here: under the outer `set -e` a non-zero one would kill the script,
+    # which is the behaviour this wrapper exists to prevent.
+    set +e
+    ( set -e; "$3" )
+    _cap_rc=$?
+    set -e
+    [ "$_cap_rc" -eq 0 ] && return 0
+
+    # die wrote its message here on the way out of the subshell, where a
+    # variable assignment could not have survived.
+    _why=$(cat "$FAIL_FILE" 2> /dev/null || echo "no reason recorded")
+    : > "$FAIL_FILE" 2> /dev/null || true
+    DEGRADED="${DEGRADED:+$DEGRADED }$2"
+    log "WARN    : $2 did not install -- $_why"
+    log "          continuing without it; this container is degraded, not broken"
+    return 0
+}
+
+capability "$WITH_GCLOUD" gcloud cap_gcloud
+capability "$WITH_PRECOMMIT" precommit cap_precommit
+capability "$WITH_GH" gh cap_gh
+
 # --- the manifest -------------------------------------------------------------
 #
 # Records what this run installed, so a later session can tell how old its
@@ -956,7 +1186,24 @@ else
     kind=ref
 fi
 
+# ok vs degraded is the Tier 2 verdict: the toolkit is present either way --
+# a missing one is fatal and never reaches here -- and `degraded` says some
+# capability is not. Named rather than counted, because "which" is the only
+# form of the answer anyone can act on.
+if [ -n "$DEGRADED" ]; then
+    manifest_status=degraded
+else
+    manifest_status=ok
+fi
+
 {
+    # Written only here, at the end of a run that reached it. The exit trap
+    # writes status=failed instead, so the three are mutually exclusive and a
+    # reader never has to date one against another. A manifest from before
+    # this line existed carries no status at all, which readers take as ok --
+    # it could only have been written by a run that finished.
+    echo "status=$manifest_status"
+    echo "degraded=$DEGRADED"
     echo "ref=$REF"
     echo "ref_kind=$kind"
     echo "sha=$resolved"
@@ -978,6 +1225,12 @@ log "manifst -> $MANIFEST ($kind $(echo "$resolved" | cut -c1-12))"
 # bootstrap than the one in main, and nothing else in a session says which
 # vintage it is running.
 
-log "done, from ${REF}"
+if [ -n "$DEGRADED" ]; then
+    log "done, from ${REF} -- DEGRADED, missing: $DEGRADED"
+    log "note: the toolkit installed; the capabilities above did not. Re-running"
+    log "      the bootstrap retries them."
+else
+    log "done, from ${REF}"
+fi
 log "note: commands and skills are read when Claude Code starts, so a session"
 log "      already running will not see them until it restarts or resumes."
