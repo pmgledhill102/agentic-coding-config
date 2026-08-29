@@ -124,8 +124,71 @@ fi
 
 # --- Run it. Block (exit 2) on failure; silent on success. ----------------
 # shellcheck disable=SC2086
-if ! out=$(pre-commit run --hook-stage "$stage" $scope 2>&1); then
-  printf 'pre-commit (%s) failed — blocked. Fix these and re-run:\n\n%s\n' "$stage" "$out" >&2
-  exit 2
+out=$(pre-commit run --hook-stage "$stage" $scope 2>&1) && exit 0
+
+# A hook that could not RUN is not a finding. The push stage deliberately runs
+# the whole suite --all-files, so on any surface missing an optional toolchain
+# it fails hooks whose binary is simply absent: terraform, tflint and checkov
+# are not installed in a cloud sandbox, so a Go-and-Markdown-only commit hit
+# four exit-127 failures and had to be pushed with --no-verify. Five times out
+# of five, which is what turns a considered bypass into the muscle-memory
+# ending of every push command -- and the next time the hook blocks for a real
+# reason, --no-verify is already typed.
+#
+# So split the failures. Genuine findings still block exactly as before;
+# tool-absent ones are reported as not checked and let the push through. The
+# classification is deliberately tight -- a signature of the tool being missing,
+# not merely of the hook failing -- because the costly direction of error is
+# waving through a real finding.
+classify_failures() {
+    awk '
+        function flush() {
+            if (name != "" && failed) {
+                if (absent) unavail = unavail (unavail ? " " : "") name
+                else real = real (real ? " " : "") name
+            }
+            name = ""; failed = 0; absent = 0
+        }
+        # pre-commit prints one status line per hook: the name, dot padding,
+        # then the verdict. Skips carry "(no files to check)" before it.
+        /\.\.\./ && /(Passed|Failed|Skipped)$/ {
+            flush()
+            idx = index($0, "...")
+            name = substr($0, 1, idx - 1)
+            failed = ($0 ~ /Failed$/)
+            next
+        }
+        failed {
+            if ($0 ~ /exit code: 127/ ||
+                $0 ~ /command not found/ ||
+                $0 ~ /[Ee]xecutable .* not found/ ||
+                $0 ~ /binary could be found/ ||
+                $0 ~ /not found in .?PATH/) absent = 1
+        }
+        END { flush(); print "unavailable=" unavail; print "real=" real }
+    '
+}
+
+verdict=$(printf '%s\n' "$out" | classify_failures 2>/dev/null)
+unavailable=$(printf '%s\n' "$verdict" | sed -n 's/^unavailable=//p')
+real=$(printf '%s\n' "$verdict" | sed -n 's/^real=//p')
+
+# No awk, or output this parser did not recognise: fall back to blocking. An
+# unreadable result must not become a free pass.
+if [ -z "$verdict" ]; then
+    printf 'pre-commit (%s) failed — blocked. Fix these and re-run:\n\n%s\n' "$stage" "$out" >&2
+    exit 2
 fi
+
+if [ -n "$real" ]; then
+    printf 'pre-commit (%s) failed — blocked. Fix these and re-run:\n\n%s\n' "$stage" "$out" >&2
+    [ -n "$unavailable" ] &&
+        printf '\nNot checked (tool not installed): %s\n' "$unavailable" >&2
+    exit 2
+fi
+
+# Only tool-absent failures. Say what went unchecked -- "not checked" must
+# never be silently indistinguishable from "passed" -- and allow the command.
+printf 'pre-commit (%s): allowed. Not checked, tool not installed: %s\n' \
+    "$stage" "$unavailable" >&2
 exit 0

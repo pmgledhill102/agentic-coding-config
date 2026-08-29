@@ -117,11 +117,28 @@ line no longer says what happened:
 
 ```text
 [bootstrap] profile -> claude-cloud-sandbox
-[bootstrap] caps    :  gcloud=yes precommit=yes hooks=yes gh=no
+[bootstrap] caps    :  gcloud=yes precommit=yes hooks=yes gh=no terraform=yes
 ```
 
 The same set is written to `~/.agents/.bootstrap-manifest`, which is where to
 look when a container is behaving as though something is missing.
+
+`--with-terraform` installs `terraform`, `tflint` and `checkov`, so a repo
+whose `.pre-commit-config.yaml` calls the Terraform hooks can actually run
+them. **On by default for a sandbox**, like `--with-precommit` and for the
+same reason: a disposable container rebuilt from a script has no developer
+setup to protect, so a gate that is present beats a download that is avoided.
+`--no-terraform` is the refund for an environment that does no Terraform work.
+It installs inside `--with-precommit`, since serving that config is the whole
+reason the binaries are here: `--with-terraform --no-precommit` installs
+nothing.
+
+This buys **coverage**, not the ability to push. A container without these
+tools pushes fine: `precommit-claude-hook` classifies a hook that fails purely
+because its binary is missing as *not checked* and lets the command through,
+naming what went unchecked (#335). Before that fix, every push in such a
+container needed `--no-verify` — five out of five in one session, which is how
+a guard stops being a guard.
 
 `--with-gh` installs the GitHub CLI from a pinned release — but **do not add
 it to Anthropic-hosted environments**. Measured 2026-08-19: the egress proxy
@@ -243,13 +260,14 @@ Revocation levels and what to do about a possibly-exposed token or request key:
 | `~/.claude/skills/<name>` | symlink to the above, for Claude Code |
 | `~/.agents/AGENTS.md` | the composed policy profile |
 | `~/.claude/CLAUDE.md` | the Claude adapter profile (Claude profiles only) |
-| `~/.claude/bin/<script>` | the four session helper scripts |
+| `~/.claude/bin/<script>` | the five session helper scripts |
 | `~/.agents/.bootstrap-manifest` | what this run installed: ref, SHA, profile, skills, helpers |
 | `~/.config/git/hooks/pre-commit` | global git hook, with `--with-precommit` |
 | `~/.claude/settings.json` | harness hook wiring, with `--with-hooks` (merged, not replaced) |
 | `~/.claude/bin/*-claude-hook` | the three harness hook scripts, with `--with-hooks` |
 | `/usr/local/bin/pre-commit`, `/usr/bin/shellcheck`, `/usr/local/bin/actionlint`, `markdownlint-cli2` (npm global) | with `--with-precommit` |
 | `/usr/local/bin/gh` | the GitHub CLI, pinned release, with `--with-gh` |
+| `/usr/local/bin/terraform`, `/usr/local/bin/tflint`, `checkov` | the Terraform toolchain, with `--with-terraform` |
 
 Whitelisted today: `promote-journal-inbox`, `retrospective`, `start-session`,
 `end-session`. The other **16** skills under `home/skills/` are held back
