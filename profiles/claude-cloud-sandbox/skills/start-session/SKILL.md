@@ -89,7 +89,7 @@ Output is a sectioned stream. Each section starts with `===<name> (exit=<N>)===`
 | `recent_main_commits` | 5 | First line is `count=<N>` (commits that merged into `origin/<default>` since the previous local tip). When non-zero, subsequent lines are `<short-sha> <subject>`, capped at 10. Empty when caught up. |
 | `gh_ready`, `gh_assigned` | — | `gh-unavailable` or `gh-unauthorized` on this surface, every time (see §Surface). Ignore both; part (b) is where the issue data comes from. They are still emitted because the script is one file shared with the workstation composition. |
 | `claude_drift` | — | `state=absent` on this surface: nothing here is chezmoi-managed, so there is no deployed tree to be behind. Silent skip. |
-| `bootstrap_currency` | 5b, 7 | `state=failed` = the bootstrap died partway and the container is missing an unknown subset of its toolkit; report it first, alone, and above everything else, quoting `step=`, `exit_code=` and `log=`. `state=current` = silent skip. `state=no-manifest` = a container built before manifests existed; silent, and it self-heals when the snapshot next expires. `state=pinned` names the ref the environment froze to — report only if something else looks stale. `state=behind` gives `installed=`, `head=` and a `remedy=` line: surface it, because everything the container ships is that old. `state=unknown` = the ref could not be resolved (no network); mention once, do not retry. |
+| `bootstrap_currency` | 5b, 7 | `state=failed` = the bootstrap died partway and the container is missing an unknown subset of its toolkit; report it first, alone, and above everything else, quoting `step=`, `exit_code=` and `log=`. `state=current` = silent skip. `state=no-manifest` = a container built before manifests existed; silent, and it self-heals when the snapshot next expires. `state=pinned` names the ref the environment froze to — report only if something else looks stale. `state=behind` gives `installed=`, `head=` and a `remedy=` line: surface it, because everything the container ships is that old. `state=unknown` = the ref could not be resolved (no network); mention once, do not retry. A `degraded=` line may accompany any of these and names Tier 2 capabilities that did not install — the toolkit is fine, a toolchain is missing; surface it under Needs attention. |
 
 **(b) The issue query.** One MCP call answers both issue sections of the brief.
 Send it as soon as you have `<owner>/<repo>` — from the `---origin---` line above, or
@@ -200,6 +200,15 @@ skills, policy and helper scripts with nothing saying so.
   it used to.
 - **`state=pinned`**: names the ref the environment froze to. Report only if
   something else looks stale.
+- **`degraded=<names>`**: an extra line that can accompany **any** state above,
+  including `current` — the bootstrap's Tier 2 capabilities (gcloud,
+  pre-commit and its linters, gh) install after the toolkit and degrade rather
+  than abort, so a container can be entirely up to date and still missing one.
+  Surface it as one line under "Needs attention" naming what is missing. It is
+  not `state=failed` and must not be reported as a broken container: the
+  toolkit is present, one toolchain is not. What it changes is what you may
+  conclude from a later absence — a lint or scan that cannot run here is
+  unverified work to report, never a gate that passed.
 - **`state=behind`**: say so plainly at the top of the brief and give the
   remedy verbatim from `remedy=`. Re-running the bootstrap takes effect
   immediately and needs no restart. Everything the container delivers —
@@ -282,6 +291,8 @@ Needs attention:
   • <unpushed commits: N — this container is disposable>   (omit when 0)
   • container config is behind <installed> → <head> — re-run the bootstrap: <remedy>
                                                (omit unless state=behind)
+  • capabilities missing: <degraded> — lint/scan gates that need them cannot run
+                                               (omit unless a degraded= line is present)
 ───────────────────────────────────────────────
 ```
 

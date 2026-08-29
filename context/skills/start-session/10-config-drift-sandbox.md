@@ -22,6 +22,15 @@ skills, policy and helper scripts with nothing saying so.
   it used to.
 - **`state=pinned`**: names the ref the environment froze to. Report only if
   something else looks stale.
+- **`degraded=<names>`**: an extra line that can accompany **any** state above,
+  including `current` — the bootstrap's Tier 2 capabilities (gcloud,
+  pre-commit and its linters, gh) install after the toolkit and degrade rather
+  than abort, so a container can be entirely up to date and still missing one.
+  Surface it as one line under "Needs attention" naming what is missing. It is
+  not `state=failed` and must not be reported as a broken container: the
+  toolkit is present, one toolchain is not. What it changes is what you may
+  conclude from a later absence — a lint or scan that cannot run here is
+  unverified work to report, never a gate that passed.
 - **`state=behind`**: say so plainly at the top of the brief and give the
   remedy verbatim from `remedy=`. Re-running the bootstrap takes effect
   immediately and needs no restart. Everything the container delivers —

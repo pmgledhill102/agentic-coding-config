@@ -26,6 +26,13 @@ FAIL=0
 ok() { PASS=$((PASS + 1)); printf '  ok    %s\n' "$1"; }
 no() { FAIL=$((FAIL + 1)); printf '  FAIL  %s\n' "$1"; }
 
+count() {
+    # count <pattern> <file> -- 0 when the file is absent OR has no match.
+    # `grep -c` prints 0 and exits 1 on no match, so a bare `|| echo 0` yields
+    # two lines and every comparison against it fails.
+    { grep -c "$1" "$2" 2> /dev/null || echo 0; } | head -1
+}
+
 check() {
     # check <description> <expected> <actual>
     if [ "$2" = "$3" ]; then ok "$1"; else
@@ -91,7 +98,7 @@ else
     ok "codex profile leaves CLAUDE.md alone"
 fi
 check "codex profile still gets a banner in AGENTS.md" "1" \
-    "$(grep -c 'acc:bootstrap-failed:start' "$H/.agents/AGENTS.md" 2> /dev/null || echo 0)"
+    "$(count 'acc:bootstrap-failed:start' "$H/.agents/AGENTS.md")"
 rm -rf "$H"
 
 # --- 3. repeated failures, and real policy underneath ----------------------
@@ -193,6 +200,84 @@ check "a manifest with no status= is not read as failed" \
 rm -f "$H/.agents/.bootstrap-manifest"
 check "no manifest still means no-manifest, not failed" \
     "state=no-manifest" "$(currency "$H")"
+rm -rf "$H"
+
+# --- 6. tiering: the toolkit runs before any capability -------------------
+#
+# The ordering is the fix, not a side effect of it: every toolkit section is a
+# curl and a file write, and every capability is a toolchain download, so the
+# cheap valuable work must not sit behind the expensive fragile work (#346).
+# Asserted on the log's own ordering rather than on line numbers, which drift.
+H=$(mktemp -d)
+LOG="$H/run.log"
+HOME="$H" sh "$BOOTSTRAP" main --no-gcloud --no-precommit --no-hooks --no-terraform \
+    > "$LOG" 2>&1
+check "a toolkit-only run succeeds" "0" "$?"
+
+first_line_of() { grep -n "$1" "$LOG" 2> /dev/null | head -1 | cut -d: -f1; }
+skills_at=$(first_line_of 'skill   -> .*start-session')
+policy_at=$(first_line_of 'policy  ->')
+manifest_at=$(first_line_of 'manifst ->')
+if [ -n "$skills_at" ] && [ -n "$policy_at" ] && [ -n "$manifest_at" ]; then
+    ok "toolkit sections ran (policy, skills, manifest all logged)"
+    if [ "$policy_at" -lt "$skills_at" ]; then
+        ok "  policy lands before skills"
+    else
+        no "  policy lands before skills"
+    fi
+    if [ "$skills_at" -lt "$manifest_at" ]; then
+        ok "  manifest is written last"
+    else
+        no "  manifest is written last"
+    fi
+else
+    no "toolkit sections ran (policy, skills, manifest all logged)"
+fi
+check "a clean run records status=ok" "ok" \
+    "$(sed -n 's/^status=//p' "$H/.agents/.bootstrap-manifest")"
+check "  and an empty degraded list" "" \
+    "$(sed -n 's/^degraded=//p' "$H/.agents/.bootstrap-manifest")"
+check "  and leaves no failure banner" "0" \
+    "$(count 'acc:bootstrap-failed' "$H/.claude/CLAUDE.md")"
+rm -rf "$H"
+
+# --- 7. a capability that cannot install degrades, it does not abort -------
+#
+# The whole point of the tier split. gh is the cheapest capability to fail on
+# purpose: pointing its download at an unresolvable host makes `fetch` fail the
+# way a blocked egress or a moved release asset would, and the `die` inside
+# cap_gh then has to exit the SUBSHELL rather than the run.
+H=$(mktemp -d)
+LOG="$H/run.log"
+sed 's#https://github.com/cli/cli/releases#https://bootstrap-test.invalid/cli#' \
+    "$BOOTSTRAP" > "$H/bootstrap.sh"
+HOME="$H" sh "$H/bootstrap.sh" main --with-gh --no-gcloud --no-precommit --no-hooks \
+    > "$LOG" 2>&1
+check "a failing capability does not fail the run" "0" "$?"
+
+M="$H/.agents/.bootstrap-manifest"
+check "the manifest is still written" "1" "$([ -f "$M" ] && echo 1 || echo 0)"
+check "  status is degraded, not failed" "degraded" "$(sed -n 's/^status=//p' "$M")"
+check "  and it names the capability" "gh" "$(sed -n 's/^degraded=//p' "$M")"
+# A degraded container is not a broken one: the banner is for a dead run only,
+# or every sandbox without gh would come up shouting.
+check "  no failure banner for a degraded run" "0" \
+    "$(count 'acc:bootstrap-failed' "$H/.claude/CLAUDE.md")"
+# The toolkit must still be complete -- that is what the tier split buys.
+check "  the skills still installed" "1" \
+    "$([ -f "$H/.agents/skills/start-session/SKILL.md" ] && echo 1 || echo 0)"
+check "  the policy still installed" "1" \
+    "$([ -f "$H/.claude/CLAUDE.md" ] && echo 1 || echo 0)"
+check "the run says DEGRADED out loud" "1" "$(grep -c 'DEGRADED' "$LOG")"
+
+# And start-session must surface it without calling the container broken.
+mkdir -p "$H/.agents/skills"
+cur=$(HOME="$H" "$GATHER" 2> /dev/null |
+    sed -n '/^===bootstrap_currency/,/^===[a-z]/p')
+check "gather emits a degraded= line" "degraded=gh" \
+    "$(printf '%s\n' "$cur" | sed -n 's/^\(degraded=.*\)$/\1/p')"
+check "  and does NOT report state=failed" "0" \
+    "$(printf '%s\n' "$cur" | grep -c 'state=failed')"
 rm -rf "$H"
 
 printf '\n%s passed, %s failed\n' "$PASS" "$FAIL"

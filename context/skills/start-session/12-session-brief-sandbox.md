@@ -32,6 +32,8 @@ Needs attention:
   • <unpushed commits: N — this container is disposable>   (omit when 0)
   • container config is behind <installed> → <head> — re-run the bootstrap: <remedy>
                                                (omit unless state=behind)
+  • capabilities missing: <degraded> — lint/scan gates that need them cannot run
+                                               (omit unless a degraded= line is present)
 ───────────────────────────────────────────────
 ```
 
