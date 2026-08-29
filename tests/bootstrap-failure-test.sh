@@ -28,9 +28,13 @@ no() { FAIL=$((FAIL + 1)); printf '  FAIL  %s\n' "$1"; }
 
 count() {
     # count <pattern> <file> -- 0 when the file is absent OR has no match.
-    # `grep -c` prints 0 and exits 1 on no match, so a bare `|| echo 0` yields
-    # two lines and every comparison against it fails.
-    { grep -c "$1" "$2" 2> /dev/null || echo 0; } | head -1
+    # `grep -c` prints 0 and exits 1 on no match, so a bare `|| echo 0` emits
+    # two lines and every comparison against it fails. Capturing rather than
+    # piping through `head -1`: head exits after its line, and the `echo` then
+    # takes EPIPE and dash reports "echo: I/O error" into the CI log.
+    _n=$(grep -c "$1" "$2" 2> /dev/null) || _n=0
+    [ -n "$_n" ] || _n=0
+    echo "$_n"
 }
 
 check() {
@@ -264,10 +268,20 @@ rm -rf "$H"
 # purpose: pointing its download at an unresolvable host makes `fetch` fail the
 # way a blocked egress or a moved release asset would, and the `die` inside
 # cap_gh then has to exit the SUBSHELL rather than the run.
+#
+# The second sed is what makes this run the same everywhere. cap_gh short
+# circuits on `command -v gh`, and a GitHub Actions runner ships gh
+# pre-installed -- so on CI the section logged "already present, left alone",
+# never attempted a download, and nothing degraded. Neutering the guard forces
+# the install path on any host. PATH cannot do this instead: gh lives in a
+# system directory the rest of the script also needs.
 H=$(mktemp -d)
 LOG="$H/run.log"
-sed 's#https://github.com/cli/cli/releases#https://bootstrap-test.invalid/cli#' \
+sed -e 's#https://github.com/cli/cli/releases#https://bootstrap-test.invalid/cli#' \
+    -e 's#if command -v gh > /dev/null 2>&1; then#if false; then#' \
     "$BOOTSTRAP" > "$H/bootstrap.sh"
+check "the gh fixture neutered the already-present guard" "0" \
+    "$(count 'command -v gh > /dev/null 2>&1; then' "$H/bootstrap.sh")"
 HOME="$H" sh "$H/bootstrap.sh" main --with-gh --no-gcloud --no-precommit --no-hooks \
     > "$LOG" 2>&1
 check "a failing capability does not fail the run" "0" "$?"
