@@ -7,8 +7,9 @@ Audits, per-repo tier assignments and the archive list are private and live
 in `paul-context` (`registry/`, `tools/repo-audit.sh`) — the split is:
 **standard public, evidence private**.
 
-Status: draft, 2026-08-29. The [Checks and CI](#checks-and-ci--open) section
-is explicitly not yet settled.
+Status: accepted 2026-08-29. Required-check *contexts* remain repo-specific
+for now — see [Checks and CI](#checks-and-ci) for what is settled and what
+is deferred.
 
 How this document relates to the rest of the estate:
 
@@ -223,19 +224,33 @@ required status checks on the default branch.** Without required checks,
 `gh pr merge --auto` merges *immediately* — the "wait for CI" everyone
 assumes is supplied by the ruleset, not by the flag.
 
-## Checks and CI — open
+## Checks and CI
 
-Not yet settled; recorded here so the discussion has a home. Current
-practice, from `/setup-common`: every repo gets gitleaks, cspell and
-semgrep jobs plus actionlint; language skills add their gates; GitHub
+Settled 2026-08-29: **required-check contexts stay repo-specific for now.**
+The ruleset migration carries each repo's existing required checks across
+as they are; standardising which contexts every repo must require is
+deferred until after the migration, so the two changes cannot be confused
+with each other when something breaks.
+
+Current practice, from `/setup-common`: every repo gets gitleaks, cspell
+and semgrep jobs plus actionlint; language skills add their gates; GitHub
 Actions are pinned to commit SHAs.
 
-To decide:
+One rule is estate-wide **now**, because it is a safety invariant rather
+than a convention:
+
+- **A repo with auto-merge enabled must require at least one status
+  check.** Without one, `gh pr merge --auto` merges immediately — see the
+  Dependabot section's never-combination. If a repo has no check worth
+  requiring, it does not get auto-merge.
+
+Deferred until after the migration, recorded so the discussion has a home:
 
 - **Which contexts are *required*** (ruleset-enforced) versus merely run.
   Required contexts are named by job, so renaming a job silently detaches
-  it from the ruleset — a naming-stability convention is needed before
-  requiring aggressively.
+  it from the ruleset — a naming-stability convention is the prerequisite
+  for requiring aggressively, and should be decided before contexts are
+  standardised.
 - Whether a uniform minimum (lint + secrets) should be required on every
   active repo, with language gates required only where the language exists.
 - Whether path-filtered workflows can be required at all (a required check
