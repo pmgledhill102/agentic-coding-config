@@ -214,6 +214,51 @@ File half (repos with CI worth trusting):
   the PAT is missing rather than falling back.
 - Merge flag: `--merge`, per the merge-methods standard.
 
+### The `AUTOMERGE_PAT`: one shared token for the estate, not one per repo
+
+Decided 2026-08-29. The auto-merge PAT is a **single shared fine-grained
+token**, whose selected-repositories list is exactly the set of repos
+running the auto-merge apparatus — no wider.
+
+- **Permissions: Contents read/write, Pull requests read/write, and the
+  forced Metadata read. Nothing else.** This is the floor, not an
+  over-grant: the approval needs the pull-requests half, and the merge
+  itself writes commits to the base branch — GitHub has no narrower
+  "may merge but not push" permission, so Contents write cannot be
+  trimmed away.
+- **Storage stays per-repo even though the token is shared.** A personal
+  account has no organisation secrets, so the same token is stored under
+  the same name in each repo's Dependabot store, which keeps the workflow
+  file byte-identical everywhere. Distribution and rotation are one loop:
+
+  ```sh
+  for r in <tier-2 repos>; do
+    gh secret set AUTOMERGE_PAT --app dependabot --repo "pmgledhill102/$r" --body "$TOKEN"
+  done
+  ```
+
+- **Why shared:** per-repo tokens multiply minting, expiry tracking and
+  rotation by the repo count to buy isolation between repositories that
+  all have the same owner — the blast-radius argument that justifies
+  per-repo credentials in a multi-tenant organisation does not apply
+  here, and every extra token is another row the PAT inventory has to
+  account for. Widening the covered set is an edit to the token's repo
+  list plus one loop iteration, never a new credential.
+- **What bounds a leaked token is the ruleset, not the token's scope.**
+  The standard ruleset requires a pull request and passing checks on the
+  default branch, with an empty bypass list — so even a stolen
+  `AUTOMERGE_PAT` cannot land anything on a default branch without real
+  CI going green first, and cannot push to it directly at all. This is
+  load-bearing, which is why **the token's repository list and the
+  ruleset rollout must be the same list**: a repo reachable by the token
+  but lacking the ruleset has none of that protection.
+- **Upgrade path, recorded rather than adopted:** a private GitHub App
+  with the same two permissions, installed on the same repo list, minting
+  short-lived installation tokens per run — no expiry dates, no rotation.
+  Adopt it the first time PAT rotation actually hurts, or if the estate
+  ever becomes an organisation; until then it is more moving parts than
+  the problem needs.
+
 This posture matches GitHub's own 2026 guidance
 ([grouping, cooldown, security-fast](https://github.blog/security/supply-chain-security/tame-dependabot-group-your-updates-slow-the-cadence-keep-security-fast/));
 the estate's 7-day cooldown is stricter than the platform's 3-day default,
