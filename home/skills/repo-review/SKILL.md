@@ -321,9 +321,61 @@ For each non-SHA-pinned reference, action item P2 — "pin to commit SHA for sup
 
 If neither `.github/dependabot.yml` / `.yaml` nor `renovate.json` is present: action item P1 — "no automated dependency PRs configured".
 
+File presence is all this phase checks. Whether the configured system actually *works* is Phase F — a repo can ship weekly bump PRs for months with its advisory alerts switched off, and this check passes either way.
+
 ### Pre-commit / CI freshness
 
 If `.pre-commit-config.yaml` exists, surface the file's last-modified date (`git log -1 --format=%ad -- .pre-commit-config.yaml`). If older than 12 months, action item P3.
+
+## Phase F — Settings versus behaviour
+
+Every other phase reads the working tree. This one asks whether the repo's GitHub-side configuration matches [`docs/github-standards.md`](https://github.com/pmgledhill102/agentic-coding-config/blob/main/docs/github-standards.md), and — more importantly — whether it is *having its intended effect*.
+
+**Do not build an estate-wide settings sweep here.** `paul-context`'s `tools/repo-audit.sh` already does that: it reads merge methods, auto-merge, delete-branch-on-merge, alerts, security updates, secret scanning, ruleset counts, Dependabot secret names and shared-config drift by blob SHA, across every repo in one run. Duplicating it produces two answers that drift. This phase covers only what a single-repo review can do that an estate sweep structurally cannot, plus the one field the sweep collects but does not surface.
+
+The division is the clone: `repo-audit.sh` is API-only and reviews N repos; `repo-review` has a working tree and reviews one.
+
+### F1 — Effective branch rules (needs `gh`)
+
+`repo-audit.sh` reports how many rulesets a repo has, not what they contain — and the rule that matters most is invisible in a count. One call, for the repo under review:
+
+```sh
+gh api "repos/{owner}/{repo}/rules/branches/$(git symbolic-ref --short HEAD)" --jq '[.[].type]'
+gh api "repos/{owner}/{repo}" --jq '{merge: .allow_merge_commit, squash: .allow_squash_merge, rebase: .allow_rebase_merge, auto: .allow_auto_merge}'
+```
+
+Findings:
+
+- `required_linear_history` present → **P1**. It forbids merge commits on the branch regardless of `allow_merge_commit`, so the repo can report `merge: true` and still be unable to merge by the sanctioned route. The failure surfaces at merge time on an approved, green PR, far from its cause.
+- `allow_merge_commit: false` → **P1**; `allow_rebase_merge: true` → **P2** (the standard disables it outright).
+- Both a classic branch-protection rule and a ruleset on the same branch → **P2**: most-restrictive-wins means a blocking rule can hide in either layer. Migrate to the ruleset and delete the classic rule.
+- `allow_auto_merge: true` with no `required_status_checks` rule → **P1**. Without required checks `--auto` merges *immediately*; the "wait for CI" comes from the ruleset, not the flag.
+
+### F2 — Did it actually work? (needs only the clone)
+
+The recurring estate failure is configuration that reads correct and does nothing. Settings answer what is *declared*; the history answers what *happened*, and only this phase can see it.
+
+```sh
+git log --merges --oneline --since=<date the settings were last corrected>
+```
+
+**Date-bound it.** An unbounded `git log --merges` matches a merge commit from before the settings broke and reports success on a repo that has squashed everything since. If the correction date is unknown, use the repo's most recent 90 days.
+
+Finding: merge commits declared available but none observed in the window → **P2**, "declared mergeable, never observed" — the signal that a merge-method fix restored the option without changing the outcome (GitHub's merge dropdown is sticky per user per repository, so the first merge after a fix must select the method by hand, once).
+
+This check needs no API access, so unlike F1 it **still works where `gh` is absent** — which is every cloud sandbox. It is the one settings-related check that never degrades.
+
+### F3 — Dependabot posture
+
+Phase E checked that a config file exists. The half that goes silent when missing is the settings half — dependency graph, alerts, security updates — and `repo-audit.sh` already reports it estate-wide, along with whether `AUTOMERGE_PAT` is present in each repo's Dependabot store.
+
+Here, check only the pairing that makes a per-repo review the right place to notice it: the repo has an auto-merge workflow **and** the estate audit shows no `AUTOMERGE_PAT` for it, or F1 showed no required status checks. Either combination means the auto-merge apparatus is installed and cannot work safely. **P1**, with the remedy from `setup-common` §8d.
+
+Note the limit rather than implying coverage: a fine-grained PAT's repository list cannot be read from outside the token, so no check here or in the estate sweep can prove the token actually covers this repo. That is only knowable by using it.
+
+### Degradation
+
+Where `gh` is unavailable (cloud sandboxes have no `gh`, and direct `api.github.com` calls are proxy-blocked), F1 and F3 report `not checked (no GitHub API access)` — **never "clean"**. F2 still runs. Reporting an unchecked layer as passing is the exact failure this phase exists to catch.
 
 ## Output: findings summary (always inline)
 
@@ -356,7 +408,17 @@ Repo hygiene
   GitHub Actions pinned to floating tags: <N>
   Dependabot/Renovate: <yes|no>
   Pre-commit config last edited: <date>
+
+Settings vs behaviour
+  Merge methods: merge=<y/n> squash=<y/n> rebase=<y/n>   [expected: y/y/n]
+  Branch rules: <rule types, or "not checked (no API access)">
+  Linear history required: <y/n>                         [expected: n]
+  Effective: can this repo produce a merge commit? <yes|no>
+  Observed: merge commits since <date>: <N>
+  Auto-merge: <on/off>, required checks: <y/n>
 ```
+
+The "effective" line is the AND of the repo setting and the branch rules — the number a human actually wants, and the one neither layer answers alone. "Observed" is the only line that survives with no API access.
 
 Sections with zero findings should explicitly say "none" — silence is ambiguous.
 
@@ -455,3 +517,5 @@ The command itself does not maintain a state file — its source of truth is the
 - **The deprecated→modern map is hand-curated.** Update via PR when a new "X is dead, use Y" case is encountered. Don't auto-generate from npm `deprecated` flags alone — that catches the obvious cases but misses ecosystem shifts (e.g. `tslint` → `eslint` predates the `deprecated` flag).
 - **Pre-commit framework interaction.** If the repo has `.pre-commit-config.yaml`, the markdown report file (`docs/reviews/repo-review-*.md`) may trip markdownlint depending on configured rules. The report uses standard markdown so this is rare; if it happens, add `exclude: ^docs/reviews/` to the relevant hook rather than rewriting the report format.
 - **GitHub Actions SHA-pinning check uses a regex.** False positives on weird `uses:` syntax; false negatives on actions referenced via composite or local paths. Treat the count as approximate.
+- **Phase F is deliberately not an estate sweep.** `paul-context`'s `tools/repo-audit.sh` owns that, and the two must not grow into competing answers. If a settings check would be as useful across 40 repos as on one, it belongs in the audit script, not here. Phase F's remit is the single-repo view: the effective rules a count cannot show, and the behavioural check that needs a clone.
+- **Phase F degrades to "not checked" without `gh`, and that is correct.** Cloud sandboxes have no `gh` and cannot reach `api.github.com`, so F1 and F3 cannot run there. Reporting them as clean would reproduce the failure the phase exists to catch. Only F2 (`git log --merges`) is always available.
