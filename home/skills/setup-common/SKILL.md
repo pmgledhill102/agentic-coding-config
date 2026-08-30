@@ -297,62 +297,122 @@ Don't duplicate if any of these jobs already exist. Every `uses:` reference must
 
 A floating tag (`@v4`) or branch (`@main`) is a mutable reference — it fails the semgrep gate installed above (`github-actions-mutable-action-tag` is a blocking finding), so samples committed with floating tags fail their own repo's CI.
 
-### 8. Dependabot auto-merge
+### 8. Dependabot
 
-Create `.github/workflows/dependabot-auto-merge.yml` (if it doesn't already exist):
+The normative standard is [`docs/github-standards.md`](https://github.com/pmgledhill102/agentic-coding-config/blob/main/docs/github-standards.md) — read it rather than treating the samples below as the source of truth. `gcp-org-management` is the reference implementation; its two files carry inline rationale worth reading before copying.
 
-```yaml
-name: Dependabot Auto-merge
-on: pull_request
+**Dependabot has two halves and each is invisible from the other.** Repo *settings* (dependency graph, alerts, security updates) raise the alarm when an advisory lands; repo *files* decide how routine bumps arrive. Weekly bump PRs prove only the file half — a repo shipped them for months, on schedule, correctly labelled, while alerts were off. Steps 8a and 8b are not optional halves of each other.
 
-permissions:
-  contents: write
-  pull-requests: write
+#### 8a. Settings (every repo — two API calls, never wrong)
 
-jobs:
-  auto-merge:
-    runs-on: ubuntu-latest
-    if: github.actor == 'dependabot[bot]'
-    steps:
-      - uses: actions/checkout@<full-sha> # <version>
-      - run: gh pr review --approve "$PR_URL"
-        env:
-          PR_URL: ${{ github.event.pull_request.html_url }}
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      - run: gh pr merge --auto --squash --delete-branch "$PR_URL"
-        env:
-          PR_URL: ${{ github.event.pull_request.html_url }}
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+```sh
+gh api -X PUT "repos/{owner}/{repo}/vulnerability-alerts"
+gh api -X PUT "repos/{owner}/{repo}/automated-security-fixes"
 ```
 
-`--squash` here is deliberate and is the one place it stays. The global default is merge-commit (see the Git Workflow section of the user's global agent policy), because squash's SHA rewrite punishes stacked branches — but a Dependabot PR is a single-commit version bump that nothing is ever stacked on, and one commit per bump keeps `main` readable. Don't "fix" this to match the default.
+Dependency graph must be on (private repos need it enabled explicitly; nothing below works without it), plus grouped security updates. Those sit under `security_and_analysis` on `PATCH /repos/{owner}/{repo}`, a surface that has changed shape more than once — **don't assume a scripted write took**: `GET` the repo back and read `security_and_analysis`. For a handful of repos the UI (Settings → Advanced Security) is the reliable path.
 
-Also ensure `.github/dependabot.yml` exists with the base structure. If it doesn't exist, create it:
+#### 8b. `.github/dependabot.yml` (every repo)
 
 ```yaml
 version: 2
 updates:
   - package-ecosystem: "github-actions"
-    directory: "/"
+    directories:
+      - "/"
     schedule:
-      interval: "weekly"
-      day: "monday"
-    commit-message:
-      prefix: "ci(deps)"
-      include: "scope"
-    labels:
-      - "dependencies"
-      - "github-actions"
+      interval: weekly
+      day: monday
     open-pull-requests-limit: 5
     cooldown:
       default-days: 7
+    groups:
+      actions:
+        patterns: ["*"]
+        update-types: [minor, patch]
+      actions-major:
+        patterns: ["*"]
+        update-types: [major]
+    commit-message:
+      prefix: "ci"
 ```
 
-If `.github/dependabot.yml` already exists, read it first and ensure the `github-actions` ecosystem entry is present. Don't duplicate entries.
+If the file already exists, read it first and add only the missing ecosystem entry. Four things about this shape are load-bearing:
 
-The `cooldown` block is load-bearing, not a lint nit: this same skill installs auto-merge, so without a cooldown a freshly published malicious or broken version can land on `main` with nobody looking at it. Seven days gives upstream time to yank a bad release first. Every ecosystem entry — here and in the language skills — carries the same block (semgrep's `dependabot-missing-cooldown` rule blocks on entries without one).
+- **`cooldown` is not a lint nit.** This skill also installs auto-merge, so without it a freshly published malicious or broken version lands on the default branch with nobody looking. `dependabot-missing-cooldown` is a blocking semgrep rule. **But cooldown is not universally effective** — the docker ecosystem provides no publication date, so docker PRs carry *"Cooldown could not be applied"* and merge with no delay. For docker, required status checks are the only gate.
+- **Per-severity cooldown keys (`semver-patch-days` and friends) are accepted by some ecosystems only** — `gomod` takes them, `github-actions` and `terraform` reject them. A rejected key **invalidates the entire file**, silently stopping every update stream in the repo, not just that setting. Add one to a new ecosystem only after checking it is accepted.
+- **Group across directories, not per directory.** Use `directories:` (plural) with a list; the same dependency bumped in N directories otherwise arrives as N near-identical PRs that put each other behind under a strict up-to-date rule, each needing its own CI cycle.
+- **Only name labels that already exist.** Dependabot does not create labels it is told to use, and naming an absent one risks it applying **none**. Check first, or omit the key.
 
-> **Note:** Auto-merge requires branch protection or rulesets with required status checks enabled on the default branch. Without this, `--auto` merges immediately without waiting for CI.
+#### 8c. Auto-merge (only repos whose CI proves something)
+
+A repo without a check worth requiring does not get auto-merge — see the never-combination at the end of this section.
+
+```yaml
+name: Dependabot Auto-merge
+on: pull_request
+
+# Read-only is sufficient: fetch-metadata only reads, and both writes go
+# through the PAT. Raising these grants nothing, and GitHub would still
+# refuse an Actions-token approval.
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  automerge:
+    if: github.event.pull_request.user.login == 'dependabot[bot]' && github.repository == '<owner>/<repo>'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fetch update metadata
+        id: metadata
+        uses: dependabot/fetch-metadata@<full-sha> # <version>
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      # For a grouped PR, update-type is the LARGEST jump in the group, so a
+      # group containing one major is treated as a major and skipped.
+      - name: Approve and enable auto-merge (patch/minor)
+        if: steps.metadata.outputs.update-type == 'version-update:semver-patch' || steps.metadata.outputs.update-type == 'version-update:semver-minor'
+        env:
+          GH_TOKEN: ${{ secrets.AUTOMERGE_PAT }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+        run: |
+          if [ -z "$GH_TOKEN" ]; then
+            echo "::error::AUTOMERGE_PAT is not set in the Dependabot secret store. Refusing to fall back to GITHUB_TOKEN: Actions may not approve pull requests, and a GITHUB_TOKEN merge does not trigger workflows that run on push to the default branch."
+            exit 1
+          fi
+          if ! gh pr review --approve "$PR_URL"; then
+            echo "::error::Approval failed with a non-empty AUTOMERGE_PAT. The most likely cause is that this repository is not on the token's selected-repositories list -- a fine-grained PAT's scope cannot be read from outside the token, so this is where a missed repo surfaces. Add ${{ github.repository }} to the AUTOMERGE_PAT repository list."
+            exit 1
+          fi
+          gh pr merge --auto --merge "$PR_URL"
+
+      - name: Leave majors for a human
+        if: steps.metadata.outputs.update-type == 'version-update:semver-major'
+        run: echo "Major update -- deliberately not auto-merged."
+```
+
+**`--merge`, not `--squash`.** Merge-commit is the estate default; squash drops commit trailers, which silently leaves `Closes #N` issues open. The cost is two commits per bump, accepted.
+
+**Neither call may use `GITHUB_TOKEN`, for two independent reasons.** GitHub refuses an Actions-token approval outright (*"GitHub Actions is not permitted to approve pull requests"*); and a merge performed with it **does not trigger other workflows**, so on any repo where the push to the default branch runs a deploy, auto-merged changes would land and never apply. The job fails loudly rather than falling back.
+
+#### 8d. The `AUTOMERGE_PAT` — do this when installing 8c
+
+**One shared fine-grained token serves the whole estate**; installing the workflow means adding this repo to its list, not minting a new token. Both steps, in order:
+
+1. **Add this repository to the `AUTOMERGE_PAT` token's selected-repositories list.** Skipping this is the failure the workflow's second guard exists to catch — the secret is present and non-empty, so the missing-PAT check passes and the approval fails with a bare 403. **A PAT's scope cannot be audited from outside**, so this step at install time is the only real control.
+2. Store the token as a **Dependabot** secret (Settings → Secrets and variables → **Dependabot**), not an Actions secret. Dependabot-triggered runs read from the Dependabot store; a secret in the Actions store is simply empty at run time, with no error.
+
+```sh
+gh secret set AUTOMERGE_PAT --app dependabot --repo "<owner>/<repo>" --body "$TOKEN"
+```
+
+Permissions are Contents read/write plus Pull requests read/write, and no more. Contents write is the floor, not an over-grant: the merge writes to the base branch, and GitHub has no narrower "may merge but not push" permission.
+
+Also enable **Allow auto-merge** in Settings → General (`/setup-repo` does this).
+
+> **The combination that must never exist: auto-merge enabled with no required status checks on the default branch.** Without required checks `gh pr merge --auto` merges *immediately* — the "wait for CI" everyone assumes comes from the ruleset, not the flag. If a repo has no check worth requiring, it does not get 8c.
 
 ### 9. Agent permissions for cloud sessions
 
