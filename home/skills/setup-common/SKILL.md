@@ -447,7 +447,7 @@ End the closing summary with this reminder (verbatim or close to it):
 
 ```text
 Local baseline applied. Run /setup-repo next to apply the GitHub-side
-settings (branch protection, squash-merge rules, secret scanning, labels).
+settings (branch ruleset, merge methods, secret scanning, labels).
 ```
 
 The two commands are a pair that is easy to half-apply: this one writes local files, `setup-repo` configures the remote (different preconditions, different blast radius — the split is deliberate). Naming what `setup-repo` adds is the load-bearing part of the reminder; skip it only if `setup-repo` was already run this session.

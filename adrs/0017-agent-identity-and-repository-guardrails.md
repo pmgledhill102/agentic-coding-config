@@ -443,6 +443,15 @@ until you upgrade" error comes from Free *organizations* — so treat
 rulesets as a nicer UI to verify on one repo, never as the mechanism the
 design depends on.
 
+> **Superseded on this point (2026-09-01, #367).** The ambiguity above was
+> resolved empirically: a ruleset enforces fine on a private repo under
+> personal Pro (`gcp-org-management` has run on one), and
+> [`docs/github-standards.md`](../docs/github-standards.md) — accepted
+> 2026-08-29 — makes rulesets the standard with classic protection as
+> legacy, migrate-on-touch. `setup-repo` now applies the standard ruleset;
+> an empty bypass list replaces `enforce_admins`. Every control this ADR
+> needs exists in the ruleset shape, so the guardrail design is unaffected.
+
 Note also that "restrict who can push" is not usable here: personal
 repos cannot name permitted push actors, which `setup-repo` already
 records as `restrictions: null`. The available shape is "nobody pushes

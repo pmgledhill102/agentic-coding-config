@@ -1,6 +1,6 @@
 ---
 name: setup-repo
-description: Configure a GitHub repository's settings and branch protection: merge methods, required status checks, auto-delete of merged branches, and the P0-P4 and type labels. Independent of local tooling setup.
+description: Configure a GitHub repository's settings and branch rules: merge methods, the standard default-branch ruleset with required status checks, auto-delete of merged branches, and the P0-P4 and type labels. Independent of local tooling setup.
 ---
 
 # Configure GitHub repository settings
@@ -12,7 +12,7 @@ description: Configure a GitHub repository's settings and branch protection: mer
 | Invocation | What runs |
 | --- | --- |
 | `setup-repo` | The full baseline — steps 1–8 below |
-| `/setup-repo --labels-only` | **Step 7 only** (work-tracking labels), then a short confirmation. Skips repo settings, merge strategy, secret scanning, branch protection and verification entirely |
+| `/setup-repo --labels-only` | **Step 7 only** (work-tracking labels), then a short confirmation. Skips repo settings, merge strategy, secret scanning, branch rules and verification entirely |
 
 `--labels-only` exists for **infra and secondary repos** that will never get the full treatment — a Terraform-only sibling repo, a fork used as a mirror — but that still need the `P0`–`P4` / `type: *` label set so cross-repo Issues filed against them can follow the convention in `agentic-coding-config` `docs/github-issues-workflow.md`. Without it such repos carry only GitHub's defaults and `gh issue create --label "type: task,P2"` fails.
 
@@ -25,10 +25,12 @@ Step 7's established-taxonomy guard applies **unchanged** in this mode: a repo w
 Before making changes, gather the current repository configuration:
 
 - Run `gh repo view --json name,owner,defaultBranchRef,deleteBranchOnMerge,mergeCommitAllowed,squashMergeAllowed,rebaseMergeAllowed,isPrivate,hasWikiEnabled,hasProjectsEnabled` to get repo metadata
-- Run `gh api repos/{owner}/{repo}/branches/{default_branch}/protection` to check existing branch protection (a 404 means none is configured)
+- Read branch rules from **both layers**. Classic protection and rulesets can apply to the same branch, most-restrictive-wins, so the blocking rule can hide in either — an audit that reads one layer gets a wrong answer:
+  - `gh api repos/{owner}/{repo}/rulesets` to list rulesets, and `gh api "repos/{owner}/{repo}/rules/branches/{default_branch}"` for the effective ruleset rules on the default branch
+  - `gh api repos/{owner}/{repo}/branches/{default_branch}/protection` for classic protection. **A 404 here means "no classic rule", not "unprotected"** — a repo governed only by a ruleset 404s on this endpoint, which reads exactly like an unprotected default branch unless the ruleset endpoints are read too
 - Check if `.github/workflows/` exists and list workflow files to detect CI
 
-Display a summary table showing **current vs proposed** values before applying any changes.
+Display a summary table showing **current vs proposed** values before applying any changes. Where current state contradicts the estate standard — linear history required, merge commits disabled, a required context no run reports — name the contradiction explicitly: a re-run on an already-configured repo is a drift repair, and the diff is the point.
 
 ### 2. Repository settings
 
@@ -49,6 +51,8 @@ gh repo edit \
 **Why both merge-commit and squash, and never rebase.** Merge-commit is the default (see the Git Workflow section of the user's global agent policy): squash replaces a branch's commits with a new SHA, so anything stacked on it re-applies work `main` already has. Rebase-merge shares that defect and offers no cleanup in return, so it is disabled outright rather than left as a tempting third button. Squash stays enabled for the case it is actually good at — a branch carrying WIP or fixup commits.
 
 GitHub has no "default merge method" field; the only levers are these three booleans, so leaving rebase enabled is what lets it drift back into use.
+
+**`--enable-auto-merge` is conditional on a required check existing.** Without one, `gh pr merge --auto` merges *immediately* — the "wait for CI" everyone assumes comes from the ruleset, not the flag. If step 5 will have no `required_status_checks` rule (no CI yet), drop this flag.
 
 If wiki or projects are currently enabled, note this in the summary but still disable them. Most hobby projects don't use these features.
 
@@ -75,31 +79,95 @@ gh repo edit --enable-secret-scanning --enable-secret-scanning-push-protection
 
 If the repository is **private**, skip this step and note: "Secret scanning requires GitHub Advanced Security (paid) for private repos. Skipping."
 
-### 5. Branch protection
+### 5. Branch rules (the standard ruleset)
+
+Branch rules follow
+[`docs/github-standards.md`](https://github.com/pmgledhill102/agentic-coding-config/blob/main/docs/github-standards.md):
+**rulesets are the standard; classic branch protection is legacy.** This step
+applies a ruleset, and migrates any classic rule step 1 found (see below).
+Where this skill and that document disagree, the document wins and this skill
+has a bug.
 
 Determine the CI status check names to require. Prefer deriving them from an **actual completed run** — `gh pr checks <n>` on a recent PR, or `gh api repos/{owner}/{repo}/commits/{sha}/check-runs --jq '.check_runs[].name'` — rather than reading the workflow YAML: the rendered check name can differ from the job key, and a wrong string here blocks every PR (see below). Fall back to reading `name:` values from `pull_request`-triggered jobs in `.github/workflows/` only when no run exists yet.
 
 Two hazards to warn the user about while doing this:
 
-- **Required checks are a rename trap.** Branch protection stores check names as opaque strings. Rename or remove a CI job and the old name is required forever, never reports, and every PR is blocked with no failing check to point at — nothing warns you. Whenever a CI job is renamed, removed, or a language port swaps one check for another, the protection contexts must be updated in the same change.
+- **Required checks are a rename trap.** Rules store check names as opaque strings. Rename or remove a CI job and the old name is required forever, never reports, and every PR is blocked with no failing check to point at — nothing warns you. Whenever a CI job is renamed, removed, or a language port swaps one check for another, the required contexts must be updated in the same change.
 - **Path-filtered jobs cannot be required checks.** A job behind a `paths:` filter never reports on PRs it skips, so PRs touching other files block forever. `setup-common` and the language skills deliberately suggest path filters — those jobs are ineligible; only require checks that run on every PR.
 
-Apply branch protection to the default branch using the GitHub API. The JSON payload should contain:
+**Assert the contexts list; never merge it with what is already required.**
+The list derived from live runs is authoritative — apply it as the complete
+replacement, and treat any currently-required context that no completed run
+reports as stale: remove it and name it in the summary. Stale contexts
+accumulate silently and only surface as a blocked PR: one repo required both
+`prod` and `prod / terraform`, which are mutually exclusive by construction
+(a reusable-workflow caller reports the bare name when skipped and the
+composite when it runs), so **no possible PR could merge** — and nothing
+caught it until the next PR, months after the rename that caused it.
 
-- `required_status_checks.strict`: `true` (branch must be up-to-date before merging)
-- `required_status_checks.contexts`: array of detected CI check names, or `[]` if no CI workflows exist
-- `required_pull_request_reviews`: `null` (solo developer — cannot require approvals from others)
-- `enforce_admins`: `true` (critical — prevents admin-level tokens and coding agents from bypassing rules)
-- `restrictions`: `null` (not applicable for personal repos)
-- `required_linear_history`: `false` — **do not set this true.** Linear history blocks merge commits on the protected branch outright, and merge-commit is the default method (step 2). A repo with both applied cannot merge a PR at all by the sanctioned route, and the failure appears at merge time on an approved, green PR — long after the setting that caused it. It reads like a tidy-up worth restoring; it isn't
-- `allow_force_pushes`: `false`
-- `allow_deletions`: `false`
+Whether required contexts should be one aggregate gate rather than per-job
+names is deferred estate-wide
+([gcp-org-management#503](https://github.com/pmgledhill102/gcp-org-management/issues/503));
+until that lands, require the per-job names a real run reports.
 
-Use `gh api -X PUT repos/{owner}/{repo}/branches/{default_branch}/protection` with the payload. Do not use heredocs to pass the JSON — use `--input` with process substitution or write a temporary file.
+Apply **one ruleset** targeting the default branch. Create it with
+`gh api -X POST repos/{owner}/{repo}/rulesets --input <file>`; if step 1 found
+an existing ruleset for the default branch, update it in place with
+`gh api -X PUT repos/{owner}/{repo}/rulesets/{ruleset_id} --input <file>`
+rather than creating a second one. Do not use heredocs to pass the JSON —
+write a temporary file and pass it with `--input`. The payload:
 
-If the repo has no CI workflows, the `contexts` array will be empty. This still prevents direct pushes to the default branch and enforces PRs, but won't require any specific checks to pass. Note this and suggest running `setup-common` to add CI.
+```json
+{
+  "name": "default-branch",
+  "target": "branch",
+  "enforcement": "active",
+  "bypass_actors": [],
+  "conditions": { "ref_name": { "include": ["~DEFAULT_BRANCH"], "exclude": [] } },
+  "rules": [
+    { "type": "deletion" },
+    { "type": "non_fast_forward" },
+    { "type": "pull_request",
+      "parameters": {
+        "required_approving_review_count": 0,
+        "dismiss_stale_reviews_on_push": false,
+        "require_code_owner_review": false,
+        "require_last_push_approval": false,
+        "required_review_thread_resolution": false
+      } },
+    { "type": "required_status_checks",
+      "parameters": {
+        "strict_required_status_checks_policy": true,
+        "required_status_checks": [ { "context": "<detected check name>" } ]
+      } }
+  ]
+}
+```
 
-If branch protection already exists, show the current configuration alongside the proposed one so the user can see what will change. The PUT endpoint **replaces** the entire protection config — existing custom settings (like specific required reviewers or additional status checks) will be overwritten.
+- Approvals are 0 because this is a single-human estate: requiring an approval the same human must give adds a click, not a control — the PR and its CI are the control
+- The **empty bypass list is what `enforce_admins` bought under classic protection**: with no bypass actors the rules bind admin-level tokens and coding agents too. Add the narrowest actor only when something concretely breaks without it
+- `strict_required_status_checks_policy: true` requires the branch to be up-to-date before merging
+- **Never add a `required_linear_history` rule.** Linear history forbids merge commits on the branch regardless of the repo-level toggles from step 2, so a repo with both applied cannot merge a PR at all by the sanctioned route — and the failure appears at merge time on an approved, green PR, long after the setting that caused it. It reads like a tidy-up worth restoring; it isn't
+
+If the repo has no CI workflows, omit the `required_status_checks` rule
+entirely rather than requiring an empty list. The ruleset still prevents
+direct pushes and enforces PRs. Two follow-ups in that case: suggest running
+`setup-common` to add CI, and **do not leave auto-merge enabled** — with no
+required check, `gh pr merge --auto` merges *immediately* (the
+never-combination in the standards doc), so drop `--enable-auto-merge` from
+step 2 or disable it until a check exists.
+
+**Migrate classic protection on touch.** If step 1 found a classic rule on the
+default branch:
+
+1. Fold what it required that the standard also wants — the status-check contexts, after the staleness pass above — into the ruleset payload
+2. Apply the ruleset and confirm it took effect (step 8)
+3. Delete the classic rule: `gh api -X DELETE repos/{owner}/{repo}/branches/{default_branch}/protection`. Leaving both layers active means most-restrictive-wins, so a future blocking rule can hide in either — one mechanism collapses the search space
+
+One migration hazard where the repo runs Dependabot auto-merge: auto-merge has
+been reported to stop firing after a ruleset migration (the standards doc
+carries the references). Watch the first Dependabot PR through end-to-end
+after converting.
 
 ### 6. Default branch name check
 
@@ -146,13 +214,15 @@ In `--labels-only` mode, verify with `gh label list` alone — confirm the nine 
 After a full run, verify the configuration took effect:
 
 - Run `gh repo view --json deleteBranchOnMerge,squashMergeAllowed,mergeCommitAllowed,rebaseMergeAllowed` and confirm values match — expect `mergeCommitAllowed` and `squashMergeAllowed` true, `rebaseMergeAllowed` false
-- Run `gh api repos/{owner}/{repo}/branches/{default_branch}/protection` and confirm the protection rules are in place, and specifically that `required_linear_history.enabled` is `false` — if it is true, merge commits are blocked and step 5 did not apply as intended
+- Run `gh api "repos/{owner}/{repo}/rules/branches/{default_branch}" --jq '[.[].type]'` and confirm the effective rules are exactly the standard set — `pull_request`, `non_fast_forward`, `deletion`, plus `required_status_checks` where CI exists — and specifically that `required_linear_history` is **absent**: if present, merge commits are blocked and step 5 did not apply as intended
+- Where step 5 migrated a classic rule, confirm `gh api repos/{owner}/{repo}/branches/{default_branch}/protection` now returns 404 — here that is the desired end state, meaning the ruleset alone carries the rules
+- Confirm the required contexts equal the derived list exactly — no extras surviving from before
 - Display a final summary showing all applied settings
 
 ## Important
 
-- This command modifies **remote GitHub settings**, not local files. It is safe to re-run (idempotent).
-- Branch protection PUT replaces the entire config. If a repo has custom protection rules (e.g., required reviewers from a team), review the current config before overwriting.
-- Some branch protection features require GitHub Pro on private repos. If the API returns a 403, explain this to the user.
-- The `enforce_admins` setting is the most important for agent safety — without it, admin-level tokens bypass all other branch protection rules.
-- Required status check names are stored as opaque strings — remind the user that renaming a CI job later silently orphans the requirement and blocks all PRs until the protection is updated.
+- This command modifies **remote GitHub settings**, not local files. It is safe to re-run (idempotent) — and re-running is how drift gets repaired: settings set once and never re-asserted are how stale contexts and contradicted policy accumulate.
+- The ruleset PUT replaces the entire ruleset document. If a repo carries custom rules, review the current config (step 1) before overwriting.
+- Rulesets on **private** repos require GitHub Pro. If the API returns a 403, explain this to the user.
+- The **empty bypass list** is the setting that matters most for agent safety — an actor on the bypass list skips every other rule, admin tokens included.
+- Required status check names are stored as opaque strings — remind the user that renaming a CI job later silently orphans the requirement and blocks all PRs until the ruleset is updated.
