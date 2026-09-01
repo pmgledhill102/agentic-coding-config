@@ -389,8 +389,8 @@ Each `/setup-*` skill contains:
 **New project setup:**
 
 ```text
-/setup-repo       # GitHub repo settings + branch protection (run first)
-/setup-common     # Local tooling foundation (depends on branch protection for auto-merge)
+/setup-repo       # GitHub repo settings + branch rules (run first)
+/setup-common     # Local tooling foundation (depends on required checks for auto-merge)
 /setup-python     # Language-specific tooling
 ```
 
