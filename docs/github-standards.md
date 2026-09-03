@@ -13,6 +13,11 @@ is deferred.
 
 How this document relates to the rest of the estate:
 
+- **The values live in [`home/standards/github-repo.json`](../home/standards/github-repo.json).**
+  This document is the rationale; the spec is what `/setup-repo` applies
+  and the estate audit diffs against, in the GitHub API's own field names.
+  A value stated here and not there is not standard — change both in the
+  same PR.
 - **Skills in this repo apply it.** `/setup-repo` sets the remote half,
   `/setup-common` the in-repo half. Where a skill's instructions and this
   document disagree, this document wins and the skill has a bug.
@@ -331,14 +336,35 @@ one month:
 So the standard includes its own verification discipline:
 
 - **Declared state**: `paul-context/tools/repo-audit.sh` sweeps the estate
-  and diffs it against this document. Run it after any sweep, and
-  occasionally between.
+  and diffs it against the spec, `home/standards/github-repo.json`. Run it
+  after any sweep, and occasionally between. Until the audit's cut-over to
+  reading the spec lands (tracked in `paul-context`), it carries its own
+  copy of the expected values — the drift the spec exists to end.
 - **Observed behaviour**: after remediating a repo, watch the first PR
   through — the merge commit exists (`git log --merges --since=<fix date>`;
   date-bound it, or early history satisfies the check vacuously), the
   Dependabot PR actually merged itself, the deploy workflow actually fired.
   A settings read alone has signed off on broken repos three times; the
   behavioural check is the one that counts.
+
+## Tiers
+
+Not every repo earns the full apparatus, and the axis is **consequence**:
+what happens if a dependency in the repo turns out to be compromised. Not
+how active the repo is, not whether it is public. Three tiers, each
+extending the last, defined in the spec:
+
+| Tier | Applies to | Adds |
+| --- | --- | --- |
+| `baseline` | every repo | dependency graph, alerts, security updates |
+| `protected` | deployed or reachable | the merge-methods signature, the standard ruleset |
+| `automerge` | protected, and CI proves something | auto-merge, a required-checks rule, `AUTOMERGE_PAT` |
+
+Which repo sits in which tier is private, in `paul-context`: the spec
+carries the tiers, the private registry carries the assignments. The
+Dependabot tiers in that registry are the *file* half of the same idea;
+these are the settings half, and its Tier 0 is `baseline`, its Tier 2
+`automerge`.
 
 ## Applying this standard
 
@@ -347,6 +373,7 @@ So the standard includes its own verification discipline:
   has a bug — fix the skill, don't hand-patch the repo.
 - **Existing repos**: scripted sweep + audit, per the mechanism decision in
   `paul-context`. Archive first; sweep the smaller estate.
-- **Changing this standard**: PR against this file, then a sweep to apply
-  it and an audit run to confirm — a standard changed without a sweep is
-  just a wish.
+- **Changing this standard**: one PR against this file **and the spec**
+  (`tests/github-repo-standard.py` keeps the spec self-consistent), then a
+  sweep to apply it and an audit run to confirm — a standard changed
+  without a sweep is just a wish.

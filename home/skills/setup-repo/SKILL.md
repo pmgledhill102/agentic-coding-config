@@ -115,34 +115,35 @@ Apply **one ruleset** targeting the default branch. Create it with
 an existing ruleset for the default branch, update it in place with
 `gh api -X PUT repos/{owner}/{repo}/rulesets/{ruleset_id} --input <file>`
 rather than creating a second one. Do not use heredocs to pass the JSON —
-write a temporary file and pass it with `--input`. The payload:
+write a temporary file and pass it with `--input`.
 
-```json
-{
-  "name": "default-branch",
-  "target": "branch",
-  "enforcement": "active",
-  "bypass_actors": [],
-  "conditions": { "ref_name": { "include": ["~DEFAULT_BRANCH"], "exclude": [] } },
-  "rules": [
-    { "type": "deletion" },
-    { "type": "non_fast_forward" },
-    { "type": "pull_request",
-      "parameters": {
-        "required_approving_review_count": 0,
-        "dismiss_stale_reviews_on_push": false,
-        "require_code_owner_review": false,
-        "require_last_push_approval": false,
-        "required_review_thread_resolution": false
-      } },
-    { "type": "required_status_checks",
-      "parameters": {
-        "strict_required_status_checks_policy": true,
-        "required_status_checks": [ { "context": "<detected check name>" } ]
-      } }
-  ]
-}
+The payload is the spec's `protected` ruleset. Take it from there rather
+than retyping it, so this skill cannot drift from the standard:
+
+```sh
+SPEC="${CLAUDE_STANDARDS_SPEC:-$HOME/.claude/standards/github-repo.json}"
+jq '.tiers.protected.ruleset' "$SPEC" > ruleset.json
 ```
+
+The spec ships `required_status_checks` with an **empty** contexts list,
+deliberately (its `no-fake-contexts` invariant: a context string that never
+reports blocks every PR forever, so the spec must not be able to ship one).
+Fill it from the names derived above, or drop the rule when the repo has no
+CI:
+
+```sh
+# CI exists: require exactly the detected contexts
+jq --argjson ctx '[{"context":"ci"},{"context":"lint"}]' \
+  '(.rules[] | select(.type == "required_status_checks")
+     | .parameters.required_status_checks) = $ctx' ruleset.json > ruleset.final.json
+
+# no CI: omit the rule rather than requiring an empty list
+jq 'del(.rules[] | select(.type == "required_status_checks"))' ruleset.json > ruleset.final.json
+```
+
+On a surface where `~/.claude/standards/` was not delivered, read the raw
+copy of `home/standards/github-repo.json` from this repo's `main` — never
+reconstruct the payload from memory.
 
 - Approvals are 0 because this is a single-human estate: requiring an approval the same human must give adds a click, not a control — the PR and its CI are the control
 - The **empty bypass list is what `enforce_admins` bought under classic protection**: with no bypass actors the rules bind admin-level tokens and coding agents too. Add the narrowest actor only when something concretely breaks without it
@@ -213,8 +214,24 @@ In `--labels-only` mode, verify with `gh label list` alone — confirm the nine 
 
 After a full run, verify the configuration took effect:
 
-- Run `gh repo view --json deleteBranchOnMerge,squashMergeAllowed,mergeCommitAllowed,rebaseMergeAllowed` and confirm values match — expect `mergeCommitAllowed` and `squashMergeAllowed` true, `rebaseMergeAllowed` false
-- Run `gh api "repos/{owner}/{repo}/rules/branches/{default_branch}" --jq '[.[].type]'` and confirm the effective rules are exactly the standard set — `pull_request`, `non_fast_forward`, `deletion`, plus `required_status_checks` where CI exists — and specifically that `required_linear_history` is **absent**: if present, merge commits are blocked and step 5 did not apply as intended
+- Diff the repository settings against the spec, key for key, in the API's
+  own field names so nothing is translated by hand. Use `protected` for a
+  repo without auto-merge; add the `automerge` overlay where it has it:
+
+  ```sh
+  SPEC="${CLAUDE_STANDARDS_SPEC:-$HOME/.claude/standards/github-repo.json}"
+  jq -S '.tiers.protected.repository' "$SPEC" > expected.json
+  # auto-merge repo: jq -S '.tiers.protected.repository + .tiers.automerge.repository' "$SPEC" > expected.json
+  gh api "repos/{owner}/{repo}" \
+    | jq -S --slurpfile e expected.json 'with_entries(select(.key | IN($e[0] | keys[])))' > actual.json
+  diff expected.json actual.json && echo "repository settings match the spec"
+  ```
+
+  A non-empty diff is a **stop-and-fix**, not a line in the summary. A
+  mismatch here that was noted and not acted on is how 29 repos ended up
+  with merge commits disabled (#352): re-run the failing step and diff
+  again before reporting done.
+- Run `gh api "repos/{owner}/{repo}/rules/branches/{default_branch}" --jq '[.[].type]'` and confirm the effective rules are the spec's `rules_required` for the tier (`jq '.tiers.protected.rules_required' "$SPEC"`), plus `required_status_checks` where CI exists — and specifically that `required_linear_history` is **absent**: if present, merge commits are blocked and step 5 did not apply as intended
 - Where step 5 migrated a classic rule, confirm `gh api repos/{owner}/{repo}/branches/{default_branch}/protection` now returns 404 — here that is the desired end state, meaning the ruleset alone carries the rules
 - Confirm the required contexts equal the derived list exactly — no extras surviving from before
 - Display a final summary showing all applied settings
