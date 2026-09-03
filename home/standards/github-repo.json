@@ -1,0 +1,115 @@
+{
+  "version": 1,
+  "standard": "docs/github-standards.md",
+  "read_from": [
+    "$HOME/.claude/standards/github-repo.json",
+    "https://raw.githubusercontent.com/pmgledhill102/agentic-coding-config/main/home/standards/github-repo.json"
+  ],
+  "field_names": "GitHub REST response shape: `repository` keys are GET /repos/{owner}/{repo} fields, `ruleset` is a POST /repos/{owner}/{repo}/rulesets payload. No translation layer between this file, the applier and the audit.",
+  "tier_axis": "consequence — what happens if a dependency in the repo is compromised. Not activity, not visibility, not repo kind. Assignments are private and live in paul-context.",
+  "tiers": {
+    "baseline": {
+      "applies_to": "Every repository, archived ones included where the write succeeds. Two idempotent calls, never wrong.",
+      "extends": null,
+      "security": {
+        "dependency_graph": true,
+        "vulnerability_alerts": true,
+        "security_updates": true
+      }
+    },
+    "protected": {
+      "applies_to": "Deployed or reachable: the code runs somewhere, or something else depends on it.",
+      "extends": "baseline",
+      "repository": {
+        "allow_merge_commit": true,
+        "allow_squash_merge": true,
+        "allow_rebase_merge": false,
+        "delete_branch_on_merge": true,
+        "merge_commit_title": "PR_TITLE",
+        "merge_commit_message": "PR_BODY",
+        "squash_merge_commit_title": "PR_TITLE"
+      },
+      "ruleset": {
+        "name": "default-branch",
+        "target": "branch",
+        "enforcement": "active",
+        "bypass_actors": [],
+        "conditions": {
+          "ref_name": {
+            "include": ["~DEFAULT_BRANCH"],
+            "exclude": []
+          }
+        },
+        "rules": [
+          { "type": "deletion" },
+          { "type": "non_fast_forward" },
+          {
+            "type": "pull_request",
+            "parameters": {
+              "required_approving_review_count": 0,
+              "dismiss_stale_reviews_on_push": false,
+              "require_code_owner_review": false,
+              "require_last_push_approval": false,
+              "required_review_thread_resolution": false
+            }
+          },
+          {
+            "type": "required_status_checks",
+            "parameters": {
+              "strict_required_status_checks_policy": true,
+              "required_status_checks": []
+            }
+          }
+        ]
+      },
+      "rules_required": ["deletion", "non_fast_forward", "pull_request"],
+      "rules_when_ci": ["required_status_checks"],
+      "classic_branch_protection": "none"
+    },
+    "automerge": {
+      "applies_to": "Protected, and the CI proves something. Auto-merge on a repo whose checks are a formality is a slower way of not reading the diff.",
+      "extends": "protected",
+      "repository": {
+        "allow_auto_merge": true
+      },
+      "rules_required": ["required_status_checks"],
+      "dependabot_secrets": ["AUTOMERGE_PAT"]
+    }
+  },
+  "invariants": [
+    {
+      "id": "no-linear-history",
+      "holds": "No tier's ruleset contains a required_linear_history rule, and no classic protection enables it.",
+      "because": "It forbids merge commits on the branch regardless of allow_merge_commit, and the failure surfaces at merge time on a green, approved PR."
+    },
+    {
+      "id": "auto-merge-needs-a-gate",
+      "holds": "Any tier asserting allow_auto_merge: true requires a required_status_checks rule with at least one context.",
+      "because": "Without a required check, `gh pr merge --auto` merges immediately. The wait for CI comes from the ruleset, not the flag."
+    },
+    {
+      "id": "merge-commit-available",
+      "holds": "Any tier asserting merge methods has allow_merge_commit: true and allow_rebase_merge: false.",
+      "because": "Merge is the estate default; rebase is never. Disabling squash alone returns 422 because GitHub requires one method to remain, so a change here is one combined call."
+    },
+    {
+      "id": "empty-bypass",
+      "holds": "The ruleset's bypass_actors is empty.",
+      "because": "That is what enforce_admins bought under classic protection: the rules bind admin tokens and coding agents too."
+    },
+    {
+      "id": "no-fake-contexts",
+      "holds": "The spec's required_status_checks list is empty; contexts are filled per repo from a real completed run.",
+      "because": "A context string that never reports blocks every PR forever. The spec must not be able to ship one."
+    }
+  ],
+  "unspecified": {
+    "allow_forking": "Decision pending in paul-context (#114). The private baseline carries a value; this spec does not until the standard does.",
+    "actions_allowed": "Decision pending in paul-context (#114): `all` vs `selected`, sequenced with SHA-pinning (#44).",
+    "has_wiki, has_projects, has_discussions, has_issues": "Decision pending in paul-context (#19). setup-repo currently turns wiki and projects off; that is the skill's choice, not yet the standard's.",
+    "default_workflow_permissions, can_approve_pull_request_reviews": "Not stated by the standard. The audit collects both; nothing asserts them.",
+    "allow_update_branch": "setup-repo enables it; the standard is silent.",
+    "squash_merge_commit_message": "The standard sets the squash title only.",
+    "required_status_checks contexts": "Per repo, deliberately, until the checks-and-CI section of the standard is settled."
+  }
+}

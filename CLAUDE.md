@@ -44,6 +44,7 @@ sh tests/retired-paths.sh                # the prune list is safe and sectioned
 sh tests/retired-paths-test.sh           # ...and its validator still catches
 python3 tests/compose-context.py         # composed profiles and skills match their fragments
 python3 tests/allowlist-covers-commands.py  # allow rules match documented invocations
+python3 tests/github-repo-standard.py       # the repo-settings spec holds its own invariants
 
 # shell — CI scans home/bin/, cloud/ and tests/. Select by shebang: home/bin/
 # also holds a Python script, and `shellcheck home/bin/*` errors on it.
