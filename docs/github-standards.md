@@ -340,6 +340,20 @@ So the standard includes its own verification discipline:
   after any sweep, and occasionally between. Until the audit's cut-over to
   reading the spec lands (tracked in `paul-context`), it carries its own
   copy of the expected values — the drift the spec exists to end.
+- **Declared file contents**: settings compliance is not evidence that the
+  apparatus works. A repo has reached zero settings drift — correct merge
+  methods, correct ruleset, `AUTOMERGE_PAT` present — while carrying an
+  auto-merge workflow that gated on `github.actor` and authenticated with
+  `GITHUB_TOKEN`, which GitHub does not permit to approve a pull request;
+  its Dependabot PRs skipped silently. So the spec's `automerge` tier
+  declares the properties that workflow must have, and the sweep diffs
+  against them. **Blob-SHA comparison does not substitute**: it answers
+  *"are these copies the same"*, never *"is any of them right"* — five
+  repos sharing one broken workflow read as perfectly consistent. The
+  spec's top-level `prohibited` list is the mirror image, and closes the
+  gap left by a standard that only ever said what a tier must *have*:
+  auto-merge apparatus is a safety control, and a repo below the
+  `automerge` tier has none of the gates that make it safe.
 - **Observed behaviour**: after remediating a repo, watch the first PR
   through — the merge commit exists (`git log --merges --since=<fix date>`;
   date-bound it, or early history satisfies the check vacuously), the
@@ -358,7 +372,7 @@ extending the last, defined in the spec:
 | --- | --- | --- |
 | `baseline` | every repo | dependency graph, alerts, security updates |
 | `protected` | deployed or reachable | the merge-methods signature, the standard ruleset |
-| `automerge` | protected, and CI proves something | auto-merge, a required-checks rule, `AUTOMERGE_PAT` |
+| `automerge` | protected, and CI proves something | auto-merge, a required-checks rule, `AUTOMERGE_PAT`, the declared properties of the auto-merge workflow |
 
 Which repo sits in which tier is private, in `paul-context`: the spec
 carries the tiers, the private registry carries the assignments. The
