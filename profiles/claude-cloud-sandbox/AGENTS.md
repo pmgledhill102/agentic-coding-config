@@ -22,6 +22,55 @@ Keep a statement in exactly one fragment. If it holds everywhere it belongs
 here; if it names a tool or a path it belongs in a provider or environment
 fragment. See `adrs/0018-composing-agent-context-per-surface.md`.
 
+### Which repos this applies to
+
+Everything below is written for **my own repositories**, and the signal that
+says whether one is mine is already in every clone: the **origin remote**.
+Nothing has to be declared in the repo, so nothing can drift.
+
+**Mine** — the policy in this fragment applies in full:
+
+```sh
+git remote get-url origin
+# git@github.com:pmgledhill102/<repo>.git
+# https://github.com/pmgledhill102/<repo>.git
+# ...and the same two forms under desertfoxclan
+```
+
+Both URL forms are in live use on the same machine, so match on the
+`<owner>/<repo>` part rather than on a prefix — a rule written against
+`https://` alone silently misses every SSH clone, and silence here reads as
+"the standards do not apply" rather than as an error.
+
+The owner set is **`pmgledhill102` and `desertfoxclan`**. It is not one login:
+four repos are owned in the org.
+
+**Not mine** — a work repo, or a third-party project cloned to read or
+contribute to. Here the repo's own conventions win on everything: its branch
+naming, its commit style, its issue tracker or absence of one, its review
+norms. Read them before acting, and do not impose the conventions below. Do not
+create issues to "track" work in someone else's tracker as a habit.
+
+**Forks split the question in two, and the split is not cosmetic.** A fork under
+my account matches the owner test, but `repo-audit.sh` deliberately excludes
+forks — their settings are the upstream's problem.
+
+| | Applies to a fork? |
+| --- | --- |
+| **Agent workflow** — feature branch, PR, issue before work, commit and PR style | **Yes** |
+| **Repo standards** — merge methods, rulesets, required checks, Dependabot, the P0–P4 and type labels | **No** — they belong to upstream |
+
+**A repo's own committed agent instructions override all of this.** That is
+already true of labels — see Work Tracking below — and it generalises: origin
+is the default, an in-repo declaration is the exception. The consequence is
+deliberate: **most repos need no such file at all**, so `AGENTS.md` in a repo
+means "this one genuinely differs" rather than "someone ran the template".
+
+**When the answer is unclear — no remote, an unrecognised owner, a remote named
+something other than `origin` — ask rather than assume.** Guessing "mine" in
+someone else's repo creates branches and issues that should never have existed,
+and guessing "not mine" in my own quietly drops every standard.
+
 ### Git Workflow
 
 - Always create feature branches for changes — never commit directly to main
