@@ -446,7 +446,7 @@ design depends on.
 > **Superseded on this point (2026-09-01, #367).** The ambiguity above was
 > resolved empirically: a ruleset enforces fine on a private repo under
 > personal Pro (`gcp-org-management` has run on one), and
-> [`docs/github-standards.md`](../docs/github-standards.md) — accepted
+> [`home/standards/github-standards.md`](../home/standards/github-standards.md) — accepted
 > 2026-08-29 — makes rulesets the standard with classic protection as
 > legacy, migrate-on-touch. `setup-repo` now applies the standard ruleset;
 > an empty bypass list replaces `enforce_admins`. Every control this ADR

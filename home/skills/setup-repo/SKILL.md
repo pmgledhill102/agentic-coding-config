@@ -82,7 +82,7 @@ If the repository is **private**, skip this step and note: "Secret scanning requ
 ### 5. Branch rules (the standard ruleset)
 
 Branch rules follow
-[`docs/github-standards.md`](https://github.com/pmgledhill102/agentic-coding-config/blob/main/docs/github-standards.md):
+[`home/standards/github-standards.md`](https://github.com/pmgledhill102/agentic-coding-config/blob/main/home/standards/github-standards.md):
 **rulesets are the standard; classic branch protection is legacy.** This step
 applies a ruleset, and migrates any classic rule step 1 found (see below).
 Where this skill and that document disagree, the document wins and this skill

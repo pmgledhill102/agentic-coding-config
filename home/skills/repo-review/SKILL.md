@@ -329,7 +329,7 @@ If `.pre-commit-config.yaml` exists, surface the file's last-modified date (`git
 
 ## Phase F — Settings versus behaviour
 
-Every other phase reads the working tree. This one asks whether the repo's GitHub-side configuration matches [`docs/github-standards.md`](https://github.com/pmgledhill102/agentic-coding-config/blob/main/docs/github-standards.md), and — more importantly — whether it is *having its intended effect*.
+Every other phase reads the working tree. This one asks whether the repo's GitHub-side configuration matches [`home/standards/github-standards.md`](https://github.com/pmgledhill102/agentic-coding-config/blob/main/home/standards/github-standards.md), and — more importantly — whether it is *having its intended effect*.
 
 **Do not build an estate-wide settings sweep here.** `paul-context`'s `tools/repo-audit.sh` already does that: it reads merge methods, auto-merge, delete-branch-on-merge, alerts, security updates, secret scanning, ruleset counts, Dependabot secret names and shared-config drift by blob SHA, across every repo in one run. Duplicating it produces two answers that drift. This phase covers only what a single-repo review can do that an estate sweep structurally cannot, plus the one field the sweep collects but does not surface.
 

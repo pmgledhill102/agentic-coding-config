@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "standard": "docs/github-standards.md",
+  "standard": "home/standards/github-standards.md",
   "read_from": [
     "$HOME/.claude/standards/github-repo.json",
     "https://raw.githubusercontent.com/pmgledhill102/agentic-coding-config/main/home/standards/github-repo.json"
