@@ -13,6 +13,9 @@ as compliant. This validates the properties that matter:
     linear-history rule, an empty bypass list, no shipped status-check
     contexts, auto-merge only alongside a required-checks rule, and merge
     commits available wherever merge methods are asserted
+  - every `files` pattern compiles as a Python regex and carries its reason,
+    and no file rule demands and forbids the same pattern
+  - every prohibition names a tier that exists and a setting that is real
   - no tier names a repository: assignments are private and live elsewhere
 
 Run with no arguments to validate the committed spec. The last section feeds
@@ -22,6 +25,7 @@ things fails CI rather than passing it.
 
 import copy
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -50,8 +54,10 @@ PROHIBITED_RULES = {"required_linear_history"}
 TIER_KEYS = {
     "applies_to", "extends", "repository", "security", "ruleset",
     "rules_required", "rules_when_ci", "classic_branch_protection",
-    "dependabot_secrets",
+    "dependabot_secrets", "files",
 }
+FILE_RULE_KEYS = {"required", "why", "must_match", "must_not_match"}
+PROHIBITION_KEYS = {"id", "applies_below_tier", "match", "because"}
 
 
 def resolve(tiers, name, seen=()):
@@ -72,6 +78,86 @@ def resolve(tiers, name, seen=()):
         else:
             out[key] = value
     return out
+
+
+def automerge_file(spec):
+    """The one file rule the planted faults below mutate."""
+    return next(iter(spec["tiers"]["automerge"]["files"].values()))
+
+
+def validate_files(name, files):
+    """A tier's `files` block: reasons present, patterns real, rules satisfiable.
+
+    A pattern that does not compile is the failure this whole file exists to
+    prevent — it is applied across the tier and then reported as compliant.
+    """
+    problems = []
+    if not isinstance(files, dict):
+        return [f"{name}: files must be an object keyed by glob"]
+
+    for glob, rule in files.items():
+        where = f"{name}: files[{glob!r}]"
+        unknown = set(rule) - FILE_RULE_KEYS
+        if unknown:
+            problems.append(f"{where}: unknown keys {sorted(unknown)}")
+        if not rule.get("why"):
+            problems.append(f"{where}: no why")
+
+        # A pattern in both lists can never be satisfied, so every repo in the
+        # tier reports drift no matter what it carries.
+        kind_of = {}
+        for kind in ("must_match", "must_not_match"):
+            for entry in rule.get(kind, []):
+                label = f"{where}.{kind}[{entry.get('id') or '?'}]"
+                for field in ("id", "pattern", "why"):
+                    if not entry.get(field):
+                        problems.append(f"{label}: no {field}")
+                pattern = entry.get("pattern")
+                if not pattern:
+                    continue
+                try:
+                    re.compile(pattern)
+                except re.error as e:
+                    problems.append(f"{label}: pattern does not compile: {e}")
+                if kind_of.setdefault(pattern, kind) != kind:
+                    problems.append(f"{label}: pattern is both required and forbidden")
+
+    return problems
+
+
+def validate_prohibitions(prohibited, tiers):
+    """A prohibition must name a tier that exists and a setting that is real."""
+    problems = []
+    for index, rule in enumerate(prohibited):
+        where = f"prohibited[{rule.get('id') or index}]"
+        unknown = set(rule) - PROHIBITION_KEYS
+        if unknown:
+            problems.append(f"{where}: unknown keys {sorted(unknown)}")
+        for field in ("id", "because"):
+            if not rule.get(field):
+                problems.append(f"{where}: no {field}")
+        below = rule.get("applies_below_tier")
+        if below not in tiers:
+            problems.append(f"{where}: applies_below_tier names unknown tier {below!r}")
+
+        match = rule.get("match") or []
+        if not match:
+            problems.append(f"{where}: no match entries")
+        for entry in match:
+            if "file" in entry:
+                extra = set(entry) - {"file"}
+            elif "setting" in entry:
+                extra = set(entry) - {"setting", "value"}
+                if entry["setting"] not in REPOSITORY_FIELDS:
+                    problems.append(
+                        f"{where}: {entry['setting']!r} is not a GET /repos field")
+            else:
+                problems.append(f"{where}: match entry names neither file nor setting: {entry!r}")
+                continue
+            if extra:
+                problems.append(f"{where}: match entry has unknown keys {sorted(extra)}")
+
+    return problems
 
 
 def validate(spec):
@@ -98,6 +184,10 @@ def validate(spec):
         bad = set(tier.get("security", {})) - SECURITY_FIELDS
         if bad:
             problems.append(f"{name}: unknown security keys {sorted(bad)}")
+        if "files" in tier:
+            problems += validate_files(name, tier["files"])
+
+    problems += validate_prohibitions(spec.get("prohibited", []), tiers)
 
     if "pmgledhill102/" in json.dumps(tiers):
         problems.append("a tier names a repository; assignments are private and belong in paul-context")
@@ -159,8 +249,15 @@ def main():
         print(f"FAIL {SPEC.relative_to(ROOT)}: {p}")
     if problems:
         return 1
+    properties = sum(
+        len(rule.get("must_match", [])) + len(rule.get("must_not_match", []))
+        for tier in spec["tiers"].values()
+        for rule in tier.get("files", {}).values()
+    )
     print(f"ok   {SPEC.relative_to(ROOT)}: {len(spec['tiers'])} tiers, "
-          f"{len(spec.get('invariants', []))} invariants")
+          f"{len(spec.get('invariants', []))} invariants, "
+          f"{properties} file properties, "
+          f"{len(spec.get('prohibited', []))} prohibitions")
 
     # The validator must still catch things. Each mutation breaks one property
     # the spec relies on; a validator that passes any of them is the bug.
@@ -179,6 +276,16 @@ def main():
         "named repo": lambda s: s["tiers"]["automerge"].__setitem__(
             "applies_to", "pmgledhill102/example"),
         "extends cycle": lambda s: s["tiers"]["baseline"].__setitem__("extends", "automerge"),
+        "uncompilable pattern": lambda s: automerge_file(s)["must_match"][0].__setitem__(
+            "pattern", "secrets\\.(AUTOMERGE_PAT"),
+        "unexplained pattern": lambda s: automerge_file(s)["must_match"][0].pop("why"),
+        "unsatisfiable file rule": lambda s: automerge_file(s)["must_not_match"].append(
+            dict(automerge_file(s)["must_match"][0], id="contradiction")),
+        "prohibition below an unknown tier": lambda s: s["prohibited"][0].__setitem__(
+            "applies_below_tier", "hardened"),
+        "prohibition on a typo field": lambda s: s["prohibited"][0]["match"].append(
+            {"setting": "allow_auto_merges", "value": True}),
+        "unexplained prohibition": lambda s: s["prohibited"][0].pop("because"),
     }
     missed = []
     for label, mutate in broken.items():

@@ -393,9 +393,9 @@ jobs:
         run: echo "Major update -- deliberately not auto-merged."
 ```
 
-**`--merge`, not `--squash`.** Merge-commit is the estate default; squash drops commit trailers, which silently leaves `Closes #N` issues open. The cost is two commits per bump, accepted.
+**What makes this workflow work is declared, not described here.** The seven properties — the PAT rather than `GITHUB_TOKEN` for both calls, the gate on the PR *author* rather than the actor, the `update-type` gate that leaves majors alone, `--merge` rather than `--squash`, and the loud failure on a missing PAT — live in [`home/standards/github-repo.json`](../../standards/github-repo.json) under the `automerge` tier's `files` block, each with the reason it is there. The sample above satisfies all seven. `paul-context`'s `tools/repo-spec-diff.py` checks every `automerge` repo against that block, so a change made here and not there — or there and not here — is reported on the next sweep rather than discovered five days later.
 
-**Neither call may use `GITHUB_TOKEN`, for two independent reasons.** GitHub refuses an Actions-token approval outright (*"GitHub Actions is not permitted to approve pull requests"*); and a merge performed with it **does not trigger other workflows**, so on any repo where the push to the default branch runs a deploy, auto-merged changes would land and never apply. The job fails loudly rather than falling back.
+Restating those reasons here is what produced the failure the spec exists to end: prose cannot be diffed, so four of five `automerge` repos ran a superseded copy of this workflow while reporting zero settings drift. **The half of the loop the sweep cannot close is this one** — a property added to the spec does not propagate into the sample above. Change both in the same PR.
 
 #### 8d. The `AUTOMERGE_PAT` — do this when installing 8c
 

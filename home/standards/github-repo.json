@@ -6,6 +6,7 @@
     "https://raw.githubusercontent.com/pmgledhill102/agentic-coding-config/main/home/standards/github-repo.json"
   ],
   "field_names": "GitHub REST response shape: `repository` keys are GET /repos/{owner}/{repo} fields, `ruleset` is a POST /repos/{owner}/{repo}/rulesets payload. No translation layer between this file, the applier and the audit.",
+  "file_matching": "A `files` key is an fnmatch glob, matched against every path in the repo's git tree — not a filename list. `dependabot*merge*.y*ml` covers the three spellings the estate has used and the fourth nobody has invented yet. A `pattern` is a Python `re` regular expression, searched (not matched) over the file's decoded text.",
   "tier_axis": "consequence — what happens if a dependency in the repo is compromised. Not activity, not visibility, not repo kind. Assignments are private and live in paul-context.",
   "tiers": {
     "baseline": {
@@ -73,7 +74,52 @@
         "allow_auto_merge": true
       },
       "rules_required": ["required_status_checks"],
-      "dependabot_secrets": ["AUTOMERGE_PAT"]
+      "dependabot_secrets": ["AUTOMERGE_PAT"],
+      "files": {
+        ".github/workflows/dependabot*merge*.y*ml": {
+          "required": true,
+          "why": "the tier's entire behaviour is this file. dfc-gaming reached zero settings drift while carrying a workflow that could not function, so settings compliance is not evidence the tier works (paul-context#137).",
+          "must_match": [
+            {
+              "id": "approves-with-the-pat",
+              "pattern": "secrets\\.AUTOMERGE_PAT",
+              "why": "GITHUB_TOKEN may not approve a pull request, and a merge performed with it triggers no workflow that runs on push to the default branch (agentic-coding-config#351)."
+            },
+            {
+              "id": "gates-on-the-pr-author",
+              "pattern": "github\\.event\\.pull_request\\.user\\.login",
+              "why": "github.actor is whoever caused the run, so the job skips silently whenever a human touches the PR. Three of dfc-gaming's open Dependabot PRs skipped this way."
+            },
+            {
+              "id": "majors-are-gated",
+              "pattern": "steps\\.metadata\\.outputs\\.update-type",
+              "why": "a major version bump must never auto-merge. Three of the five automerge repos had no update-type gate at all."
+            },
+            {
+              "id": "merges-not-squashes",
+              "pattern": "gh pr merge[^\\n]*--merge",
+              "why": "merge-commit is the estate default; squash drops commit trailers, silently leaving `Closes #N` issues open (agentic-coding-config#348)."
+            },
+            {
+              "id": "fails-loud-on-a-missing-pat",
+              "pattern": "::error::",
+              "why": "a missing PAT must fail the job, not fall back to GITHUB_TOKEN, or the failure is a silently skipped merge."
+            }
+          ],
+          "must_not_match": [
+            {
+              "id": "squashes",
+              "pattern": "gh pr merge[^\\n]*--squash",
+              "why": "the other half of merges-not-squashes: a workflow carrying both is still wrong."
+            },
+            {
+              "id": "approves-with-the-actions-token",
+              "pattern": "GH_TOKEN:\\s*\\$\\{\\{\\s*secrets\\.GITHUB_TOKEN\\s*\\}\\}",
+              "why": "GitHub refuses an Actions-token approval outright. Naming it as GH_TOKEN is the pre-#351 shape."
+            }
+          ]
+        }
+      }
     }
   },
   "invariants": [
@@ -103,6 +149,18 @@
       "because": "A context string that never reports blocks every PR forever. The spec must not be able to ship one."
     }
   ],
+  "prohibited": [
+    {
+      "id": "automerge-apparatus-needs-the-tier",
+      "applies_below_tier": "automerge",
+      "match": [
+        { "file": ".github/workflows/dependabot*merge*.y*ml" },
+        { "setting": "allow_auto_merge", "value": true }
+      ],
+      "because": "auto-merge is a safety control, not hardening. Ungated it merges immediately, and the wait for CI comes from the ruleset the automerge tier requires, not the flag. cloud-coop (protected) carried the workflow, the flag and no required checks; paul-context (baseline) carried a workflow that was simply dead. Neither was drift under a spec that only says what a tier must have."
+    }
+  ],
+  "prohibitions_are_narrow": "`applies_below_tier` is resolved through `extends`, not by name: a repo is below a tier when that tier is not in its own tier's extends chain. Each prohibition carries its own `because` because the distinction is hardening versus safety control — a dependabot.yml on a dormant repo is beneficial coverage, an ungated auto-merge is not. A blanket \"nothing above your tier\" would erode the permissive defaults of principles/repos.md and must not be written.",
   "unspecified": {
     "allow_forking": "Decision pending in paul-context (#114). The private baseline carries a value; this spec does not until the standard does.",
     "actions_allowed": "Decision pending in paul-context (#114): `all` vs `selected`, sequenced with SHA-pinning (#44).",

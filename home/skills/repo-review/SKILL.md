@@ -333,7 +333,14 @@ Every other phase reads the working tree. This one asks whether the repo's GitHu
 
 **Do not build an estate-wide settings sweep here.** `paul-context`'s `tools/repo-audit.sh` already does that: it reads merge methods, auto-merge, delete-branch-on-merge, alerts, security updates, secret scanning, ruleset counts, Dependabot secret names and shared-config drift by blob SHA, across every repo in one run. Duplicating it produces two answers that drift. This phase covers only what a single-repo review can do that an estate sweep structurally cannot, plus the one field the sweep collects but does not surface.
 
-The division is the clone: `repo-audit.sh` is API-only and reviews N repos; `repo-review` has a working tree and reviews one.
+**The division is not the clone.** Every content comparison behind the estate's last auto-merge failure was done API-only — `contents/…` plus `base64 -d` — and reading one known file across 40 repos is no harder than reading it in one. What divides the two is how much of the tree a check has to understand:
+
+| Check shape | Owner |
+| --- | --- |
+| A known, small set of files, checked for declared properties | the sweep — it is N× more useful across the tier |
+| The whole working tree — dead code, stale TODOs, dependency currency, README claim drift | `repo-review` |
+
+So the auto-merge workflow's *contents* are not checked here. Its load-bearing properties are declared in [`home/standards/github-repo.json`](https://github.com/pmgledhill102/agentic-coding-config/blob/main/home/standards/github-repo.json) under the `automerge` tier's `files` block, and `paul-context`'s `tools/repo-spec-diff.py` diffs every repo in the tier against them — together with the spec's top-level `prohibited` list, which is what catches a *below*-tier repo carrying auto-merge apparatus it has no gate for. Phase F defers to the spec for these files exactly as it already defers to the sweep for settings; a second copy of the properties here would rebuild the duplication the spec was written to remove.
 
 ### F1 — Effective branch rules (needs `gh`)
 
@@ -370,6 +377,8 @@ This check needs no API access, so unlike F1 it **still works where `gh` is abse
 Phase E checked that a config file exists. The half that goes silent when missing is the settings half — dependency graph, alerts, security updates — and `repo-audit.sh` already reports it estate-wide, along with whether `AUTOMERGE_PAT` is present in each repo's Dependabot store.
 
 Here, check only the pairing that makes a per-repo review the right place to notice it: the repo has an auto-merge workflow **and** the estate audit shows no `AUTOMERGE_PAT` for it, or F1 showed no required status checks. Either combination means the auto-merge apparatus is installed and cannot work safely. **P1**, with the remedy from `setup-common` §8d.
+
+Whether the workflow itself is *correct* is not this phase's question — the spec's `files` block declares that, and the sweep checks it tier-wide. Report the pairing and leave the contents alone.
 
 Note the limit rather than implying coverage: a fine-grained PAT's repository list cannot be read from outside the token, so no check here or in the estate sweep can prove the token actually covers this repo. That is only knowable by using it.
 
@@ -517,5 +526,5 @@ The command itself does not maintain a state file — its source of truth is the
 - **The deprecated→modern map is hand-curated.** Update via PR when a new "X is dead, use Y" case is encountered. Don't auto-generate from npm `deprecated` flags alone — that catches the obvious cases but misses ecosystem shifts (e.g. `tslint` → `eslint` predates the `deprecated` flag).
 - **Pre-commit framework interaction.** If the repo has `.pre-commit-config.yaml`, the markdown report file (`docs/reviews/repo-review-*.md`) may trip markdownlint depending on configured rules. The report uses standard markdown so this is rare; if it happens, add `exclude: ^docs/reviews/` to the relevant hook rather than rewriting the report format.
 - **GitHub Actions SHA-pinning check uses a regex.** False positives on weird `uses:` syntax; false negatives on actions referenced via composite or local paths. Treat the count as approximate.
-- **Phase F is deliberately not an estate sweep.** `paul-context`'s `tools/repo-audit.sh` owns that, and the two must not grow into competing answers. If a settings check would be as useful across 40 repos as on one, it belongs in the audit script, not here. Phase F's remit is the single-repo view: the effective rules a count cannot show, and the behavioural check that needs a clone.
+- **Phase F is deliberately not an estate sweep.** `paul-context`'s `tools/repo-audit.sh` owns that, and the two must not grow into competing answers. If a settings check would be as useful across 40 repos as on one, it belongs in the audit script, not here — and the same test now sends declared file properties to the sweep, via the spec's `files` and `prohibited` blocks. Phase F's remit is the single-repo view: the effective rules a count cannot show, and the behavioural check that reads this repo's own history.
 - **Phase F degrades to "not checked" without `gh`, and that is correct.** Cloud sandboxes have no `gh` and cannot reach `api.github.com`, so F1 and F3 cannot run there. Reporting them as clean would reproduce the failure the phase exists to catch. Only F2 (`git log --merges`) is always available.
