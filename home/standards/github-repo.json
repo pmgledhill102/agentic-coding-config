@@ -170,6 +170,11 @@
       "because": "That is what enforce_admins bought under classic protection: the rules bind admin tokens and coding agents too."
     },
     {
+      "id": "automerge-actually-merges",
+      "holds": "On an automerge-tier repo, no Dependabot pull request the gate would approve stays open beyond one update cycle.",
+      "because": "The workflow, the secret and the ruleset can all be correct while nothing has merged for months, because fixing an auto-merge workflow does not re-run it: the trigger is pull_request, and editing a file, adding a secret or rotating a token is not a pull_request event. So a repair applies to the next pull request raised, never to the queue the breakage accumulated. paul-claw#24 was a patch bump open five months on a repo passing every settings and file assertion. Defined by what the gate would approve rather than by semver, so a major -- or a pre-1.0 minor, which agentic-coding-config#394 deliberately holds -- is correctly waiting for a human rather than stuck."
+    },
+    {
       "id": "referenced-labels-exist",
       "holds": "Every label named in a repo's dependabot.yml exists in that repo.",
       "because": "Dependabot does not create labels it is told to use, and naming an absent one risks it applying none at all. The failure is silent: the pull requests still arrive, unlabelled, and nothing reports it. dfc-gaming named dependencies, github-actions, terraform and docker, and had none of them, on the automerge tier."
