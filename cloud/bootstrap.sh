@@ -701,6 +701,40 @@ for script in $BIN_SCRIPTS; do
 done
 log "helpers -> $HOME/.claude/bin/ ($(echo "$BIN_SCRIPTS" | wc -w | tr -d ' ') session scripts)"
 
+# --- the standards ------------------------------------------------------------
+#
+# The estate standard, in both its forms: the machine-readable spec that
+# setup-repo applies and paul-context's sweep diffs against, and the prose it
+# is derived from.
+#
+# WHY A LOCAL COPY AT ALL, when raw.githubusercontent.com is plainly reachable
+# from here -- everything above this line came through it. Because a fetch at
+# read time fails at the moment it is needed, and worse, a failed fetch is
+# indistinguishable from a standard that says nothing. That is the same defect
+# as an unrun check reading as clean, one layer down. paul-context's
+# find_spec() already resolves local-copy-first with the URL as the documented
+# fallback; this is what makes the local copy exist on this surface.
+#
+# ~/.claude/standards/ is the same path chezmoi writes on a workstation, so a
+# skill or a tool naming it works unchanged on both.
+mkdir -p "$HOME/.claude/standards"
+
+for standard in github-repo.json github-standards.md; do
+    fetch "$RAW/home/standards/$standard" "$TMP/$standard" ||
+        die "could not fetch $standard from $REF"
+    # Same 404-as-content guard the helpers and skills use: a bad ref returns
+    # an HTML error page, and a standard that is silently HTML is worse than
+    # one that is absent, because nothing downstream will notice.
+    case "$standard" in
+        *.json) head -1 "$TMP/$standard" | grep -q '^{' ||
+                    die "fetched $standard is not JSON — check that $REF exists" ;;
+        *.md)   head -1 "$TMP/$standard" | grep -q '^#' ||
+                    die "fetched $standard is not markdown — check that $REF exists" ;;
+    esac
+    install -m 0644 "$TMP/$standard" "$HOME/.claude/standards/$standard"
+done
+log "standards -> $HOME/.claude/standards/ (spec + prose)"
+
 for skill in $SKILLS $COMPOSED_SKILLS; do
     # One loop, one difference: where the body comes from. Recomputing it per
     # skill keeps the install, symlink and de-duplication steps below in a
