@@ -98,7 +98,7 @@
             {
               "id": "pre-1.0-is-gated",
               "pattern": "steps\\.pre_release\\.outputs\\.blocked\\s*==\\s*'false'",
-              "why": "majors-are-gated does not cover a pre-1.0 dependency. fetch-metadata's calculateUpdateType compares version positions literally with no 0.x case, so its major branch is unreachable below 1.0.0 and a breaking 0.x release reports semver-minor, matching the approve gate. The approve step must therefore also be conditioned on the pre-1.0 check (agentic-coding-config#394)."
+              "why": "majors-are-gated does not cover a pre-1.0 dependency. fetch-metadata's calculateUpdateType compares version positions literally with no 0.x case, so its major branch is unreachable below 1.0.0 and a breaking 0.x release reports semver-minor, matching the approve gate. Below 1.0.0 the minor position is the breaking one, so the check refuses a 0.x bump that moves it while still auto-merging one that moves only the patch position. The approve step must be conditioned on that check (agentic-coding-config#394)."
             },
             {
               "id": "pre-1.0-check-covers-the-whole-group",
