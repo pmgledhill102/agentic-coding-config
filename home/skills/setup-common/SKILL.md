@@ -335,14 +335,17 @@ updates:
         update-types: [major]
     commit-message:
       prefix: "ci"
+    assignees:
+      - "<the repo owner>"
 ```
 
-If the file already exists, read it first and add only the missing ecosystem entry. Four things about this shape are load-bearing:
+If the file already exists, read it first and add only the missing ecosystem entry. Five things about this shape are load-bearing:
 
 - **`cooldown` is not a lint nit.** This skill also installs auto-merge, so without it a freshly published malicious or broken version lands on the default branch with nobody looking. `dependabot-missing-cooldown` is a blocking semgrep rule. **But cooldown is not universally effective** — the docker ecosystem provides no publication date, so docker PRs carry *"Cooldown could not be applied"* and merge with no delay. For docker, required status checks are the only gate.
 - **Per-severity cooldown keys (`semver-patch-days` and friends) are accepted by some ecosystems only** — `gomod` takes them, `github-actions` and `terraform` reject them. A rejected key **invalidates the entire file**, silently stopping every update stream in the repo, not just that setting. Add one to a new ecosystem only after checking it is accepted.
 - **Group across directories, not per directory.** Use `directories:` (plural) with a list; the same dependency bumped in N directories otherwise arrives as N near-identical PRs that put each other behind under a strict up-to-date rule, each needing its own CI cycle.
 - **Only name labels that already exist.** Dependabot does not create labels it is told to use, and naming an absent one risks it applying **none**. Check first, or omit the key.
+- **`assignees` is what makes the pull request visible at all**, and the key is not the obvious one. Dependabot PRs are authored by `app/dependabot`, and the GitHub mobile app's filters are *Created by me / Assigned to me / Mentions me / Review requested / Involved* — a Dependabot PR matches **none** of them. Without an assignee the only way to see one is typing `is:open is:pr author:app/dependabot` into search, which the app does not save. `paul-claw#24` was a **patch** bump on an `automerge`-tier repo, open from 2026-04-06 to 2026-09-05, with nothing surfacing it. Note that `reviewers` would be the more natural key and **no longer exists** — GitHub removed it from the Dependabot options reference (verified 2026-09-05, zero occurrences). `assignees` remains, and is documented for both version *and* security updates, which matters for a repo whose only Dependabot activity is security-driven. **It does not gate auto-merge**: on the pilot, `paul-claw-infra#64` was created, assigned and auto-merged within the same minute.
 
 #### 8c. Auto-merge (only repos whose CI proves something)
 
