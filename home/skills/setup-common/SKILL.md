@@ -471,11 +471,63 @@ Whatever you put there, commit it; it is meant to be shared, not gitignored,
 and if the repo already has `.claude/settings.json`, merge alongside whatever
 is there rather than replacing it.
 
-### 10. Verify
+### 10. Repo-level agent instructions
+
+Two files, one text. **`AGENTS.md` holds the instructions; `CLAUDE.md` is a
+short pointer that imports it** — [ADR-0019](https://github.com/pmgledhill102/agentic-coding-config/blob/main/adrs/0019-agents-md-is-the-repo-instruction-source.md).
+
+If the repo already has an `AGENTS.md`, leave its content alone and only add
+the `CLAUDE.md` pointer. If it has instructions in `CLAUDE.md` and no
+`AGENTS.md`, **move** the content across rather than copying it.
+
+`AGENTS.md`:
+
+```markdown
+# Project Instructions for AI Agents
+
+## Build & Test
+
+<the commands, and anything non-obvious about running them>
+
+## Architecture Overview
+
+## Conventions & Patterns
+```
+
+`CLAUDE.md`:
+
+```markdown
+# Claude Code
+
+@AGENTS.md
+
+This repository's agent instructions live in [`AGENTS.md`](AGENTS.md) — the
+cross-vendor convention that Codex and other coding agents read. Claude Code
+reads `CLAUDE.md` and **not** `AGENTS.md`, so this file imports it.
+
+<!-- Claude-specific guidance, if any, goes below this line. -->
+```
+
+Why this shape rather than either file alone, both measured on 2026-09-05:
+
+- **Claude Code does not read a repo-level `AGENTS.md` by itself.** In a
+  session where the file was present, both `CLAUDE.md` files reached the
+  context window and neither `AGENTS.md` did. So `AGENTS.md` alone means Claude
+  reads *nothing* — never delete `CLAUDE.md` in favour of it.
+- **Claude Code does follow the `@AGENTS.md` import.** Confirmed live in a
+  `paul-context` session, whose `CLAUDE.md` is exactly the pointer above and
+  whose context contained the whole of `AGENTS.md`.
+
+So one text serves both vendors and there is nothing to keep in sync. Never
+write instructions into `CLAUDE.md` itself: anything Claude-specific goes
+*below* the import, as an addition to the shared text rather than a second copy
+of it that drifts.
+
+### 11. Verify
 
 Run `pre-commit run --all-files` to confirm everything works. Fix any issues that come up.
 
-### 11. Closing summary
+### 12. Closing summary
 
 End the closing summary with this reminder (verbatim or close to it):
 
