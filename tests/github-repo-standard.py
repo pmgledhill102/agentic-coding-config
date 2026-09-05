@@ -54,7 +54,7 @@ PROHIBITED_RULES = {"required_linear_history"}
 TIER_KEYS = {
     "applies_to", "extends", "repository", "security", "ruleset",
     "rules_required", "rules_when_ci", "classic_branch_protection",
-    "dependabot_secrets", "files",
+    "dependabot_secrets", "files", "labels_required",
 }
 FILE_RULE_KEYS = {"required", "why", "must_match", "must_not_match"}
 PROHIBITION_KEYS = {"id", "applies_below_tier", "match", "because"}
@@ -83,6 +83,26 @@ def resolve(tiers, name, seen=()):
 def automerge_file(spec):
     """The one file rule the planted faults below mutate."""
     return next(iter(spec["tiers"]["automerge"]["files"].values()))
+
+
+def validate_labels(name, labels):
+    """A tier's `labels_required`: a real list of real label names.
+
+    Worth validating rather than trusting, because a label name is a free
+    string that nothing else checks. `""` or `None` in this list would be
+    compared against every repo's labels and reported as universally missing,
+    which is a whole estate of noise sourced from one typo.
+    """
+    if not isinstance(labels, list):
+        return [f"{name}: labels_required must be a list, got {type(labels).__name__}"]
+    problems = []
+    for label in labels:
+        if not isinstance(label, str) or not label.strip():
+            problems.append(f"{name}: labels_required entries must be non-empty strings, got {label!r}")
+    duplicates = sorted({x for x in labels if isinstance(x, str) and labels.count(x) > 1})
+    if duplicates:
+        problems.append(f"{name}: labels_required repeats {duplicates}")
+    return problems
 
 
 def validate_files(name, files):
@@ -186,6 +206,8 @@ def validate(spec):
             problems.append(f"{name}: unknown security keys {sorted(bad)}")
         if "files" in tier:
             problems += validate_files(name, tier["files"])
+        if "labels_required" in tier:
+            problems += validate_labels(name, tier["labels_required"])
 
     problems += validate_prohibitions(spec.get("prohibited", []), tiers)
 
@@ -286,6 +308,10 @@ def main():
         "prohibition on a typo field": lambda s: s["prohibited"][0]["match"].append(
             {"setting": "allow_auto_merges", "value": True}),
         "unexplained prohibition": lambda s: s["prohibited"][0].pop("because"),
+        "labels_required not a list": lambda s: s["tiers"]["baseline"].__setitem__(
+            "labels_required", "P0"),
+        "empty label name": lambda s: s["tiers"]["baseline"]["labels_required"].append(""),
+        "duplicate label name": lambda s: s["tiers"]["baseline"]["labels_required"].append("P0"),
     }
     missed = []
     for label, mutate in broken.items():

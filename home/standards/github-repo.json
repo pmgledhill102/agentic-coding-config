@@ -17,6 +17,10 @@
         "vulnerability_alerts": true,
         "security_updates": true
       },
+      "labels_required": [
+        "P0", "P1", "P2", "P3", "P4",
+        "type: epic", "type: feature", "type: task", "type: bug"
+      ],
       "files": {
         ".github/dependabot.yml": {
           "why": "checked wherever the file exists rather than required, because whether every repo should have one is a separate question (paul-context#140). A repo without the file is not this check's business; a repo with one that nobody can see is.",
@@ -164,6 +168,11 @@
       "id": "empty-bypass",
       "holds": "The ruleset's bypass_actors is empty.",
       "because": "That is what enforce_admins bought under classic protection: the rules bind admin tokens and coding agents too."
+    },
+    {
+      "id": "referenced-labels-exist",
+      "holds": "Every label named in a repo's dependabot.yml exists in that repo.",
+      "because": "Dependabot does not create labels it is told to use, and naming an absent one risks it applying none at all. The failure is silent: the pull requests still arrive, unlabelled, and nothing reports it. dfc-gaming named dependencies, github-actions, terraform and docker, and had none of them, on the automerge tier."
     },
     {
       "id": "no-fake-contexts",
