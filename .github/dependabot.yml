@@ -1,5 +1,17 @@
 version: 2
 updates:
+# Dependabot pull requests are authored by app/dependabot, so they match none of
+# the GitHub mobile app's filters -- not "Created by me", not "Review
+# requested". Assigning them puts them in "Assigned to me", a near-default view
+# rather than a search string the app does not save.
+#
+# `reviewers` would have been the more natural key and no longer exists: GitHub
+# removed it from the Dependabot options reference. `assignees` remains, and
+# covers security updates as well as version updates.
+#
+# This does not gate auto-merge. Assignment is metadata, so patch and minor
+# bumps still land themselves and disappear; what stays visible is whatever did
+# NOT merge, which is the case worth seeing (paul-context#160).
   # The workflow actions here are SHA-pinned, which is correct and also means
   # nothing will ever bump them without this file. /setup-common installs this
   # in every repo it touches; this one had been missing it.
@@ -19,3 +31,5 @@ updates:
     # bad or malicious release before it can land here.
     cooldown:
       default-days: 7
+    assignees:
+      - "pmgledhill102"
