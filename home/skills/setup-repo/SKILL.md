@@ -208,6 +208,33 @@ gh label create "type: task" --color 1d76db --force
 gh label create "type: bug" --color 1d76db --force
 ```
 
+**Then the ecosystem labels, but only the ones the repo's own
+`.github/dependabot.yml` names.** These are a different kind of label: not a
+convention anybody applies by hand, but names Dependabot is *told* to use.
+
+```sh
+gh label create "dependencies"   --color 0366d6 --description "Dependency updates" --force
+gh label create "github-actions" --color 000000 --description "GitHub Actions"     --force
+gh label create "go"             --color 00ADD8 --description "Go dependencies"    --force
+gh label create "docker"         --color 2496ED --description "Container base images" --force
+gh label create "terraform"      --color 7B42BC --force
+```
+
+Create a label here **only if `dependabot.yml` references it** — an unused
+label is clutter, and the set a repo needs depends on its ecosystems. The
+reason to create them at all is that **Dependabot creates none of them, and
+naming an absent one risks it applying none at all.** The failure is silent:
+the pull requests still arrive, unlabelled, and nothing reports it.
+`dfc-gaming` named `dependencies`, `github-actions`, `terraform` and `docker`
+and had none of them, on the `automerge` tier, for as long as the file had
+existed. The standard records this as the `referenced-labels-exist` invariant,
+and `paul-context`'s sweep cross-checks it.
+
+The colours are taste rather than correctness — the sweep asserts existence and
+deliberately emits `gh label create` without `--color`. They are written down
+here because these are the ones already in use across the estate, and a sixth
+variant would be worse than none.
+
 ### 8. Verify
 
 In `--labels-only` mode, verify with `gh label list` alone — confirm the nine labels exist — and stop. Do not touch repo settings or branch protection.
