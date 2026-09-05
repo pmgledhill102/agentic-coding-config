@@ -16,6 +16,18 @@
         "dependency_graph": true,
         "vulnerability_alerts": true,
         "security_updates": true
+      },
+      "files": {
+        ".github/dependabot.yml": {
+          "why": "checked wherever the file exists rather than required, because whether every repo should have one is a separate question (paul-context#140). A repo without the file is not this check's business; a repo with one that nobody can see is.",
+          "must_match": [
+            {
+              "id": "assigns-a-human",
+              "pattern": "assignees:",
+              "why": "Dependabot pull requests are authored by app/dependabot and match none of the GitHub mobile app's filters (created/assigned/mentions/review-requested/involved), so an unassigned one is invisible until somebody reconstructs an author: search by hand. paul-claw#24 was a patch bump on an automerge-tier repo, open five months, with nothing surfacing it. Note reviewers is not the key: GitHub removed it from the Dependabot options reference, while assignees is documented for both version and security updates."
+            }
+          ]
+        }
       }
     },
     "protected": {
