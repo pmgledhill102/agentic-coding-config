@@ -370,28 +370,32 @@ jobs:
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
-      # A pre-1.0 dependency is a major whatever position moved. semver makes
-      # no promise below 1.0.0 and the convention is that 0.x breaks in the
-      # MINOR position, but fetch-metadata compares positions literally with
-      # no 0.x case -- so its major branch is unreachable below 1.0.0 and
-      # `0.21.4 -> 0.33.0` reports semver-minor.
+      # Below 1.0.0 the MINOR position is the breaking one: semver promises
+      # nothing there, and the convention is that 0.x shifts every position up.
+      # fetch-metadata compares positions literally with no 0.x case, so its
+      # major branch is unreachable below 1.0.0 and `0.21.4 -> 0.33.0` reports
+      # semver-minor. Refuse that; keep auto-merging a 0.x bump that moves only
+      # the patch position, which is the 0.x equivalent of a patch.
       #
       # Scan updated-dependencies-json, NOT previous-version: update-type is
       # the largest jump across a group, but previous-version is
       # updatedDependencies[0] alone, so reading it passes a 0.x dependency
       # whenever a 1.x one sorts first.
-      - name: Check for pre-1.0 dependencies
+      - name: Check for breaking pre-1.0 bumps
         id: pre_release
         env:
           DEPS_JSON: ${{ steps.metadata.outputs.updated-dependencies-json }}
         run: |
           names="$(printf '%s' "$DEPS_JSON" | jq -r '
             [ .[]
-              | select(((.prevVersion // "") | ltrimstr("v") | split(".")[0]) == "0")
-              | "\(.dependencyName) \(.prevVersion) -> \(.newVersion)"
+              | . as $d
+              | (($d.prevVersion // "") | ltrimstr("v") | split(".")) as $p
+              | (($d.newVersion  // "") | ltrimstr("v") | split(".")) as $n
+              | select($p[0] == "0" and ($p[0] != $n[0] or $p[1] != $n[1]))
+              | "\($d.dependencyName) \($d.prevVersion) -> \($d.newVersion)"
             ] | join("; ")')"
           if [ -n "$names" ]; then
-            echo "::notice::Pre-1.0 dependency, so the minor position is the breaking one and update-type understates the risk. Left for a human: $names"
+            echo "::notice::Pre-1.0 dependency whose minor position moved. Below 1.0.0 that is the breaking position, even though update-type reports it as a minor. Left for a human: $names"
             echo "blocked=true" >> "$GITHUB_OUTPUT"
           else
             echo "blocked=false" >> "$GITHUB_OUTPUT"
@@ -420,7 +424,7 @@ jobs:
         run: echo "Major update -- deliberately not auto-merged."
 ```
 
-**What makes this workflow work is declared, not described here.** The nine properties — the PAT rather than `GITHUB_TOKEN` for both calls, the gate on the PR *author* rather than the actor, the `update-type` gate that leaves majors alone, the pre-1.0 gate that catches the majors `update-type` cannot see, `--merge` rather than `--squash`, and the loud failure on a missing PAT — live in [`home/standards/github-repo.json`](../../standards/github-repo.json) under the `automerge` tier's `files` block, each with the reason it is there. The sample above satisfies all seven. `paul-context`'s `tools/repo-spec-diff.py` checks every `automerge` repo against that block, so a change made here and not there — or there and not here — is reported on the next sweep rather than discovered five days later.
+**What makes this workflow work is declared, not described here.** The nine properties — the PAT rather than `GITHUB_TOKEN` for both calls, the gate on the PR *author* rather than the actor, the `update-type` gate that leaves majors alone, the pre-1.0 gate that catches the breaking `0.x` bumps `update-type` reports as minors, `--merge` rather than `--squash`, and the loud failure on a missing PAT — live in [`home/standards/github-repo.json`](../../standards/github-repo.json) under the `automerge` tier's `files` block, each with the reason it is there. The sample above satisfies all seven. `paul-context`'s `tools/repo-spec-diff.py` checks every `automerge` repo against that block, so a change made here and not there — or there and not here — is reported on the next sweep rather than discovered five days later.
 
 Restating those reasons here is what produced the failure the spec exists to end: prose cannot be diffed, so four of five `automerge` repos ran a superseded copy of this workflow while reporting zero settings drift. **The half of the loop the sweep cannot close is this one** — a property added to the spec does not propagate into the sample above. Change both in the same PR.
 
