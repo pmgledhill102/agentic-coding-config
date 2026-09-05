@@ -370,10 +370,37 @@ jobs:
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
+      # A pre-1.0 dependency is a major whatever position moved. semver makes
+      # no promise below 1.0.0 and the convention is that 0.x breaks in the
+      # MINOR position, but fetch-metadata compares positions literally with
+      # no 0.x case -- so its major branch is unreachable below 1.0.0 and
+      # `0.21.4 -> 0.33.0` reports semver-minor.
+      #
+      # Scan updated-dependencies-json, NOT previous-version: update-type is
+      # the largest jump across a group, but previous-version is
+      # updatedDependencies[0] alone, so reading it passes a 0.x dependency
+      # whenever a 1.x one sorts first.
+      - name: Check for pre-1.0 dependencies
+        id: pre_release
+        env:
+          DEPS_JSON: ${{ steps.metadata.outputs.updated-dependencies-json }}
+        run: |
+          names="$(printf '%s' "$DEPS_JSON" | jq -r '
+            [ .[]
+              | select(((.prevVersion // "") | ltrimstr("v") | split(".")[0]) == "0")
+              | "\(.dependencyName) \(.prevVersion) -> \(.newVersion)"
+            ] | join("; ")')"
+          if [ -n "$names" ]; then
+            echo "::notice::Pre-1.0 dependency, so the minor position is the breaking one and update-type understates the risk. Left for a human: $names"
+            echo "blocked=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "blocked=false" >> "$GITHUB_OUTPUT"
+          fi
+
       # For a grouped PR, update-type is the LARGEST jump in the group, so a
       # group containing one major is treated as a major and skipped.
       - name: Approve and enable auto-merge (patch/minor)
-        if: steps.metadata.outputs.update-type == 'version-update:semver-patch' || steps.metadata.outputs.update-type == 'version-update:semver-minor'
+        if: steps.pre_release.outputs.blocked == 'false' && (steps.metadata.outputs.update-type == 'version-update:semver-patch' || steps.metadata.outputs.update-type == 'version-update:semver-minor')
         env:
           GH_TOKEN: ${{ secrets.AUTOMERGE_PAT }}
           PR_URL: ${{ github.event.pull_request.html_url }}
@@ -393,7 +420,7 @@ jobs:
         run: echo "Major update -- deliberately not auto-merged."
 ```
 
-**What makes this workflow work is declared, not described here.** The seven properties — the PAT rather than `GITHUB_TOKEN` for both calls, the gate on the PR *author* rather than the actor, the `update-type` gate that leaves majors alone, `--merge` rather than `--squash`, and the loud failure on a missing PAT — live in [`home/standards/github-repo.json`](../../standards/github-repo.json) under the `automerge` tier's `files` block, each with the reason it is there. The sample above satisfies all seven. `paul-context`'s `tools/repo-spec-diff.py` checks every `automerge` repo against that block, so a change made here and not there — or there and not here — is reported on the next sweep rather than discovered five days later.
+**What makes this workflow work is declared, not described here.** The nine properties — the PAT rather than `GITHUB_TOKEN` for both calls, the gate on the PR *author* rather than the actor, the `update-type` gate that leaves majors alone, the pre-1.0 gate that catches the majors `update-type` cannot see, `--merge` rather than `--squash`, and the loud failure on a missing PAT — live in [`home/standards/github-repo.json`](../../standards/github-repo.json) under the `automerge` tier's `files` block, each with the reason it is there. The sample above satisfies all seven. `paul-context`'s `tools/repo-spec-diff.py` checks every `automerge` repo against that block, so a change made here and not there — or there and not here — is reported on the next sweep rather than discovered five days later.
 
 Restating those reasons here is what produced the failure the spec exists to end: prose cannot be diffed, so four of five `automerge` repos ran a superseded copy of this workflow while reporting zero settings drift. **The half of the loop the sweep cannot close is this one** — a property added to the spec does not propagate into the sample above. Change both in the same PR.
 
