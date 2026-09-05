@@ -96,6 +96,16 @@
               "why": "a major version bump must never auto-merge. Three of the five automerge repos had no update-type gate at all."
             },
             {
+              "id": "pre-1.0-is-gated",
+              "pattern": "steps\\.pre_release\\.outputs\\.blocked\\s*==\\s*'false'",
+              "why": "majors-are-gated does not cover a pre-1.0 dependency. fetch-metadata's calculateUpdateType compares version positions literally with no 0.x case, so its major branch is unreachable below 1.0.0 and a breaking 0.x release reports semver-minor, matching the approve gate. The approve step must therefore also be conditioned on the pre-1.0 check (agentic-coding-config#394)."
+            },
+            {
+              "id": "pre-1.0-check-covers-the-whole-group",
+              "pattern": "updated-dependencies-json",
+              "why": "the pre-1.0 check must scan every updated dependency rather than the previous-version output. fetch-metadata derives update-type from the largest jump across a group but previous-version from updatedDependencies[0] alone, so a guard reading previous-version passes a 0.x dependency whenever a 1.x one sorts first -- and grouped pull requests are the normal shape in this estate (agentic-coding-config#394)."
+            },
+            {
               "id": "merges-not-squashes",
               "pattern": "gh pr merge[^\\n]*--merge",
               "why": "merge-commit is the estate default; squash drops commit trailers, silently leaving `Closes #N` issues open (agentic-coding-config#348)."
