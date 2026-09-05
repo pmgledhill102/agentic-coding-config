@@ -299,7 +299,7 @@ A floating tag (`@v4`) or branch (`@main`) is a mutable reference — it fails t
 
 ### 8. Dependabot
 
-The normative standard is [`docs/github-standards.md`](https://github.com/pmgledhill102/agentic-coding-config/blob/main/docs/github-standards.md) — read it rather than treating the samples below as the source of truth. `gcp-org-management` is the reference implementation; its two files carry inline rationale worth reading before copying.
+The normative standard is [`home/standards/github-standards.md`](https://github.com/pmgledhill102/agentic-coding-config/blob/main/home/standards/github-standards.md) — read it rather than treating the samples below as the source of truth. `gcp-org-management` is the reference implementation; its two files carry inline rationale worth reading before copying.
 
 **Dependabot has two halves and each is invisible from the other.** Repo *settings* (dependency graph, alerts, security updates) raise the alarm when an advisory lands; repo *files* decide how routine bumps arrive. Weekly bump PRs prove only the file half — a repo shipped them for months, on schedule, correctly labelled, while alerts were off. Steps 8a and 8b are not optional halves of each other.
 
