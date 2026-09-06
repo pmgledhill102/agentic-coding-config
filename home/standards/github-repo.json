@@ -39,12 +39,11 @@
       "extends": "baseline",
       "repository": {
         "allow_merge_commit": true,
-        "allow_squash_merge": true,
+        "allow_squash_merge": false,
         "allow_rebase_merge": false,
         "delete_branch_on_merge": true,
         "merge_commit_title": "PR_TITLE",
-        "merge_commit_message": "PR_BODY",
-        "squash_merge_commit_title": "PR_TITLE"
+        "merge_commit_message": "PR_BODY"
       },
       "ruleset": {
         "name": "default-branch",
@@ -203,7 +202,7 @@
     "has_wiki, has_projects, has_discussions, has_issues": "Decision pending in paul-context (#19). setup-repo currently turns wiki and projects off; that is the skill's choice, not yet the standard's.",
     "default_workflow_permissions, can_approve_pull_request_reviews": "Not stated by the standard. The audit collects both; nothing asserts them.",
     "allow_update_branch": "setup-repo enables it; the standard is silent.",
-    "squash_merge_commit_message": "The standard sets the squash title only.",
+    "squash_merge_commit_title, squash_merge_commit_message": "Not stated, because squash merging is disabled (agentic-coding-config#348). Setting either would require passing --enable-squash-merge in the same gh repo edit call, which re-enables the button the standard just turned off.",
     "required_status_checks contexts": "Per repo, deliberately, until the checks-and-CI section of the standard is settled."
   }
 }

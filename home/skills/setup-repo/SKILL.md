@@ -40,7 +40,7 @@ Apply all settings in a single `gh repo edit` call:
 gh repo edit \
   --delete-branch-on-merge \
   --enable-merge-commit \
-  --enable-squash-merge \
+  --enable-squash-merge=false \
   --enable-rebase-merge=false \
   --enable-auto-merge \
   --allow-update-branch \
@@ -48,9 +48,16 @@ gh repo edit \
   --enable-projects=false
 ```
 
-**Why both merge-commit and squash, and never rebase.** Merge-commit is the default (see the Git Workflow section of the user's global agent policy): squash replaces a branch's commits with a new SHA, so anything stacked on it re-applies work `main` already has. Rebase-merge shares that defect and offers no cleanup in return, so it is disabled outright rather than left as a tempting third button. Squash stays enabled for the case it is actually good at — a branch carrying WIP or fixup commits.
+**Merge-commit only. Squash and rebase are both disabled**, which reverses this skill's earlier position that squash "stays enabled for the case it is actually good at" (#348).
 
-GitHub has no "default merge method" field; the only levers are these three booleans, so leaving rebase enabled is what lets it drift back into use.
+**GitHub has no "default merge method" field** — verified again 2026-09-05, the repository API exposes only `allow_merge_commit`, `allow_squash_merge` and `allow_rebase_merge`. So a policy that leaves a button enabled is enforced by nothing: every merge is a click, the UI remembers the last one, and the estate drifted to *zero* merge commits in 62 commits on `gcp-org-management` while the written policy said merge-commit was the default. Disabling the button is the only mechanism there is.
+
+Two costs, and the second is the one that bites quietly:
+
+- **Squash replaces a branch's commits with a new SHA**, so anything stacked on it re-applies work `main` already has. Rebase-merge shares that defect and offers no cleanup in return.
+- **Squash drops commit-message trailers**, so a `Closes #N` in a commit silently fails to close its issue. Two issues stayed open exactly this way (a-c-c#348). Nothing announces it, which makes it worse than the stacked-branch case.
+
+Where a branch genuinely carries WIP or fixup commits, tidy it with `git rebase -i` before merging. That keeps the cleanup where the author can see it, rather than making every repo permanently able to lose trailers for the sake of an occasional convenience.
 
 **`--enable-auto-merge` is conditional on a required check existing.** Without one, `gh pr merge --auto` merges *immediately* — the "wait for CI" everyone assumes comes from the ruleset, not the flag. If step 5 will have no `required_status_checks` rule (no CI yet), drop this flag.
 
@@ -58,16 +65,15 @@ If wiki or projects are currently enabled, note this in the summary but still di
 
 ### 3. Merge commit message formats
 
-Set both message formats, so whichever method a PR uses produces a useful commit subject:
+Only the merge-commit format matters now that squash is disabled:
 
 ```sh
-gh repo edit --enable-squash-merge --squash-merge-commit-message pr-title
 gh api -X PATCH repos/{owner}/{repo} -f merge_commit_title=PR_TITLE -f merge_commit_message=PR_BODY
 ```
 
-`--enable-squash-merge` must be in the **same invocation** as `--squash-merge-commit-message` even though step 2 already enabled it: `gh` gates the message flag on the enable flag being present in the same call. Without it, `gh repo edit` prints its help text, exits 0, and applies nothing — the output looks like documentation, not an error, so check that it actually applied.
+This needs the API directly: `gh repo edit` has **no** `--merge-commit-title`/`--merge-commit-message` flags, only the squash pair. The API accepts just three title/message combinations — `PR_TITLE`+`PR_BODY`, `PR_TITLE`+`BLANK`, and the default `MERGE_MESSAGE`+`PR_TITLE`. Anything else returns a 422 naming the valid set.
 
-The merge-commit format needs the API directly: `gh repo edit` has **no** `--merge-commit-title`/`--merge-commit-message` flags, only the squash pair. The API also accepts just three title/message combinations — `PR_TITLE`+`PR_BODY`, `PR_TITLE`+`BLANK`, and the default `MERGE_MESSAGE`+`PR_TITLE`. Anything else returns a 422 naming the valid set. `PR_TITLE`+`PR_BODY` is the one that matches what squash does with `pr-title`, so `main`'s log reads the same whichever method a PR used.
+The squash message format is deliberately not set. Setting it would require passing `--enable-squash-merge` in the same invocation — `gh` gates the message flag on the enable flag — which would silently re-enable the button this skill just turned off.
 
 ### 4. Secret scanning (public repos only)
 
