@@ -35,14 +35,44 @@ Append these lines to `.gitignore` if they aren't already present:
 .terraform/
 *.tfstate
 *.tfstate.backup
-*.tfplan
-.terraform.lock.hcl
 crash.log
 override.tf
 override.tf.json
 *_override.tf
 *_override.tf.json
+
+# Saved plans. `*.tfplan` alone does not match `tf.plan`, which is the name
+# every `-out=` example produces, so a plan can sit untracked-but-not-ignored
+# until a `git add -A` sweeps it in. A plan file is a zip of resource
+# attributes, so it is the wrong thing to publish by accident.
+*.tfplan
+tf.plan
+*.plan
+
+# Lock files: commit a ROOT's, ignore a MODULE's.
+#
+# A root lock pins the provider version a plan and apply actually use, so
+# HashiCorp recommends committing it -- and it is what gives Dependabot a
+# pinned version to raise a pull request against. A blanket ignore leaves a
+# repo with no lock and therefore nothing to watch.
+#
+# A child module inherits the calling root's provider selection, so a lock
+# there pins nothing that reaches a plan, and it records a hash per platform,
+# so the next `init` on another machine rewrites it and the pre-commit hook
+# fails the push.
+modules/*/.terraform.lock.hcl
 ```
+
+**Generate root locks for every platform that runs `init`**, not just the one
+that happened to run it:
+
+```sh
+terraform -chdir=<root> providers lock \
+  -platform=linux_amd64 -platform=darwin_amd64 -platform=darwin_arm64
+```
+
+A single-hash lock rewrites itself on the next machine, which surfaces as the
+pre-commit hook failing a push with `files were modified by this hook`.
 
 ### 3. Add pre-commit hooks
 
