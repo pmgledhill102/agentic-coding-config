@@ -174,6 +174,11 @@
       "because": "The workflow, the secret and the ruleset can all be correct while nothing has merged for months, because fixing an auto-merge workflow does not re-run it: the trigger is pull_request, and editing a file, adding a secret or rotating a token is not a pull_request event. So a repair applies to the next pull request raised, never to the queue the breakage accumulated. paul-claw#24 was a patch bump open five months on a repo passing every settings and file assertion. Defined by what the gate would approve rather than by semver, so a major -- or a pre-1.0 minor, which agentic-coding-config#394 deliberately holds -- is correctly waiting for a human rather than stuck."
     },
     {
+      "id": "no-private-workflow-references",
+      "holds": "A repo's workflows must not `uses:` another repository of the same owner that is private.",
+      "because": "Dependabot on a personal account cannot resolve a reference into a private repository -- the github_actions full scan fails outright, while targeted per-dependency updates keep succeeding, so the stream looks alive and the reference that decides what CI runs is the one thing that can never be updated automatically. Stated by visibility rather than by name deliberately: a denylist of private repository names in a public standard would leak exactly what it exists to protect. Shared workflows therefore live in a public repository carrying no estate detail, with repo-specific values passed as inputs."
+    },
+    {
       "id": "referenced-labels-exist",
       "holds": "Every label named in a repo's dependabot.yml exists in that repo.",
       "because": "Dependabot does not create labels it is told to use, and naming an absent one risks it applying none at all. The failure is silent: the pull requests still arrive, unlabelled, and nothing reports it. dfc-gaming named dependencies, github-actions, terraform and docker, and had none of them, on the automerge tier."
