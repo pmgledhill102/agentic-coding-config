@@ -258,6 +258,13 @@ def validate(spec):
                 problems.append(f"{name}: asserts merge methods but allow_merge_commit is not true")
             if repo.get("allow_rebase_merge") is not False:
                 problems.append(f"{name}: asserts merge methods but allow_rebase_merge is not false")
+            # Squash is disabled, not discouraged (#348). GitHub has no
+            # default-merge-method field, so an enabled button is the whole
+            # mechanism by which the policy drifts: the click lands wherever it
+            # landed last. Squash also drops commit trailers, so a `Closes #N`
+            # in a commit silently fails to close its issue.
+            if repo.get("allow_squash_merge") is not False:
+                problems.append(f"{name}: asserts merge methods but allow_squash_merge is not false")
             if not any(repo.get(k) for k in asserts_merge):
                 problems.append(f"{name}: no merge method enabled")
 
@@ -308,6 +315,8 @@ def main():
         "prohibition on a typo field": lambda s: s["prohibited"][0]["match"].append(
             {"setting": "allow_auto_merges", "value": True}),
         "unexplained prohibition": lambda s: s["prohibited"][0].pop("because"),
+        "squash re-enabled": lambda s: s["tiers"]["protected"]["repository"].__setitem__(
+            "allow_squash_merge", True),
         "labels_required not a list": lambda s: s["tiers"]["baseline"].__setitem__(
             "labels_required", "P0"),
         "empty label name": lambda s: s["tiers"]["baseline"]["labels_required"].append(""),
