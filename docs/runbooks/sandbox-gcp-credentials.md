@@ -46,8 +46,9 @@ scheduled job deletes it when the TTL lapses (gcp-org-management ADR 008, ADR 02
 A grant is clamped to that expiry, which is why one can come back shorter than
 asked for. So an unattended sandbox is not a leak accumulating cost, and
 `gcp-credentials created` is a record of what this session brought into being, not
-a teardown list. Retiring one early is a deliberate act taken knowing what else
-depends on it; extending one is `/sandbox extend`, capped at 30 days.
+a teardown list. Extending one is `/sandbox extend`, capped at 30 days; destroying
+one early is [`teardown`](#retiring-a-sandbox-early-teardown) below, and is a
+deliberate act taken knowing what else depends on it.
 
 ### 1. `release` — this machine stops using the credentials
 
@@ -90,6 +91,46 @@ gcloud iam service-accounts disable agent-sandbox@<project>.iam.gserviceaccount.
 This invalidates tokens already issued, which levels 1 and 2 cannot. It needs
 admin credentials — that is, **not** an agent session's credentials, by design.
 Re-enable with `enable` once the grant is revoked and the incident is closed.
+
+## Retiring a sandbox early: `teardown`
+
+Not a level of the ladder above, because it is not about access:
+
+```sh
+~/.claude/bin/gcp-credentials teardown
+```
+
+This destroys the **project**. One human approval, on a card naming the project,
+the repo and the number of live grants on it; on approval the broker revokes
+every one of those grants and deletes the sandbox, and the helper cleans up
+locally — refresh stopped, token and grant files removed, gcloud configuration
+restored. Design: gcp-org-management ADR 024; wire contract: `CONTRACT.md`,
+section `intent: "teardown"`.
+
+Properties worth knowing before reaching for it:
+
+- **The repo is resolved from `origin` and the project cannot be named.** The
+  broker answers a teardown carrying a project with a 400 rather than ignoring
+  it, so nobody can ask about a sandbox their checkout does not resolve to.
+- **It revokes the asking session's own grant**, which is correct — the project
+  is about to stop existing — and is why the command blocks rather than
+  returning after the phrase. Something has to be alive to stop the refresh loop
+  afterwards; otherwise it keeps minting against a deleted project, and GCP
+  reports that as `PERMISSION_DENIED`, which reads as an IAM fault rather than as
+  the thing that was just approved.
+- **A blocked command cannot relay its phrase.** The banner is `request`'s,
+  identical, but it reaches an agent's reply only after the decision. On a
+  teardown card the practical check is the project and grant count the broker
+  composed onto it, plus the standing rule that an unexpected card is denied.
+- **It is not the incident response.** A compromised token is bounded by an hour
+  and the ladder above; deleting the project is slower, needs the same approval
+  path, and strands everyone else's work on that sandbox. Use level 2 or 3.
+- **Nothing runs it automatically**, and nothing should. `end-session` names it
+  beside a project this session created and stops there; a sandbox that is merely
+  finished with needs no action at all, because it expires on its own.
+
+`404` — no sandbox for the repo, or teardown disabled at the broker — exits 0
+and says so. The world is already in the asked-for state.
 
 ## Incident response
 

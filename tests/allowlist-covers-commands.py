@@ -62,6 +62,7 @@ EXEMPT = [
     ("gcp-credentials renew", "mints a token; deliberately not unattended"),
     ("gcp-credentials refresh", "started by request, not invoked directly"),
     ("gcp-credentials revoke", "ends a grant a human granted"),
+    ("gcp-credentials teardown", "destroys a sandbox project; pings a human"),
 ]
 
 FENCE = re.compile(r"^\s*```")

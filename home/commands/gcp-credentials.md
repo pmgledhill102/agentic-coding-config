@@ -473,13 +473,82 @@ Do not diagnose it as an auth bug, and do not go looking for another credential.
 ~/.claude/bin/gcp-credentials revoke    # end the grant at the broker as well
 ```
 
-`status` and `release` are pre-approved in `settings.json`; `request` and
-`revoke` prompt, because both reach the broker and one of them pings a human.
+`status` and `release` are pre-approved in `settings.json`; `request`, `revoke`
+and `teardown` prompt, because all three reach the broker and two of them ping a
+human.
 
 Run `release` when finishing a session on a shared/local machine, so the human's
 gcloud configuration goes back to theirs. Run `revoke` when the access should
 end outright — after finishing a piece of work early, or if anything about the
 session looks wrong.
+
+## Handing the sandbox back: `teardown`
+
+`release` and `revoke` end **access**. Neither touches the project, and neither
+should — see [How it works](#how-it-works-in-one-paragraph): a sandbox is the
+*repo's*, it is capped and it deletes itself at its TTL, so an unattended one is
+not a leak to be tidied away.
+
+`teardown` is the other thing entirely — it destroys the sandbox project:
+
+```sh
+~/.claude/bin/gcp-credentials teardown
+```
+
+One human approval on a card naming the project, the repo and the count of live
+grants on it. On approval the broker revokes **every** live grant on that
+sandbox — including this session's own — and deletes the project. The command
+blocks until the decision, then cleans up locally: refresh stopped, token file
+and grant file removed, gcloud configuration restored.
+
+The repo is resolved from `origin`, exactly as `request` does with no `--repo`,
+and **the project cannot be named**. That is the control rather than an
+omission: the broker answers a teardown carrying a project with a 400, so a
+session can only ask about a sandbox its own checkout resolves to, and cannot
+end up believing it targeted something it did not. `--timeout SECS` is the only
+option (default 900).
+
+### When to run it, which is rarely
+
+**Only when the user has asked for it.** Wrong repo, an experiment abandoned, a
+sandbox created by a request that should not have been made. Never as tidy-up at
+the end of a session, never because a project "looks unused", and never on your
+own initiative — someone else may hold a live grant on it right now, and the
+card's grant count is the only place that shows up.
+
+If the work merely finished, the answer is `release` (or nothing at all). The
+sandbox expires by itself.
+
+### The phrase, and why this one is different
+
+The banner is identical to `request`'s and the human check is the same one. But
+`teardown` blocks rather than splitting into `request`/`wait`, so **you cannot
+relay the phrase before the human answers** — it reaches your reply only once
+the command has returned with a decision.
+
+That is deliberate: the approval revokes this session's own grant, so something
+has to be still running to stop the refresh loop and remove the token. Say so
+when you tell the user you are running it, and tell them what the card will show
+(project, repo, grant count) so they have something to match against besides the
+phrase. The standing rule carries the rest of the weight: **an approval card
+nobody was expecting is denied.**
+
+### Reading a teardown's outcome
+
+| Exit | Meaning | What to do |
+| --- | --- | --- |
+| 0 | Torn down, **or** nothing to tear down | Read the output — the second case says so plainly and changed nothing. |
+| 2 | Usage error, or the broker refused the request shape (HTTP 400) | A 400 here is this helper and the broker disagreeing about the contract. Report it; retrying sends the same bytes. |
+| 3 | **Denied** | Stop. The sandbox and every grant on it are untouched. |
+| 4 | Timed out or the card expired | Nothing was destroyed and nothing changed locally — but the card may still be live, so a late approval would tear it down with nothing watching. Tell the user. |
+| 5 | Rate limited | Wait. Teardown shares the credential-request budget. |
+| 8 | Helper too old | Same remedy as [above](#reading-the-outcome). |
+| 1 | Broker unreachable, or more than one sandbox matched | Report it. Nothing was destroyed. |
+
+After a successful teardown there is no grant and no token: `renew` has nothing
+to mint from and `status` reports none. That is the expected end state, not a
+fault. If work continues in that repo it needs a fresh `request`, which will
+create a new sandbox.
 
 ## Setup (not per session)
 

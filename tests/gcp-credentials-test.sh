@@ -102,6 +102,16 @@ run() {
     printf '%s\n' "$OUT" >> "$ALL_OUTPUT"
 }
 
+# run_in <dir> <args...> -- the same, from a chosen working directory.
+# `teardown` resolves its sandbox from the origin remote of the cwd and takes no
+# --repo, so where it runs from IS an input to it.
+run_in() {
+    ri_dir=$1
+    shift
+    OUT=$(cd "$ri_dir" && "$HELPER" "$@" 2>&1) && RC=0 || RC=$?
+    printf '%s\n' "$OUT" >> "$ALL_OUTPUT"
+}
+
 ok() { PASS=$((PASS + 1)); printf '  ok    %s\n' "$1"; }
 no() {
     FAIL=$((FAIL + 1))
@@ -388,6 +398,153 @@ printf '%s\n' '{"project":"proj-OLD","request_id":"req-EARLIER","origin":"git@gi
 run created
 expect_out "still names this grant's project" "created=proj-A"
 expect_no_out "does not claim an earlier grant's project" "proj-OLD"
+
+# --- teardown ----------------------------------------------------------------
+#
+# The far end of the lifecycle, and the one subcommand whose contract is partly
+# about a field NOT being sent: the broker 400s a teardown naming a project, so
+# that a session cannot believe it targeted a sandbox its checkout does not
+# resolve to. An absence is only testable against the bytes that went out, which
+# is what the stub's *-body.json files are for.
+#
+# The other property worth the file: approving a teardown revokes the asking
+# session's own grant, so a helper that did not clean up locally would leave a
+# refresh loop minting against a deleted project -- failing PERMISSION_DENIED,
+# which reads as an IAM fault rather than as the outcome that was just approved.
+
+echo "teardown"
+
+# A checkout with a known origin, so what lands in the request body is a fixed
+# string rather than whatever this repo's remote happens to be.
+TD_REPO="$WORK/td-repo"
+mkdir -p "$TD_REPO"
+git -C "$TD_REPO" init -q > /dev/null 2>&1
+git -C "$TD_REPO" remote add origin git@github.com:o/sandbox-repo.git > /dev/null 2>&1
+
+reset_state
+run_in "$WORK" teardown
+expect_rc "no origin remote to resolve" 2
+expect_out "says it needs the checkout" "origin remote"
+
+run_in "$TD_REPO" teardown --timeout abc
+expect_rc "non-numeric --timeout" 2
+
+reset_state
+canned request 200 "$REQ_OK"
+canned poll 200 '{"state":"denied"}'
+run_in "$TD_REPO" teardown
+expect_rc "denied" 3
+expect_out "says a human refused" "DENIED"
+expect_out "says the sandbox survived" "untouched"
+expect_out "prints the same phrase banner as request" "APPROVAL REQUIRED"
+expect_out "prints the phrase" "mint-copper-falcon"
+
+# What actually went on the wire. Every assertion here is a separate line of the
+# contract, so a drift names itself rather than failing as one opaque case.
+TD_BODY="$STUB_DIR/request-body.json"
+if jq -e '.intent == "teardown"' < "$TD_BODY" > /dev/null 2>&1; then
+    ok "sends intent=teardown"
+else
+    no "sends intent=teardown"
+fi
+if jq -e 'has("project") | not' < "$TD_BODY" > /dev/null 2>&1; then
+    ok "never sends a project — the broker 400s one, deliberately"
+else
+    no "never sends a project — the broker 400s one, deliberately"
+fi
+if jq -e '.repo == "git@github.com:o/sandbox-repo.git"' < "$TD_BODY" > /dev/null 2>&1; then
+    ok "sends the repo resolved from the cwd's origin"
+else
+    no "sends the repo resolved from the cwd's origin"
+fi
+if jq -e '[has("grant_ttl"), has("tier"), has("purpose")] | any | not' < "$TD_BODY" > /dev/null 2>&1; then
+    ok "sends no ttl, tier or purpose — the card composes its own"
+else
+    no "sends no ttl, tier or purpose — the card composes its own"
+fi
+# CLIENT_VERSION does NOT change for this: `intent` is an optional field, so the
+# broker did not raise its minimum. A bump here would 426 every session in the
+# estate over a capability none of them asked for.
+if grep -q "POST /request client=4" "$STUB_DIR/calls.log"; then
+    ok "still speaks client version 4"
+else
+    no "still speaks client version 4"
+fi
+
+echo "teardown leaves local state alone unless it succeeds"
+reset_state
+printf '%s' '{"request_id":"req-123","project":"example-project-sbx","session_token":"t","grant_expires_at":"2026-08-16T12:00:00Z"}' > "$CB_DIR/grant.json"
+printf '%s' "$SENTINEL" > "$CB_DIR/access_token"
+canned request 200 "$REQ_OK"
+canned poll 200 '{"state":"denied"}'
+run_in "$TD_REPO" teardown
+expect_rc "denied" 3
+expect_file "grant kept on a deny" "$CB_DIR/grant.json"
+expect_file "token kept on a deny" "$CB_DIR/access_token"
+
+canned poll 200 '{"state":"pending"}'
+run_in "$TD_REPO" teardown --timeout 0
+expect_rc "gave up waiting" 4
+expect_out "warns a late approval still destroys it" "late approval"
+expect_file "grant kept on a timeout" "$CB_DIR/grant.json"
+expect_file "token kept on a timeout" "$CB_DIR/access_token"
+
+echo "an approved teardown cleans up after itself"
+canned poll 200 '{"state":"approved","project":"example-project-sbx"}'
+run_in "$TD_REPO" teardown
+expect_rc "torn down" 0
+expect_out "names the project" "example-project-sbx"
+expect_out "says it is being destroyed" "torn down"
+expect_no_file "token removed, so nothing mints against a dead project" "$CB_DIR/access_token"
+expect_no_file "grant removed" "$CB_DIR/grant.json"
+if grep -q "POST /exchange" "$STUB_DIR/calls.log"; then
+    no "a teardown poll issues no credential"
+else
+    ok "a teardown poll issues no credential"
+fi
+
+echo "a teardown of someone else's sandbox leaves this grant alone"
+reset_state
+printf '%s' '{"request_id":"req-123","project":"other-project-sbx","session_token":"t","grant_expires_at":"2026-08-16T12:00:00Z"}' > "$CB_DIR/grant.json"
+canned request 200 "$REQ_OK"
+canned poll 200 '{"state":"approved","project":"example-project-sbx"}'
+run_in "$TD_REPO" teardown
+expect_rc "torn down" 0
+expect_file "a grant on a different project survives" "$CB_DIR/grant.json"
+expect_out "says why it kept it" "different sandbox"
+
+echo "teardown's broker refusals"
+reset_state
+canned request 404 '{"error":"no sandbox for that repo"}'
+run_in "$TD_REPO" teardown
+expect_rc "nothing to tear down is not an error" 0
+expect_out "says so plainly" "nothing to tear down"
+expect_out "renders the broker error" "no sandbox for that repo"
+
+reset_state
+canned request 400 '{"error":"project must not be sent","hint":"name the repo instead"}'
+run_in "$TD_REPO" teardown
+expect_rc "refused request shape" 2
+expect_out "renders the broker error" "project must not be sent"
+expect_out "renders the broker hint" "name the repo instead"
+expect_out "says not to retry it" "not something to retry"
+
+reset_state
+canned request 409 '{"error":"two sandboxes match that repo"}'
+run_in "$TD_REPO" teardown
+expect_rc "ambiguous repo" 1
+expect_out "renders the broker error" "two sandboxes match"
+
+reset_state
+canned request 429
+run_in "$TD_REPO" teardown
+expect_rc "rate limited" 5
+expect_out "says whose budget it shares" "credential-request budget"
+
+reset_state
+canned request 426 '{"error":"client too old","hint":"chezmoi apply --refresh-externals"}'
+run_in "$TD_REPO" teardown
+expect_rc "stale client" 8
 
 # --- the invariant -----------------------------------------------------------
 

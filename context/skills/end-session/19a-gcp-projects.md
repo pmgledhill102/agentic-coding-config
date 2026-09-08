@@ -18,7 +18,7 @@ For each `created=` line, surface:
 
 > created `<project>` — this repo's sandbox, built by this session's approval. Shared with every later session on the repo, and auto-deleted when its TTL lapses (7 days by default).
 
-**Surface only. Never offer to delete it, and never delete it.**
+**Surface only. Never delete it, and never propose deleting it as tidy-up.**
 
 That prohibition is the whole point of the step, so it is worth stating why rather than leaving it as a rule to be reasoned around, and there are two independent reasons.
 
@@ -28,4 +28,14 @@ That prohibition is the whole point of the step, so it is worth stating why rath
 
 What the step is for, then, is neither cleanup nor cost: it is telling whoever caused shared infrastructure to exist that they did, at the one moment they are looking at it. If the sandbox should outlive its TTL, that is `/sandbox extend` during the work — capped at 30 days, and deliberately not automatic, since a sandbox extended on every use would never expire at all. Not a decision to take on the way out.
 
-If the project genuinely should not exist — wrong repo, an experiment abandoned — that is a deliberate teardown someone does knowing what else depends on it, not a tidy-up at the end of a session.
+#### If the project genuinely should not exist
+
+Wrong repo, an experiment abandoned, a sandbox built by a request that should never have been made. There is a route for that, and it is `gcp-credentials teardown`: one human approval on a card naming the project and every live grant on it, after which the broker revokes those grants and deletes the project. Name it **once**, beside the `created=` line, and in these words or near them:
+
+> If that sandbox should not exist, `~/.claude/bin/gcp-credentials teardown` asks for it to be destroyed — one human approval, and this session's grant goes with it. Otherwise it expires on its own.
+
+Then stop. What that line is, and what it is not:
+
+- **It is not a recommendation, and the default is to leave the sandbox alone.** Everything above still holds: the project is the repo's, it costs nothing to leave, and it deletes itself. A step that reports a project and then nudges towards destroying it has argued itself out of its own reasoning in the space of four paragraphs.
+- **Only beside a `created=` line.** A live grant on a sandbox this session did not build is someone else's project met in passing, and offering to destroy that is not this step's business — nor, at the end of a session, anybody's.
+- **Never run it unprompted, and never run it to tidy up.** This is Tier 3: the user asks for it, or it does not happen. Approving one revokes every live grant on the sandbox including this session's own, which is why the helper stops the refresh loop and removes the token and grant files when it succeeds. It blocks until the human answers, so run it while there is still a session to answer in — not as the last thing before walking away.
