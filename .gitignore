@@ -1,12 +1,3 @@
-
-# Beads / Dolt files (added by bd init)
-.dolt/
-*.db
-.beads-credential-key
-
-# Beads exports — source of truth is Dolt + refs/dolt/data on origin.
-.beads/issues.jsonl
-
 # Python bytecode — regenerated on every test run.
 __pycache__/
 *.pyc
