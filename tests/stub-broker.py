@@ -19,6 +19,12 @@ assert on what the helper *sent* as well as what it did with the reply. The
 X-Client-Version header of each call is recorded alongside it, which is the
 one piece of the wire contract the broker uses to refuse stale clients.
 
+A POST body is also written verbatim to $STUB_DIR/<endpoint>-body.json,
+overwritten per call. Some of this contract is about a field NOT being sent --
+the broker 400s a teardown that names a project, deliberately, so that a client
+cannot believe it targeted a sandbox it did not -- and an absence is only
+testable against the bytes that actually went out.
+
 The chosen port is printed to stdout as "PORT <n>" and then the process
 serves until killed. Port 0 lets the OS pick, so concurrent runs do not
 collide.
@@ -79,10 +85,15 @@ class Handler(BaseHTTPRequestHandler):
         else:
             status, body = canned(endpoint)
         # Drain the request body, or curl sees a broken pipe rather than the
-        # status we are trying to test.
+        # status we are trying to test. Kept rather than discarded, so a test
+        # can assert on what was sent as well as on what came back.
         length = int(self.headers.get("Content-Length") or 0)
         if length:
-            self.rfile.read(length)
+            body_sent = self.rfile.read(length)
+            if endpoint is not None:
+                path = os.path.join(STUB_DIR, endpoint + "-body.json")
+                with open(path, "wb") as fh:
+                    fh.write(body_sent)
         self.send_response(status)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(body)))
