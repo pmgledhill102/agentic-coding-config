@@ -100,6 +100,20 @@ commands/setup-terraform.md
 commands/setup-typescript.md
 commands/start-session.md
 
+# 2026-09-09 — the last piece of beads surface (#131)
+#
+# The migration tool outlived the 2026-07-18 retirement above deliberately:
+# #123 kept it "until the last repo is migrated, then delete in a follow-up",
+# because deleting it earlier would have stranded any un-migrated repo, and it
+# was the only thing that also tore down the beads pre-commit hook. There are
+# no repos left on beads, so the condition ADR-0013 set for its retirement is
+# met.
+#
+# ~1,000 lines of Python that has been deploying to ~/.claude/bin/ on every
+# machine since the migration finished. docs/beads-migration-runbook.md goes
+# with it — repo-meta, never deployed, so it needs no entry here.
+bin/bd-migrate-to-github
+
 # === UNDEPLOYED: still in home/, no longer deployed to ~/.claude/ ===
 #
 # WHY A SECOND SECTION: a path can need to stay in home/ for some reason other

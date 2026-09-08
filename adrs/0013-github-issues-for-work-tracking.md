@@ -43,10 +43,13 @@ sync, and agent ergonomics. Key findings:
 
 Adopt GitHub Issues as the work tracker for all personal repos,
 replacing beads. Conventions live in
-[docs/github-issues-workflow.md](../docs/github-issues-workflow.md);
-per-repo migration follows
-[docs/beads-migration-runbook.md](../docs/beads-migration-runbook.md)
-using the deterministic `home/bin/bd-migrate-to-github` script.
+[docs/github-issues-workflow.md](../docs/github-issues-workflow.md).
+
+Per-repo migration followed `docs/beads-migration-runbook.md`, driving the
+deterministic `home/bin/bd-migrate-to-github` script. Both were deleted on
+2026-09-09, once the last repo was off beads
+([#131](https://github.com/pmgledhill102/agentic-coding-config/issues/131));
+git history preserves them.
 
 Summary of the conventions:
 
@@ -68,9 +71,13 @@ Summary of the conventions:
   and the retired paths are listed in `home/retired-paths` so machines that
   already had them lose them on the next apply
   ([#125](https://github.com/pmgledhill102/agentic-coding-config/issues/125)).
-  One helper remains — `home/bin/bd-migrate-to-github` — which retires with
-  the last repo still on beads, along with that repo's `.beads/` workspace
+  The last helper, `home/bin/bd-migrate-to-github`, was kept until no repo
+  was still on beads — deleting it earlier would have stranded an
+  un-migrated repo, and it was the only thing that also tore down the beads
+  pre-commit hook. That condition was met on 2026-09-09, and it went along
+  with its runbook and the `.beads`/`.dolt` patterns in `.gitignore`
   ([#131](https://github.com/pmgledhill102/agentic-coding-config/issues/131)).
+  No beads surface remains.
 - Work tracking now requires network access. Accepted: offline operation
   was explicitly not a requirement.
 - Ticket data lives in GitHub rather than in-repo. History is preserved
