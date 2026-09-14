@@ -9,6 +9,11 @@ skills, and the composed agent policy into the container. See
 [ADR-0016](../adrs/0016-capability-delivery-principles.md) for why the substance
 lives here rather than in the setup script itself.
 
+**This file is the operator manual — what to set, what each flag does, how to
+recover.** For what the layers are, what runs when, what it all costs and how
+the surfaces differ, see
+[`docs/cloud-sandbox-design.md`](../docs/cloud-sandbox-design.md).
+
 Which skills is an explicit whitelist — the `SKILLS` and `COMPOSED_SKILLS`
 variables in the script — rather than everything under `home/skills/`. Raw
 GitHub offers no directory listing, so a wildcard would need the API, a token
