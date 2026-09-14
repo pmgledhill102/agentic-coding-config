@@ -69,6 +69,40 @@ note there on the one thing it cannot check.
 
 See `docs/end-session-design.md` for the full rationale.
 
+### SessionStart: `session-cache-verdict`
+
+The one `SessionStart` hook, and it exists because the question it answers is
+**only true if asked at the start**.
+
+A cloud environment runs its setup script once, snapshots the filesystem, and
+restores that snapshot for later sessions — so a container either rebuilt or
+restored, and nothing in the session says which. The fallback way to tell is
+elapsed time since the bootstrap installed; run twenty minutes into a session,
+that arithmetic reports "hours ago" for a container that rebuilt at startup.
+A hook is the only thing that observes early enough for the answer to mean
+anything.
+
+It writes `~/.agents/.session-marker` and prints nothing. A `SessionStart`
+hook's stdout lands in the agent's context, and build trivia at the top of
+every session is a cost paid every time for something read occasionally;
+`/start-session` surfaces it when a human is actually looking.
+
+**A no-op off a cloud sandbox.** The first thing it does is test for the
+bootstrap manifest and exit 0 when there is none, so a workstation — which has
+no manifest, and may have no `jq` — pays a process spawn and nothing else. It
+exits 0 unconditionally, because instrumentation must never be why a session
+fails to start.
+
+No allow rule is needed: hooks are executed by the harness, not proposed as
+tool calls, so the permission matcher is not involved. It rides the existing
+`Bash(~/.claude/bin/session-*)` family only if a human runs it by hand.
+
+Why it matters: see [#430](https://github.com/pmgledhill102/agentic-coding-config/issues/430)
+and [`docs/cloud-sandbox-design.md`](https://github.com/pmgledhill102/agentic-coding-config/blob/main/docs/cloud-sandbox-design.md)
+§2 — the rebuild rate is what decides whether deferring a tool install buys
+anything. The full URL rather than a relative path because this file deploys to
+`~/.claude/`, where `docs/` does not exist.
+
 ### GCP credential broker client
 
 - `Bash(~/.claude/bin/gcp-credentials status)`
