@@ -20,6 +20,32 @@ set -u
 ROOT=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
 BOOTSTRAP="$ROOT/cloud/bootstrap.sh"
 
+# Which ref the fetching cases pull Tier 1 content from.
+#
+# `main` is correct once a change has merged and wrong while one is in flight.
+# The bootstrap fetches its skills, policy and helper scripts BY REF, so a
+# local script that names a file the branch adds 404s against main -- and the
+# failure arrives as `status=failed`, which reads as a broken bootstrap rather
+# than as content that has not merged yet. #430 added the first helper to hit
+# this, and the test reported six unrelated assertions failing.
+#
+# So prefer the branch under test when origin has it, and fall back to main.
+# GITHUB_HEAD_REF is set on a pull_request run; a local run asks git.
+#
+# The honest limit: this resolves against the REMOTE, so a commit that adds a
+# helper has to be pushed before this test can pass. Running it on a dirty tree
+# tests the last pushed state of any fetched file, not the working copy.
+BOOTSTRAP_TEST_REF=${BOOTSTRAP_TEST_REF:-}
+if [ -z "$BOOTSTRAP_TEST_REF" ]; then
+    _branch=${GITHUB_HEAD_REF:-$(git -C "$ROOT" branch --show-current 2> /dev/null || true)}
+    if [ -n "$_branch" ] &&
+        git -C "$ROOT" ls-remote --exit-code --heads origin "$_branch" > /dev/null 2>&1; then
+        BOOTSTRAP_TEST_REF=$_branch
+    else
+        BOOTSTRAP_TEST_REF=main
+    fi
+fi
+
 PASS=0
 FAIL=0
 
@@ -50,7 +76,7 @@ check() {
 # trap covers that, it covers everything later. It did not always -- the trap
 # used to be installed below the loop, so a usage error reported nothing.
 run_failing_bootstrap() {
-    HOME="$1" sh "$BOOTSTRAP" main --a-flag-that-does-not-exist > /dev/null 2>&1
+    HOME="$1" sh "$BOOTSTRAP" "$BOOTSTRAP_TEST_REF" --a-flag-that-does-not-exist > /dev/null 2>&1
     echo $?
 }
 
@@ -95,7 +121,7 @@ rm -rf "$H"
 # A codex container has nothing that ever rewrites ~/.claude/CLAUDE.md, so a
 # banner left there would outlive the failure it describes.
 H=$(mktemp -d)
-HOME="$H" sh "$BOOTSTRAP" main --profile codex-cloud-sandbox --nope > /dev/null 2>&1
+HOME="$H" sh "$BOOTSTRAP" "$BOOTSTRAP_TEST_REF" --profile codex-cloud-sandbox --nope > /dev/null 2>&1
 if [ -f "$H/.claude/CLAUDE.md" ]; then
     no "codex profile leaves CLAUDE.md alone"
 else
@@ -231,7 +257,7 @@ rm -rf "$H"
 # Asserted on the log's own ordering rather than on line numbers, which drift.
 H=$(mktemp -d)
 LOG="$H/run.log"
-HOME="$H" sh "$BOOTSTRAP" main --no-gcloud --no-precommit --no-hooks --no-terraform \
+HOME="$H" sh "$BOOTSTRAP" "$BOOTSTRAP_TEST_REF" --no-gcloud --no-precommit --no-hooks --no-terraform \
     > "$LOG" 2>&1
 check "a toolkit-only run succeeds" "0" "$?"
 
@@ -282,7 +308,7 @@ sed -e 's#https://github.com/cli/cli/releases#https://bootstrap-test.invalid/cli
     "$BOOTSTRAP" > "$H/bootstrap.sh"
 check "the gh fixture neutered the already-present guard" "0" \
     "$(count 'command -v gh > /dev/null 2>&1; then' "$H/bootstrap.sh")"
-HOME="$H" sh "$H/bootstrap.sh" main --with-gh --no-gcloud --no-precommit --no-hooks \
+HOME="$H" sh "$H/bootstrap.sh" "$BOOTSTRAP_TEST_REF" --with-gh --no-gcloud --no-precommit --no-hooks \
     > "$LOG" 2>&1
 check "a failing capability does not fail the run" "0" "$?"
 

@@ -93,6 +93,37 @@ set -eu
 
 log() { echo "[bootstrap] $*"; }
 
+# --- timing -------------------------------------------------------------------
+#
+# The setup script runs BEFORE the agent launches, so no hook and no telemetry
+# signal covers this phase: the bootstrap is the only thing that can measure the
+# bootstrap. Without it, nobody can say whether a run crept from 5s to 25s over
+# three months, and there is no history to bisect against (#324, #430).
+#
+# Second resolution, because `date +%s` is POSIX while `%N` is a GNU extension
+# absent from the BSD userland this estate also targets. Phases here run in
+# seconds to minutes, so a second is resolution enough to catch a regression.
+#
+# Assignments only, never a bare `$(( ))` as a command: it exits 1 when the
+# result is 0, and `set -e` reads that as a failure.
+now_s() { date +%s 2>/dev/null || echo 0; }
+BOOT_START=$(now_s)
+TIMINGS=
+
+record_timing() { # name seconds
+    TIMINGS="${TIMINGS:+$TIMINGS }$1=$2s"
+}
+
+# Which session this run built for, so a later one can tell a cache rebuild from
+# a snapshot restore EXACTLY rather than inferring it from clock arithmetic: if
+# this id matches the session asking, the setup script ran for that session.
+#
+# The variable is known to be set in the agent phase. Whether the setup phase
+# sees it is unverified, so an absent value is recorded as `unknown` and the
+# reader falls back to a time delta, saying which method it used. The first
+# rebuild carrying this line settles the question for good.
+BOOTSTRAP_SESSION="${CLAUDE_CODE_REMOTE_SESSION_ID:-unknown}"
+
 # FAILED_STEP is what the exit trap reports. `die` is the only place that can
 # name the step in words, so it records one on the way past; a `set -e` death
 # that never reaches `die` leaves it empty and the trap says so rather than
@@ -481,6 +512,8 @@ log "caps    :  gcloud=$(on_off "$WITH_GCLOUD") precommit=$(on_off "$WITH_PRECOM
 # and no skills is not a degraded sandbox, it is a different machine, and an
 # agent cannot discover from the inside that its instructions never arrived.
 
+TIER1_START=$(now_s)
+
 # --- the helper --------------------------------------------------------------
 #
 # /usr/local/bin when writable, which is the case in a sandbox running as root,
@@ -686,7 +719,12 @@ COMPOSED_SKILLS="retrospective start-session end-session"
 #
 # They land in ~/.claude/bin because that is where the skills spell their
 # invocation: "~/.claude/bin/<script>", on every surface.
-BIN_SCRIPTS="start-session-gather-state start-session-claude-drift session-repo-resolve end-session-gather-state end-session-squash-merged"
+#
+# session-cache-verdict is here rather than with the hook scripts below because
+# start-session reads its marker whether or not hooks were installed -- and a
+# container with the reader but not the writer reports "no marker" honestly,
+# which beats a missing script failing at the point of use.
+BIN_SCRIPTS="start-session-gather-state start-session-claude-drift session-repo-resolve end-session-gather-state end-session-squash-merged session-cache-verdict"
 
 # Defensive: the credential-helper section above already creates this, but the
 # dependency is invisible from here and a reordering would break it silently.
@@ -835,6 +873,9 @@ if [ "$WITH_HOOKS" -eq 1 ]; then
     if [ "$WITH_PRECOMMIT" -eq 1 ]; then pc_note=""; else pc_note=" (inactive: no pre-commit)"; fi
     log "hooks   :  prchecks-wait, prepush-guard$gh_note, precommit$pc_note"
 fi
+
+TIER1_SECS=$((  $(now_s) - TIER1_START ))
+record_timing toolkit "$TIER1_SECS"
 
 # =============================================================================
 # TIER 2 -- capabilities. Runs after the toolkit, and degrades instead of dying.
@@ -1168,10 +1209,15 @@ capability() {
     # set +e around the call because the subshell's status is the whole point
     # here: under the outer `set -e` a non-zero one would kill the script,
     # which is the behaviour this wrapper exists to prevent.
+    _cap_start=$(now_s)
     set +e
     ( set -e; "$3" )
     _cap_rc=$?
     set -e
+    # Timed whatever the outcome: a capability that spent 40s and then failed is
+    # the interesting case, and recording only successes would hide it.
+    _cap_secs=$((  $(now_s) - _cap_start ))
+    record_timing "$2" "$_cap_secs"
     [ "$_cap_rc" -eq 0 ] && return 0
 
     # die wrote its message here on the way out of the subshell, where a
@@ -1208,6 +1254,9 @@ capability "$WITH_GH" gh cap_gh
 
 MANIFEST="$HOME/.agents/.bootstrap-manifest"
 mkdir -p "$HOME/.agents"
+
+TOTAL_SECS=$((  $(now_s) - BOOT_START ))
+record_timing total "$TOTAL_SECS"
 
 resolved=$(git ls-remote "https://github.com/pmgledhill102/agentic-coding-config" "$REF" 2>/dev/null |
     awk 'NR==1 {print $1}')
@@ -1250,6 +1299,14 @@ fi
     echo "gcloud=$WITH_GCLOUD"
     echo "hooks=$WITH_HOOKS"
     echo "gh=$WITH_GH"
+    # Machine-readable timing, so a regression is a diff between two runs rather
+    # than someone's memory of how long it used to take. `timings` is
+    # space-separated name=Ns pairs; absent names did not run.
+    echo "duration_seconds=$TOTAL_SECS"
+    echo "timings=$TIMINGS"
+    # See BOOTSTRAP_SESSION above: `unknown` means the setup phase could not see
+    # a session id, and session-cache-verdict falls back to a time delta.
+    echo "built_in_session=$BOOTSTRAP_SESSION"
 } > "$MANIFEST"
 log "manifst -> $MANIFEST ($kind $(echo "$resolved" | cut -c1-12))"
 
@@ -1258,6 +1315,8 @@ log "manifst -> $MANIFEST ($kind $(echo "$resolved" | cut -c1-12))"
 # The pinned ref is logged because a cached cloud environment can serve an older
 # bootstrap than the one in main, and nothing else in a session says which
 # vintage it is running.
+
+log "timing : $TIMINGS"
 
 if [ -n "$DEGRADED" ]; then
     log "done, from ${REF} -- DEGRADED, missing: $DEGRADED"

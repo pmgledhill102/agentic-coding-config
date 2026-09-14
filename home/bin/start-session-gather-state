@@ -335,6 +335,30 @@ run_sh bootstrap_currency '
         echo "degraded=$degraded"
         echo "degraded_remedy=re-run the bootstrap to retry the missing capabilities"
     fi
+
+    # How long the bootstrap took, and whether this session paid for it. Both
+    # come from files written before this script existed in any session, so an
+    # older container reports neither rather than lying about either (#430).
+    #
+    # Reported together because one is meaningless without the other: 68s of
+    # setup matters on a rebuild and is a historical note on a cache hit.
+    duration=$(sed -n "s/^duration_seconds=//p" "$manifest")
+    [ -n "$duration" ] && echo "bootstrap_seconds=$duration"
+    timings=$(sed -n "s/^timings=//p" "$manifest")
+    [ -n "$timings" ] && echo "timings=$timings"
+
+    marker="$HOME/.agents/.session-marker"
+    if [ -f "$marker" ]; then
+        verdict=$(sed -n "s/^cache=//p" "$marker")
+        method=$(sed -n "s/^method=//p" "$marker")
+        echo "cache=$verdict method=$method"
+    else
+        # The writer is a SessionStart hook. No marker means hooks were not
+        # installed, or this container predates the hook -- not that the
+        # session rebuilt. Saying which is the point: an unrun check must
+        # never read as a clean one.
+        echo "cache=unmeasured reason=no marker; SessionStart hook not installed or container predates it"
+    fi
 '
 
 
