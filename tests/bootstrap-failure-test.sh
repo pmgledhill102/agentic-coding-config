@@ -443,17 +443,31 @@ check "  and says so rather than failing silently" "1" \
 # it did, the warm failed on every container whose cwd happened to be /.
 if command -v pre-commit > /dev/null 2>&1; then
     mkdir -p "$H/t8b" "$H/notarepo" "$H/cache"
-    # A planted checkout for mechanism 2, with the same cheap config, so the
-    # exact-match half is asserted rather than assumed.
-    mkdir -p "$H/ws/repo-a"
-    git -C "$H/ws/repo-a" init -q 2> /dev/null
-    cp "$H/raw/cloud/precommit-warm.yaml" "$H/ws/repo-a/.pre-commit-config.yaml"
+    # A planted checkout for mechanism 2, under the cwd because $PWD is one of
+    # the roots the scan walks. It goes there rather than under a redirected
+    # $HOME -- which would be the more obvious way to bound the scan -- because
+    # HOME is where Python resolves its user site-packages from, and a
+    # `pip install --user pre-commit` (what a non-root CI runner gets) stops
+    # being importable the moment HOME moves. That failure is instant and its
+    # message is about a missing module, which reads as a broken warm rather
+    # than a broken test.
+    mkdir -p "$H/notarepo/repo-a"
+    git -C "$H/notarepo/repo-a" init -q 2> /dev/null
+    cp "$H/raw/cloud/precommit-warm.yaml" "$H/notarepo/repo-a/.pre-commit-config.yaml"
 
     log8b="$H/t8b.log"
     ( cd "$H/notarepo" && TMP="$H/t8b" FAIL_FILE="$H/t8b.fail" RAW="file://$H/raw" \
-        REF=test FNS="$H/fn.sh" HOME="$H/ws" PRE_COMMIT_HOME="$H/cache" \
+        REF=test FNS="$H/fn.sh" PRE_COMMIT_HOME="$H/cache" \
         sh -c '. "$0"; cap_precommit_warm' "$H/harness.sh" ) > "$log8b" 2>&1
-    check "a warm from a non-checkout cwd succeeds" "0" "$?"
+    warm_rc=$?
+    check "a warm from a non-checkout cwd succeeds" "0" "$warm_rc"
+    # What the warm said, when it did not work. Without this the whole section
+    # reports six expected-1-actual-0 lines and nothing about the cause, which
+    # is a CI failure that has to be reproduced before it can be read.
+    if [ "$warm_rc" -ne 0 ]; then
+        printf '        --- warm output ---\n'
+        sed 's/^/        /' "$log8b"
+    fi
     check "  it warmed the estate hook set" "1" \
         "$(count 'warm    -> estate hook set' "$log8b")"
     check "  and the checkout it found in the workspace" "1" \
@@ -473,7 +487,7 @@ if command -v pre-commit > /dev/null 2>&1; then
         "$(cat "$H/t8b/warm-envs" 2> /dev/null || echo missing)"
 
     # A hook that runs without building anything is the whole point.
-    ( cd "$H/ws/repo-a" && PRE_COMMIT_HOME="$H/cache" \
+    ( cd "$H/notarepo/repo-a" && PRE_COMMIT_HOME="$H/cache" \
         pre-commit run --all-files ) > "$H/t8b-run.log" 2>&1 || true
     check "  a later run builds no environment" "0" \
         "$(count 'Installing environment' "$H/t8b-run.log")"
