@@ -32,7 +32,11 @@
 # estate's hooks need, and points git at a global hook so every repo in the
 # container is covered. It is the only part of this script that needs the
 # Ubuntu archives, so --no-precommit is the escape for an environment that
-# cannot reach them.
+# cannot reach them. It then WARMS the hook cache from cloud/precommit-warm.yaml
+# and from any checkout it finds, because the alternative is the first commit in
+# a fresh container spending two minutes compiling Go hooks inside a 120 s hook
+# timeout (#441). The warm is its own capability, so `degraded=` can say which
+# of the two failed.
 #
 # --with-hooks wires this estate's PreToolUse guards and PostToolUse terraform
 # hooks into ~/.claude/settings.json. Separate from --with-precommit because
@@ -1167,6 +1171,164 @@ HOOK
     log "githook -> $HOOK_DIR/pre-commit (core.hooksPath, all repos)"
 }
 
+# --- warming the pre-commit cache ---------------------------------------------
+#
+# `pre-commit install-hooks` builds a hook's environment; the first run that
+# meets a cold cache builds it instead. In this estate that first run is a
+# COMMIT, inside two 120 s timeouts -- precommit-claude-hook's, and the Bash
+# tool's -- and the build is roughly two minutes, because gitleaks, actionlint
+# and shfmt are `language: golang` hooks compiled from source. Every outcome of
+# that race is wrong: a hook that times out and lets the commit through is a
+# gate that silently did not run, and a commit killed for a reason unrelated to
+# its content is a failure that succeeds on retry (#441).
+#
+# The fix is a matter of WHICH FILESYSTEM. The setup script's is snapshotted and
+# restored for about seven days; the session's is not, so a cache built
+# in-session is rebuilt in every container. Warming here is paid once per
+# snapshot and is free at every session start.
+#
+# TWO MECHANISMS, and cap_precommit's own note on core.hooksPath says why one is
+# not enough: at setup-script time "the repository may not exist yet, and may not
+# be the only one".
+#
+#   1. The estate standard -- cloud/precommit-warm.yaml, pinned. pre-commit keys
+#      its cache on (repo URL, rev), so warming those pins warms every repo
+#      pinned to the same ones, whether or not a clone is here. This is the
+#      guarantee, and a failure of it is what degrades the capability.
+#   2. The exact match -- every .pre-commit-config.yaml found in the workspace.
+#      The CLI clones before running the setup script, so this is the common
+#      case; it cannot be relied on, and it catches the revs the estate file
+#      does not pin.
+#
+# A repo on a rev the estate file does not carry gets a partial warm, never a
+# failure: the hooks it shares are cached and the rest build on first use.
+#
+# Measured 2026-09-15 in a claude-cloud-sandbox container, pre-commit 4.6.2:
+# 88 s and 222 MB for the seven pinned repos on a genuinely cold container
+# (50 s on a later rebuild, once Go's own module cache was populated), against
+# 31 s / 120 MB for the three golang repos alone. A `pre-commit run --all-files`
+# afterwards is 2 s with no environment build. §"Warming the pre-commit cache"
+# in docs/cloud-sandbox-design.md carries the budget arithmetic.
+
+# Where pre-commit keeps the cache, by its own resolution order. Read after the
+# warm to record what actually landed, so "the cache is present" is asserted
+# rather than inferred from an exit code.
+precommit_home() {
+    if [ -n "${PRE_COMMIT_HOME:-}" ]; then
+        echo "$PRE_COMMIT_HOME"
+    elif [ -n "${XDG_CACHE_HOME:-}" ]; then
+        echo "$XDG_CACHE_HOME/pre-commit"
+    else
+        echo "$HOME/.cache/pre-commit"
+    fi
+}
+
+cap_precommit_warm() {
+    # cap_precommit is what installs pre-commit, and it already names itself in
+    # `degraded=` when it cannot. Reporting one root cause under two names makes
+    # that list harder to act on, so this stands down quietly instead.
+    if ! command -v pre-commit > /dev/null 2>&1; then
+        log "warm    : no pre-commit on PATH, nothing to warm"
+        return 0
+    fi
+
+    # install-hooks shells out to git and refuses outside a work tree -- "git
+    # failed. Is it installed, and are you in a Git repository directory?",
+    # exit 1. The setup script's cwd belongs to the harness and is frequently
+    # not a checkout, so make one. An empty repo is enough: the cache it fills
+    # is global and has nothing to do with the repo the command ran from.
+    _warm_repo="$TMP/warm-repo"
+    mkdir -p "$_warm_repo"
+    git -C "$_warm_repo" init -q > /dev/null 2>&1 ||
+        die "could not create the scratch repo to warm from"
+
+    # When `go` is absent pre-commit fetches its own toolchain, and the first
+    # call is https://go.dev/dl/?mode=json -- which this sandbox's egress proxy
+    # answers 403 (measured 2026-09-15), so the golang hooks fail rather than
+    # falling back. The image ships Go at /usr/local/go/bin, so this warns about
+    # an image change rather than a routine path; the remedy is allowlisting
+    # go.dev or putting Go back, and it is not something this script can do.
+    command -v go > /dev/null 2>&1 ||
+        log "warn    : no go on PATH — golang hooks will try go.dev, which this egress blocks"
+
+    # --- 1. the estate standard, the half that does not need a clone ---------
+    fetch "$RAW/cloud/precommit-warm.yaml" "$TMP/precommit-warm.yaml" ||
+        die "could not fetch cloud/precommit-warm.yaml from $REF"
+    # Same 404-as-content guard as every other fetch here: raw.githubusercontent
+    # answers a missing path with a plain "404: Not Found" body, and handing that
+    # to pre-commit produces a parse error rather than a fetch error.
+    grep -q '^repos:' "$TMP/precommit-warm.yaml" ||
+        die "fetched warm config has no repos: block — check that $REF exists"
+
+    if ( cd "$_warm_repo" && pre-commit install-hooks -c "$TMP/precommit-warm.yaml" ) \
+        > "$TMP/warm.log" 2>&1; then
+        log "warm    -> estate hook set (cloud/precommit-warm.yaml)"
+    else
+        # TMP is cleaned on exit, so quote the tail into this log rather than
+        # sending a reader to a path that will not be there.
+        tail -5 "$TMP/warm.log" 2> /dev/null | while IFS= read -r _l; do
+            log "warm    ! $_l"
+        done
+        die "could not warm the estate hook set"
+    fi
+
+    # --- 2. the exact match, for whatever the harness cloned -----------------
+    #
+    # Bounded on purpose. -maxdepth 3 from a handful of candidate roots covers
+    # the layouts in use (the CLI clones to /home/user/<repo>; $PWD and $HOME
+    # cover the rest) without walking a whole filesystem inside a five-minute
+    # setup budget. The prunes keep it off vendored trees -- pre-commit's own
+    # cache clones repos that carry a .pre-commit-config.yaml of their own, and
+    # warming those would be this container inventing hooks nobody asked for.
+    _found="$TMP/warm-configs"
+    : > "$_found"
+    for _root in "$PWD" "$HOME" /home/user /workspace /workspaces; do
+        [ -d "$_root" ] || continue
+        find "$_root" -maxdepth 3 \
+            \( -name .cache -o -name node_modules -o -name .venv -o -name .git \) -prune -o \
+            -name .pre-commit-config.yaml -print 2> /dev/null >> "$_found" || true
+    done
+    sort -u "$_found" -o "$_found" 2> /dev/null || true
+
+    # A cap, because this is an unbounded input: a container holding twenty
+    # checkouts must not spend the snapshot budget on them. The estate warm
+    # above is the guarantee, so what is skipped here costs a slower first
+    # commit in one repo, not a missing gate.
+    _n=0
+    while IFS= read -r _cfg; do
+        [ -n "$_cfg" ] || continue
+        _dir=$(dirname "$_cfg")
+        # install-hooks needs a work tree, and a stray config in a plain
+        # directory is not one.
+        git -C "$_dir" rev-parse --git-dir > /dev/null 2>&1 || continue
+        _n=$((_n + 1))
+        if [ "$_n" -gt 5 ]; then
+            log "warm    : more than 5 checkouts found, stopping at $_cfg"
+            break
+        fi
+        # Per-config failures are logged, not fatal. A repo whose config names a
+        # hook this container cannot build is a slow first commit in that repo;
+        # the estate warm has already delivered the guarantee.
+        if ( cd "$_dir" && pre-commit install-hooks -c "$_cfg" ) > "$TMP/warm.log" 2>&1; then
+            log "warm    -> $_cfg"
+        else
+            log "warn    : could not warm $_cfg — its first commit pays the build"
+        fi
+    done < "$_found"
+
+    # What actually landed, counted from the cache rather than from exit codes.
+    # pre-commit names each cloned hook repo repo<something>; an empty cache
+    # after a successful run means the warm did nothing and should be visible.
+    _cache=$(precommit_home)
+    _envs=$(find "$_cache" -maxdepth 1 -type d -name 'repo*' 2> /dev/null | wc -l | tr -d ' ')
+    [ -n "$_envs" ] || _envs=0
+    # Out through a file: capability() runs this in a subshell, so an assignment
+    # here dies with it -- the same reason FAIL_FILE exists.
+    echo "$_envs" > "$TMP/warm-envs" 2> /dev/null || true
+    log "warm    -> $_envs hook environments cached in $_cache"
+    [ "$_envs" -gt 0 ] || die "the warm reported success but cached nothing"
+}
+
 # --- gh, on request -----------------------------------------------------------
 #
 # From a pinned release tarball, exactly like actionlint above: no
@@ -1232,6 +1394,12 @@ capability() {
 
 capability "$WITH_GCLOUD" gcloud cap_gcloud
 capability "$WITH_PRECOMMIT" precommit cap_precommit
+# Separate from cap_precommit, not folded into it, because they fail
+# differently. Without pre-commit there is no gate at all; without the warm the
+# gate is present and the first commit in a fresh container pays two minutes for
+# it. Its own entry means `degraded=` says which of the two happened, and
+# `timings` carries its duration rather than burying it in the install's (#441).
+capability "$WITH_PRECOMMIT" precommit-warm cap_precommit_warm
 capability "$WITH_GH" gh cap_gh
 
 # --- the manifest -------------------------------------------------------------
@@ -1296,6 +1464,11 @@ fi
     echo "composed_skills=$COMPOSED_SKILLS"
     echo "helpers=$BIN_SCRIPTS"
     echo "precommit=$WITH_PRECOMMIT"
+    # How many pre-commit hook environments the warm left in the cache. 0 on a
+    # container that never warmed one, which is the difference between "the gate
+    # is installed" and "the gate can run without a two-minute build" (#441).
+    # The duration is in `timings` as precommit-warm.
+    echo "precommit_envs=$(cat "$TMP/warm-envs" 2> /dev/null || echo 0)"
     echo "gcloud=$WITH_GCLOUD"
     echo "hooks=$WITH_HOOKS"
     echo "gh=$WITH_GH"

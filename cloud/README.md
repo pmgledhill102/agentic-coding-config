@@ -268,6 +268,7 @@ Revocation levels and what to do about a possibly-exposed token or request key:
 | `~/.claude/bin/<script>` | the five session helper scripts |
 | `~/.agents/.bootstrap-manifest` | what this run installed: ref, SHA, profile, skills, helpers |
 | `~/.config/git/hooks/pre-commit` | global git hook, with `--with-precommit` |
+| `~/.cache/pre-commit/` | the warmed hook environments, with `--with-precommit` (~222 MB) |
 | `~/.claude/settings.json` | harness hook wiring, with `--with-hooks` (merged, not replaced) |
 | `~/.claude/bin/*-claude-hook` | the three harness hook scripts, with `--with-hooks` |
 | `/usr/local/bin/pre-commit`, `/usr/bin/shellcheck`, `/usr/local/bin/actionlint`, `markdownlint-cli2` (npm global) | with `--with-precommit` |
@@ -356,6 +357,43 @@ thing at less cost. The first survives as `--no-precommit`, but it is an escape
 rather than a default: an enforcement mechanism that arrives only when someone
 remembers to ask for it is the state #254 described, and the whole point of a
 sandbox being rebuilt from a script is that nobody has to remember.
+
+**It also warms the hook cache, so the first commit does not pay for it.**
+`pre-commit` builds a hook's environment on first use, and in this estate that
+first use is a *commit* — inside `precommit-claude-hook`'s 120-second timeout.
+Cold, the estate's hook set is about two minutes, because `gitleaks`,
+`actionlint` and `shfmt` are `language: golang` hooks compiled from source. Both
+outcomes of that race are wrong: a hook that times out and lets the commit
+through is a gate that silently did not run, and a commit killed for a reason
+unrelated to its content is a failure that succeeds on retry (#441).
+
+What makes warming work is *which filesystem*: the setup script's is
+snapshotted and reused for about seven days, the session's is not — so a cache
+built in-session is rebuilt in every container, and one built here is free at
+every session start. It runs as its own capability, `precommit-warm`, and
+`degraded=` therefore distinguishes "no gate" from "a gate with a slow first
+commit".
+
+Two mechanisms, for the reason the global hook exists at all — at setup-script
+time the repository may not exist yet, and may not be the only one:
+
+1. [`cloud/precommit-warm.yaml`](precommit-warm.yaml), the estate's standard
+   hook set with pinned revs. pre-commit keys its cache on `(repo URL, rev)`, so
+   warming those pins warms every repo pinned to the same ones, clone or no
+   clone. This is the guarantee.
+2. Every `.pre-commit-config.yaml` found in the workspace, up to five, for the
+   revs the pinned file does not carry.
+
+A repo on a different rev gets a **partial** warm, never a failure: the hooks it
+shares are cached and the rest build on first use. Keeping that rare is #442.
+The measured cost is in
+[`docs/cloud-sandbox-design.md`](../docs/cloud-sandbox-design.md) §3.
+
+One dependency worth knowing about: the golang hooks need `go` on `PATH`. The
+sandbox image ships it at `/usr/local/go/bin`, and when it is absent pre-commit
+fetches its own toolchain from `https://go.dev/dl/?mode=json` — which this
+egress proxy answers 403. The warm logs a warning and degrades rather than
+hanging; the remedy is allowlisting `go.dev` or putting Go back.
 
 **The hook is global, via `core.hooksPath`, not `pre-commit install` per repo.**
 This script runs from an environment setup script whose ordering against the
