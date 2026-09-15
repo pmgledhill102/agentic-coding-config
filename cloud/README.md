@@ -400,9 +400,31 @@ This script runs from an environment setup script whose ordering against the
 session's clone it cannot rely on — the repository may not exist yet, and may
 not be the only one. A global hook is set once and applies however and whenever
 a repo arrives. The trade-off is real and worth knowing: `core.hooksPath`
-*replaces* a repo's own `.git/hooks` rather than adding to it, and
-`pre-commit install` will warn that it is being overridden. In this estate
+*replaces* a repo's own `.git/hooks` rather than adding to it. In this estate
 hooks come from pre-commit anyway.
+
+**`pre-commit install` does not warn under `core.hooksPath` — it refuses, and
+exits 1.** Measured 2026-09-15:
+
+```text
+$ git config core.hooksPath /root/.config/git/hooks
+$ pre-commit install
+[ERROR] Cowardly refusing to install hooks with `core.hooksPath` set.
+hint: `git config --unset-all core.hooksPath`
+$ echo $?
+1
+```
+
+This is the thing to write a repo-side hook against, because the failure lands
+in exactly the containers the bootstrap got *right*: a `SessionStart` hook that
+runs `pre-commit install` under `set -e` fails session start wherever the global
+hook is correctly installed. Anything belt-and-bracing the gate from inside a
+repo has to call `install` only when `core.hooksPath` is unset.
+
+**`pre-commit install-hooks` is unaffected** — exit 0, builds the environments,
+writes no hook — which is why the two have to be called separately, and why the
+warm above uses it. A repo that genuinely needed bespoke per-repo hooks would
+want the other mechanism, and would have to unset `core.hooksPath` to get it.
 
 The hook exits 0 in a repo with no `.pre-commit-config.yaml`. Such a repo is
 not opting out of anything — it has no configuration to run, and blocking its

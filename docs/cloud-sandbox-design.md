@@ -173,6 +173,16 @@ use, so 68 + 88 = ~156 s, leaving roughly half the budget spare. The Go-only
 fallback #441 held in reserve is not needed, and it would save 57 s to leave
 four hook environments cold.
 
+That total is **composed, not observed in one run**: the 68 s is §2's figure for
+the pre-warm bootstrap and the 88 s is the cold warm measured above. The nearest
+single observation is a full `cloud/bootstrap.sh` run from the #441 branch with
+`--no-gcloud --no-terraform`, which reported `toolkit=5s precommit=0s
+precommit-warm=69s total=74s` and `precommit_envs=7` — `precommit=0s` because
+that container already had the linters, and the warm faster than 88 s because
+Go's module cache was populated. A genuinely cold run of every capability at
+once has not been timed; the number to revisit this against is the `timings=`
+line in a rebuild session's own manifest, which is what #430 put there.
+
 Two findings that shape the implementation rather than the budget:
 
 - **`pre-commit install-hooks` refuses outside a git work tree** — *"git failed.

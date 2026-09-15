@@ -522,6 +522,44 @@ check "  it names itself in degraded=" "1" \
     "$(printf '%s\n' "$out" | grep -c '^degraded=precommit-warm$')"
 check "  and it is timed even though it failed" "1" \
     "$(printf '%s\n' "$out" | grep -c '^timings=precommit-warm=')"
+
+# --- 8d. the core.hooksPath claim cloud/README.md now makes ----------------
+#
+# Not about the warm, but about the mechanism it rides on, and the estate now
+# depends on the distinction: `pre-commit install` REFUSES under
+# core.hooksPath and exits 1, while `install-hooks` is unaffected. A repo-side
+# SessionStart hook that calls the first under `set -e` fails session start in
+# exactly the containers the bootstrap got right, so the two have to be called
+# separately (#441). It is third-party behaviour, which is why it is asserted
+# here rather than trusted to stay true.
+if command -v pre-commit > /dev/null 2>&1; then
+    mkdir -p "$H/hp/repo" "$H/hp/hooks"
+    git -C "$H/hp/repo" init -q 2> /dev/null
+    git -C "$H/hp/repo" config core.hooksPath "$H/hp/hooks"
+    cp "$H/raw/cloud/precommit-warm.yaml" "$H/hp/repo/.pre-commit-config.yaml"
+
+    ( cd "$H/hp/repo" && pre-commit install ) > "$H/hp/install.log" 2>&1
+    check "pre-commit install refuses under core.hooksPath" "1" "$?"
+    check "  in the words the README quotes" "1" \
+        "$(count 'Cowardly refusing to install hooks' "$H/hp/install.log")"
+
+    # The other half, and the reason the warm can use it safely: exit 0, and no
+    # hook written anywhere. The cache from §8b covers this config already, so
+    # this builds nothing.
+    ( cd "$H/hp/repo" && PRE_COMMIT_HOME="$H/cache" pre-commit install-hooks ) \
+        > "$H/hp/install-hooks.log" 2>&1
+    check "install-hooks is unaffected by it" "0" "$?"
+    check "  and writes no hook" "0" \
+        "$(find "$H/hp/hooks" -type f 2> /dev/null | wc -l | tr -d ' ')"
+fi
+
+# The doc half of the same criterion: the README used to say `pre-commit
+# install` "will warn that it is being overridden", which is wrong in the way
+# that matters -- a warning is survivable and a non-zero exit is not.
+check "cloud/README.md documents the refusal, not a warning" "1" \
+    "$(count 'Cowardly refusing to install hooks' "$ROOT/cloud/README.md")"
+check "  and no longer calls it a warning" "0" \
+    "$(count 'will warn that it is being overridden' "$ROOT/cloud/README.md")"
 rm -rf "$H"
 
 printf '\n%s passed, %s failed\n' "$PASS" "$FAIL"

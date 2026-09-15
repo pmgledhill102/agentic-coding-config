@@ -1147,10 +1147,18 @@ cap_precommit() {
     # applies to every repo in the container however and whenever it arrives.
     #
     # The trade-off, stated because it is real: core.hooksPath REPLACES a repo's
-    # own .git/hooks rather than adding to it, and `pre-commit install` will warn
-    # that it is being overridden. In this estate hooks come from pre-commit
-    # anyway, so nothing is lost; a container that needed bespoke per-repo hooks
-    # would want the other mechanism.
+    # own .git/hooks rather than adding to it. In this estate hooks come from
+    # pre-commit anyway, so nothing is lost; a container that needed bespoke
+    # per-repo hooks would want the other mechanism.
+    #
+    # The part that bites something else: `pre-commit install` does not warn
+    # under core.hooksPath, it REFUSES -- "Cowardly refusing to install hooks
+    # with `core.hooksPath` set", exit 1 (measured 2026-09-15). So a repo-side
+    # SessionStart hook running it under `set -e` fails session start in exactly
+    # the containers this line got right. `pre-commit install-hooks` is
+    # unaffected -- exit 0, builds environments, writes no hook -- which is what
+    # cap_precommit_warm below uses and why the two are called separately.
+    # cloud/README.md carries this for the repos that have to write against it.
     HOOK_DIR="$HOME/.config/git/hooks"
     mkdir -p "$HOOK_DIR"
     cat > "$HOOK_DIR/pre-commit" << 'HOOK'
