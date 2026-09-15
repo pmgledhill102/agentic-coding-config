@@ -337,5 +337,230 @@ check "  and does NOT report state=failed" "0" \
     "$(printf '%s\n' "$cur" | grep -c 'state=failed')"
 rm -rf "$H"
 
+# --- 8. the pre-commit warm ------------------------------------------------
+#
+# The invariant: a fresh container must not meet a cold pre-commit cache on its
+# first commit. Cold, the estate's hook set is ~2 minutes of Go builds, and that
+# is paid inside precommit-claude-hook's 120 s timeout -- a gate that times out
+# and lets the commit through, or a commit killed for a reason unrelated to its
+# content (#441).
+#
+# The pinned file first, because the warm is only worth anything if its revs are
+# the ones the estate's configs actually carry.
+echo
+echo "cloud/precommit-warm.yaml — the pinned estate hook set"
+
+WARM_YAML="$ROOT/cloud/precommit-warm.yaml"
+check "the warm config exists" "1" "$([ -f "$WARM_YAML" ] && echo 1 || echo 0)"
+check "  and declares repos:" "1" "$(count '^repos:' "$WARM_YAML")"
+
+# pre-commit keys its cache on (repo URL, rev), so an unpinned rev warms
+# nothing a later run can hit. Every repo entry must carry one.
+repo_lines=$(count '^  - repo: https://' "$WARM_YAML")
+rev_lines=$(count '^    rev: ' "$WARM_YAML")
+check "every repo carries a rev" "$repo_lines" "$rev_lines"
+check "  and none of them float" "0" \
+    "$(count '^    rev: \(main\|master\|HEAD\)$' "$WARM_YAML")"
+
+# The three that make this file worth having. If a rename or a bump ever drops
+# one, the file still warms something and the two minutes come back.
+for r in gitleaks actionlint pre-commit-shfmt; do
+    check "  warms $r (language: golang)" "1" "$(count "/$r\$" "$WARM_YAML")"
+done
+
+# semgrep is #316's, provisioned as a system binary. Its pre-commit hook clones
+# the whole monorepo -- 1.1 G of cache and ~190 s -- which would not fit the
+# snapshot budget and would cache something the estate decided not to use.
+check "  and does not warm semgrep" "0" \
+    "$(count '^  - repo: .*semgrep' "$WARM_YAML")"
+
+echo
+echo "cloud/bootstrap.sh — warming the cache at bootstrap time"
+
+# The function is exercised directly, the way pip_install is in §4: a real
+# bootstrap run would have to install pre-commit, shellcheck, actionlint and
+# markdownlint-cli2 first, and the warm is what is under test.
+H=$(mktemp -d)
+{
+    for fn in precommit_home cap_precommit_warm fetch now_s record_timing capability; do
+        sed -n "/^$fn() {/,/^}\$/p" "$BOOTSTRAP"
+    done
+} > "$H/fn.sh"
+for f in precommit_home cap_precommit_warm fetch capability; do
+    check "$f was extractable from the script" "1" "$(count "^$f() {" "$H/fn.sh")"
+done
+
+# The harness the extracted functions expect. `die` is the real contract --
+# write the reason where capability() reads it, then leave the subshell.
+cat > "$H/harness.sh" << 'HARNESS'
+set -eu
+log() { echo "[bootstrap] $*"; }
+die() {
+    if [ -n "${FAIL_FILE:-}" ]; then echo "$*" > "$FAIL_FILE" 2> /dev/null || true; fi
+    echo "[bootstrap] error: $*" >&2
+    exit 1
+}
+CURL_RETRY_OPTS=
+DEGRADED=
+TIMINGS=
+. "$FNS"
+HARNESS
+
+# A config with one small python hook repo. The point here is the MECHANISM --
+# fetch, scratch repo, cache, count, manifest field -- and a golang hook would
+# spend two minutes proving nothing this does not.
+mkdir -p "$H/raw/cloud"
+cat > "$H/raw/cloud/precommit-warm.yaml" << 'CFG'
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: trailing-whitespace
+CFG
+
+# --- 8a. no pre-commit, no complaint ---------------------------------------
+#
+# cap_precommit names itself in `degraded=` when the install fails. One root
+# cause reported under two names makes that list harder to act on, so the warm
+# stands down instead of dying.
+# A PATH holding nothing but a shell: emptying it entirely would take `sh`
+# with it and the 127 would look like the stand-down under test.
+mkdir -p "$H/t8a" "$H/nopc"
+ln -sf "$(command -v sh)" "$H/nopc/sh"
+out=$(TMP="$H/t8a" FAIL_FILE="$H/t8a.fail" RAW="file://$H/raw" REF=test \
+    FNS="$H/fn.sh" PATH="$H/nopc" \
+    sh -c '. "$0"; cap_precommit_warm' "$H/harness.sh" 2>&1)
+check "with no pre-commit on PATH the warm stands down" "0" "$?"
+check "  and says so rather than failing silently" "1" \
+    "$(printf '%s\n' "$out" | grep -c 'nothing to warm')"
+
+# --- 8b. the real thing, from a directory that is not a checkout ------------
+#
+# The gotcha this guards: `pre-commit install-hooks` shells out to git and
+# refuses outside a work tree ("Is it installed, and are you in a Git repository
+# directory?", exit 1). A setup script's cwd belongs to the harness and is
+# frequently not a checkout, so the function makes its own scratch repo. Before
+# it did, the warm failed on every container whose cwd happened to be /.
+if command -v pre-commit > /dev/null 2>&1; then
+    mkdir -p "$H/t8b" "$H/notarepo" "$H/cache"
+    # A planted checkout for mechanism 2, under the cwd because $PWD is one of
+    # the roots the scan walks. It goes there rather than under a redirected
+    # $HOME -- which would be the more obvious way to bound the scan -- because
+    # HOME is where Python resolves its user site-packages from, and a
+    # `pip install --user pre-commit` (what a non-root CI runner gets) stops
+    # being importable the moment HOME moves. That failure is instant and its
+    # message is about a missing module, which reads as a broken warm rather
+    # than a broken test.
+    mkdir -p "$H/notarepo/repo-a"
+    git -C "$H/notarepo/repo-a" init -q 2> /dev/null
+    cp "$H/raw/cloud/precommit-warm.yaml" "$H/notarepo/repo-a/.pre-commit-config.yaml"
+
+    log8b="$H/t8b.log"
+    ( cd "$H/notarepo" && TMP="$H/t8b" FAIL_FILE="$H/t8b.fail" RAW="file://$H/raw" \
+        REF=test FNS="$H/fn.sh" PRE_COMMIT_HOME="$H/cache" \
+        sh -c '. "$0"; cap_precommit_warm' "$H/harness.sh" ) > "$log8b" 2>&1
+    warm_rc=$?
+    check "a warm from a non-checkout cwd succeeds" "0" "$warm_rc"
+    # What the warm said, when it did not work. Without this the whole section
+    # reports six expected-1-actual-0 lines and nothing about the cause, which
+    # is a CI failure that has to be reproduced before it can be read.
+    if [ "$warm_rc" -ne 0 ]; then
+        printf '        --- warm output ---\n'
+        sed 's/^/        /' "$log8b"
+    fi
+    check "  it warmed the estate hook set" "1" \
+        "$(count 'warm    -> estate hook set' "$log8b")"
+    check "  and the checkout it found in the workspace" "1" \
+        "$(count 'warm    -> .*repo-a/.pre-commit-config.yaml' "$log8b")"
+
+    # The acceptance criterion this file exists to hold: cache present after the
+    # bootstrap, asserted from the cache rather than inferred from an exit code.
+    envs=$(find "$H/cache" -maxdepth 1 -type d -name 'repo*' 2> /dev/null | wc -l | tr -d ' ')
+    if [ "${envs:-0}" -gt 0 ]; then
+        ok "the cache really holds a hook environment ($envs)"
+    else
+        no "the cache really holds a hook environment"
+    fi
+    # And the same number reaches the manifest, through the file that carries it
+    # out of capability()'s subshell.
+    check "  the count reaches the manifest field" "$envs" \
+        "$(cat "$H/t8b/warm-envs" 2> /dev/null || echo missing)"
+
+    # A hook that runs without building anything is the whole point.
+    ( cd "$H/notarepo/repo-a" && PRE_COMMIT_HOME="$H/cache" \
+        pre-commit run --all-files ) > "$H/t8b-run.log" 2>&1 || true
+    check "  a later run builds no environment" "0" \
+        "$(count 'Installing environment' "$H/t8b-run.log")"
+else
+    no "pre-commit is not on PATH — the warm assertions did not run"
+    echo "        install it (pip install pre-commit); CI does this deliberately"
+fi
+
+# --- 8c. a warm that cannot run degrades, it does not abort ----------------
+#
+# Tier 2, and the reason the warm is its own capability rather than part of
+# cap_precommit: without pre-commit there is no gate, while without the warm the
+# gate is present and the first commit pays for it. Those are different
+# failures and `degraded=` has to be able to say which.
+mkdir -p "$H/t8c"
+cat > "$H/t8c-run.sh" << 'RUN'
+set -eu
+FAIL_FILE="$TMP/fail-reason"
+. "$HARNESS_PATH"
+FAIL_FILE="$TMP/fail-reason"
+capability 1 precommit-warm cap_precommit_warm
+echo "SURVIVED"
+echo "degraded=$DEGRADED"
+echo "timings=$TIMINGS"
+RUN
+out=$(TMP="$H/t8c" RAW="file://$H/raw-does-not-exist" REF=test FNS="$H/fn.sh" \
+    HARNESS_PATH="$H/harness.sh" PRE_COMMIT_HOME="$H/cache-8c" \
+    sh "$H/t8c-run.sh" 2>&1) || true
+check "a warm that cannot fetch its config does not kill the run" "1" \
+    "$(printf '%s\n' "$out" | grep -c '^SURVIVED$')"
+check "  it names itself in degraded=" "1" \
+    "$(printf '%s\n' "$out" | grep -c '^degraded=precommit-warm$')"
+check "  and it is timed even though it failed" "1" \
+    "$(printf '%s\n' "$out" | grep -c '^timings=precommit-warm=')"
+
+# --- 8d. the core.hooksPath claim cloud/README.md now makes ----------------
+#
+# Not about the warm, but about the mechanism it rides on, and the estate now
+# depends on the distinction: `pre-commit install` REFUSES under
+# core.hooksPath and exits 1, while `install-hooks` is unaffected. A repo-side
+# SessionStart hook that calls the first under `set -e` fails session start in
+# exactly the containers the bootstrap got right, so the two have to be called
+# separately (#441). It is third-party behaviour, which is why it is asserted
+# here rather than trusted to stay true.
+if command -v pre-commit > /dev/null 2>&1; then
+    mkdir -p "$H/hp/repo" "$H/hp/hooks"
+    git -C "$H/hp/repo" init -q 2> /dev/null
+    git -C "$H/hp/repo" config core.hooksPath "$H/hp/hooks"
+    cp "$H/raw/cloud/precommit-warm.yaml" "$H/hp/repo/.pre-commit-config.yaml"
+
+    ( cd "$H/hp/repo" && pre-commit install ) > "$H/hp/install.log" 2>&1
+    check "pre-commit install refuses under core.hooksPath" "1" "$?"
+    check "  in the words the README quotes" "1" \
+        "$(count 'Cowardly refusing to install hooks' "$H/hp/install.log")"
+
+    # The other half, and the reason the warm can use it safely: exit 0, and no
+    # hook written anywhere. The cache from §8b covers this config already, so
+    # this builds nothing.
+    ( cd "$H/hp/repo" && PRE_COMMIT_HOME="$H/cache" pre-commit install-hooks ) \
+        > "$H/hp/install-hooks.log" 2>&1
+    check "install-hooks is unaffected by it" "0" "$?"
+    check "  and writes no hook" "0" \
+        "$(find "$H/hp/hooks" -type f 2> /dev/null | wc -l | tr -d ' ')"
+fi
+
+# The doc half of the same criterion: the README used to say `pre-commit
+# install` "will warn that it is being overridden", which is wrong in the way
+# that matters -- a warning is survivable and a non-zero exit is not.
+check "cloud/README.md documents the refusal, not a warning" "1" \
+    "$(count 'Cowardly refusing to install hooks' "$ROOT/cloud/README.md")"
+check "  and no longer calls it a warning" "0" \
+    "$(count 'will warn that it is being overridden' "$ROOT/cloud/README.md")"
+rm -rf "$H"
+
 printf '\n%s passed, %s failed\n' "$PASS" "$FAIL"
 [ "$FAIL" -eq 0 ]

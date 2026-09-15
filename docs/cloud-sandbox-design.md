@@ -31,7 +31,7 @@ flowchart TB
     subgraph L4["4 · Bootstrap Tier 2 — capabilities · ~590 MB · DEGRADES"]
         direction LR
         L4a["gcloud SDK"]
-        L4b["pre-commit<br/>+ linters"]
+        L4b["pre-commit<br/>+ linters<br/>+ warmed cache"]
         L4c["terraform<br/>tflint · checkov"]
     end
     subgraph L3["3 · Bootstrap Tier 1 — the toolkit · ~100 KB · FATAL"]
@@ -112,10 +112,16 @@ What they still cost is:
 
 | Cost | Applies on | Size |
 | --- | --- | --- |
-| wall-clock in setup | rebuild only | ~68 s total, ~64 s of it Tier 2 |
-| disk, against a 30 GB session allowance | **every session** | gcloud 493 MB, Terraform toolchain ~112 MB, rest ~40 MB |
-| headroom under the 5-minute setup limit | rebuild only | ~68 s of 300 s used |
+| wall-clock in setup | rebuild only | ~156 s total, ~152 s of it Tier 2 |
+| disk, against a 30 GB session allowance | **every session** | gcloud 493 MB, Terraform toolchain ~112 MB, pre-commit cache ~222 MB, rest ~40 MB |
+| headroom under the 5-minute setup limit | rebuild only | ~156 s of 300 s used |
 | snapshot size | rebuild only | not measurable from inside |
+
+The wall-clock and disk rows grew on 2026-09-15, when the bootstrap started
+warming the pre-commit cache (#441) — 88 s and 222 MB of the totals above. That
+is the trade this section describes taken deliberately: the cost lands on
+rebuild sessions, where there is headroom, instead of on the first commit of
+every session, where there is a 120-second hook timeout.
 
 So "install later to start faster" is only true on rebuild sessions. The honest
 reason to defer a tool is **disk and setup-limit headroom**, plus freshness. How
@@ -146,6 +152,51 @@ on-disk sizes.
 | markdownlint-cli2 | 17 MB |
 | actionlint | 4.9 MB |
 
+**Warming the pre-commit cache.** Measured 2026-09-15 in a
+`claude-cloud-sandbox` container, `pre-commit` 4.6.2, by timing
+`pre-commit install-hooks -c` against a cache deleted immediately beforehand.
+
+| What | Cold | Cache after | Warm re-run |
+| --- | --- | --- | --- |
+| the seven pinned repos in `cloud/precommit-warm.yaml` | **88 s** | 222 MB | 0 s |
+| the three `language: golang` repos alone | 31 s | 120 MB | 0 s |
+| `pre-commit run --all-files` on this repo, afterwards | — | — | **2 s, no builds** |
+
+The 88 s was the container's first build. A later rebuild of the same set took
+50 s, because Go's own module cache — which lives outside
+`~/.cache/pre-commit` — was already populated. 88 s is the number to budget
+against.
+
+**The budget arithmetic**, since this is what decides whether the whole set is
+warmed or only the Go hooks: the setup script had ~68 s of its 300 s limit in
+use, so 68 + 88 = ~156 s, leaving roughly half the budget spare. The Go-only
+fallback #441 held in reserve is not needed, and it would save 57 s to leave
+four hook environments cold.
+
+That total is **composed, not observed in one run**: the 68 s is §2's figure for
+the pre-warm bootstrap and the 88 s is the cold warm measured above. The nearest
+single observation is a full `cloud/bootstrap.sh` run from the #441 branch with
+`--no-gcloud --no-terraform`, which reported `toolkit=5s precommit=0s
+precommit-warm=69s total=74s` and `precommit_envs=7` — `precommit=0s` because
+that container already had the linters, and the warm faster than 88 s because
+Go's module cache was populated. A genuinely cold run of every capability at
+once has not been timed; the number to revisit this against is the `timings=`
+line in a rebuild session's own manifest, which is what #430 put there.
+
+Two findings that shape the implementation rather than the budget:
+
+- **`pre-commit install-hooks` refuses outside a git work tree** — *"git failed.
+  Is it installed, and are you in a Git repository directory?"*, exit 1. A setup
+  script's cwd belongs to the harness, so `cap_precommit_warm` creates a scratch
+  repo to run from. The cache it fills is global and has nothing to do with the
+  repo the command ran from.
+- **The golang hooks need `go` on `PATH`.** With Go removed, pre-commit falls
+  back to fetching its own toolchain and the first call is
+  `https://go.dev/dl/?mode=json`, which this egress proxy answers
+  `403 Forbidden` — so the hooks fail rather than degrade. The image ships Go at
+  `/usr/local/go/bin`, so this is a warning about an image change, not a routine
+  path.
+
 **Egress, mid-session.** Method: ranged `GET` (`curl -r 0-0 -L`) against every
 host the bootstrap fetches from, from inside the agent phase.
 
@@ -159,6 +210,7 @@ host the bootstrap fetches from, from inside the agent phase.
 | `archive.ubuntu.com` | 206 |
 | `registry.terraform.io` | 206 — **contradicts [#241](https://github.com/pmgledhill102/agentic-coding-config/issues/241)**, re-check before working it |
 | `docs.cloud.google.com` | 403, as #241 records |
+| `go.dev` | 403 — measured 2026-09-15, via pre-commit's Go-toolchain fallback |
 
 **The finding that matters**: on Claude, the setup script and the agent session
 run under the **same allowlist**, so every install the bootstrap can do at build
