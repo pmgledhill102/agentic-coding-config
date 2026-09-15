@@ -66,7 +66,15 @@ jobs:
       # suite would report the warm as untested rather than passing — but a
       # loud gap is still a gap, so CI closes it.
       - name: Install pre-commit, for the cache-warm assertions
-        run: python3 -m pip install --quiet pre-commit
+        # The retry is the same PEP 668 marker cloud/bootstrap.sh's pip_install
+        # documents: a system-wide install refuses outright on a runner image
+        # that ships EXTERNALLY-MANAGED. The version check is what stops a pip
+        # that exited 0 without putting the shim on PATH from turning the warm
+        # assertions into a skip that reads as a pass.
+        run: |
+          python3 -m pip install --quiet pre-commit \
+            || python3 -m pip install --quiet --break-system-packages pre-commit
+          pre-commit --version
       # A bootstrap that dies partway must say so: the container it leaves
       # behind looks healthy and is not, and nothing else in a session checks.
       - name: Run the bootstrap failure-reporting tests
