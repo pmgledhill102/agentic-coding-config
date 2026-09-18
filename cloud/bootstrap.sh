@@ -708,13 +708,17 @@ esac
 # composition, which is ADR-0018 principle 8 working as intended rather than an
 # omission (#289).
 #
-# start-sweep-session is here for the same reason and not because it is simple
-# (#454). It chains start-session, which IS composed — so the surface-varying
-# half is already resolved by the time the sweep runs, and the sweep's own text
-# never has to ask which machine it is on. Its GitHub calls prefer MCP with gh
-# as the fallback, exactly as the journal promoter's do.
+# bundle-issues is here for the same reason and not because it is simple
+# (#456). It triages the whole backlog in a session of its own and writes
+# Bundle Issues, which start-session then surfaces and any session can pick up.
+# It needs no composing: its GitHub calls prefer MCP with gh as the fallback,
+# exactly as the journal promoter's do.
+#
+# There is no consumer skill beside it. #456 shipped one and then retired it in
+# the same change (see home/retired-paths): once the Bundle Issue carries the
+# files, the gates and the stop rule, working one is ordinary session work.
 
-SKILLS="promote-journal-inbox start-sweep-session"
+SKILLS="promote-journal-inbox bundle-issues"
 COMPOSED_SKILLS="retrospective start-session end-session"
 
 # Helper scripts the session skills shell out to. They are NOT optional: the

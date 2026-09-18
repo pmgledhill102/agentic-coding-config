@@ -45,19 +45,19 @@
         "home/skills/start-session/SKILL.md": [
           "00-head-skill", "01-intro", "02-action-tiers", "03-surface-workstation", "04-phase-1",
           "05-gather-workstation", "06-fetch-result", "07-sync-default-branch", "08-ci-on-demand",
-          "09-recent-merges", "10-config-drift-workstation", "11-journal-inbox",
+          "09-recent-merges", "10-config-drift-workstation", "11-journal-inbox", "11a-ready-bundles",
           "12-session-brief-workstation", "13-guardrails"
         ],
         "profiles/claude-cloud-sandbox/skills/start-session/SKILL.md": [
           "00-head-skill", "01-intro", "02-action-tiers", "03-surface-sandbox", "04-phase-1",
           "05-gather-sandbox", "06-fetch-result", "07-sync-default-branch", "08-ci-on-demand",
-          "09-recent-merges", "10-config-drift-sandbox", "11-journal-inbox",
+          "09-recent-merges", "10-config-drift-sandbox", "11-journal-inbox", "11a-ready-bundles",
           "12-session-brief-sandbox", "13-guardrails"
         ],
         "profiles/codex-cloud-sandbox/skills/start-session/SKILL.md": [
           "00-head-skill", "01-intro", "02-action-tiers", "03-surface-sandbox", "04-phase-1",
           "05-gather-sandbox", "06-fetch-result", "07-sync-default-branch", "08-ci-on-demand",
-          "09-recent-merges", "10-config-drift-sandbox", "11-journal-inbox",
+          "09-recent-merges", "10-config-drift-sandbox", "11-journal-inbox", "11a-ready-bundles",
           "12-session-brief-sandbox", "13-guardrails"
         ]
       }

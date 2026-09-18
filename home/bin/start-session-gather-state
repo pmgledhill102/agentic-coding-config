@@ -249,6 +249,46 @@ run_sh gh_assigned '
         '\''
 '
 
+# shellcheck disable=SC2016
+run_sh gh_bundles '
+    # Ready bundles: open issues that /bundle-issues wrote, identified by a
+    # "Bundle:" title prefix. Output: pipe-separated rows,
+    #   #<number>|<concern>
+    # where <concern> is the title with the prefix stripped. Empty = none.
+    #
+    # WHY A TITLE PREFIX AND NOT A LABEL: a label needs creating once per repo
+    # before it can be applied, and there is no route to create one from every
+    # surface this runs on. A prefix works in any repo with no setup.
+    #
+    # WHY `issue list` AND NOT `issue search`: search is eventually consistent,
+    # so a bundle created minutes ago can be missing from it. A session that
+    # just ran /bundle-issues and is told there are no bundles would be the
+    # one failure this section exists to prevent. Listing is consistent; the
+    # prefix filter happens here in jq.
+    if ! git remote get-url origin 2>/dev/null | grep -q "github.com"; then
+        echo "not-github"
+        exit 1
+    fi
+    if ! command -v gh >/dev/null 2>&1; then
+        echo "gh-unavailable"
+        exit 1
+    fi
+    if [ "$GH_REPO_API" != "ok" ]; then
+        echo "gh-unauthorized"
+        exit 1
+    fi
+    if ! command -v jq >/dev/null 2>&1; then
+        echo "jq-unavailable"
+        exit 1
+    fi
+    gh issue list ${REPO_SLUG:+-R "$REPO_SLUG"} --state open --limit 100 \
+        --json number,title \
+      | jq -r '\''
+          .[] | select(.title | startswith("Bundle:"))
+              | "#\(.number)|\(.title | sub("^Bundle:\\s*"; ""))"
+        '\''
+'
+
 # Deployed-config drift. Cheap (a cmp per file, and nothing else unless one
 # differs), and silent when everything is current. Lives in its own script
 # because the direction-of-drift logic does not belong inline in a `sh -c`.
@@ -425,6 +465,6 @@ if [ "$FETCH_EXIT" -ne 0 ]; then
 fi
 printf '\n'
 
-for s in local_state recent_main_commits gh_ready gh_assigned claude_drift bootstrap_currency; do
+for s in local_state recent_main_commits gh_ready gh_assigned gh_bundles claude_drift bootstrap_currency; do
     [ -f "$TMP/$s.exit" ] && emit "$s"
 done

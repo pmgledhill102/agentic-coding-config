@@ -114,6 +114,25 @@ commands/start-session.md
 # with it — repo-meta, never deployed, so it needs no entry here.
 bin/bd-migrate-to-github
 
+# 2026-09-18 — /start-sweep-session retired before it was ever run (#456)
+#
+# It shipped in #455 as one skill that triaged the backlog and then worked it.
+# #456 split those apart, because triage wants maximum context and execution
+# wants none: /bundle-issues now reads every open issue body and writes Bundle
+# Issues, and start-session surfaces them.
+#
+# That left this skill with exactly one thing of its own — working several
+# bundles concurrently in git worktrees. Everything else it did had moved into
+# the Bundle Issue (the files, the gates, the stop rule, re-verify first) or
+# was already standing policy (branch, gates, PR with Closes #n). And the one
+# remaining thing optimises the wrong constraint: the skill's own 3-bundle cap
+# was justified by "the binding constraint is review load, not execution",
+# which is equally an argument that parallel execution buys little.
+#
+# So a Bundle Issue is picked up like any other issue. If parallel sweeping
+# turns out to be wanted repeatedly, it comes back on evidence (#446).
+skills/start-sweep-session/SKILL.md
+
 # === UNDEPLOYED: still in home/, no longer deployed to ~/.claude/ ===
 #
 # WHY A SECOND SECTION: a path can need to stay in home/ for some reason other

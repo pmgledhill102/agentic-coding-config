@@ -13,6 +13,9 @@ Recent merges:                                      (omit when count=0)
   <short-sha>  <commit subject>
   …                                                 (cap at gather's 10)
 
+Ready bundles:                                      (omit when none)
+  #<n>  <concern>                  (pre-triaged by /bundle-issues)
+
 In progress (assigned to you):
   #<n>  P<pri>  <title>            (or "none")
 
@@ -35,6 +38,7 @@ Rules:
 
 - When `repo_resolution` is present, the `Repo:` line carries the second line naming which repo was resolved and why. It is never silent: a session that resolved its own repo should be able to see that it did.
 - Sections with nothing to say collapse to a single `none` line; "Needs attention" is omitted entirely when empty.
+- **"Ready bundles" comes first among the work sections**, above "In progress" and "Ready to pick up next". That ordering is the point of the section: a bundle is triaged and verified work, where the lists below it are neither. Sourced from gather section `gh_bundles`, rows already shaped `#<n>|<concern>` — split on `|` and emit them all. Omitted entirely when empty; `n/a (gh absent)` when the section could not answer.
 - "Ready to pick up next" is sourced from gather section `gh_ready`. Each row is already pipe-separated `#<n>|P<pri>|<title>` — split on `|`, sort by priority label (P0 first, `-` last), and emit the top 5. Ready = open and not directly blocked; the filter is direct-blocks-only, so eyeball the blocked icon before claiming work.
 - "In progress" is sourced from gather section `gh_assigned`. Same `#<n>|P<pri>|<title>` row shape; no cap (usually 0–3 items).
 - "Recent merges" is sourced from gather section `recent_main_commits`. Omit the entire section when `count=0`.

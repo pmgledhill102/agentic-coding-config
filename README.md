@@ -425,30 +425,44 @@ the rest are written directly.
 
 ```text
 /start-session        # sync git + issue state, print a one-screen session brief
-/start-sweep-session  # start a session aimed at backlog volume: bundle the small
-                      # unambiguous issues and work the bundles in parallel
+/bundle-issues        # read the WHOLE backlog once; write Bundle Issues
 /end-session          # push outstanding work, tidy branches and issues, then retro
 /retrospective        # name the session's costs and route findings into Issues
 ```
 
-`/start-sweep-session` is the odd one out, and deliberately. The other three
-serve whatever work a session is doing; this one chooses the work — it chains
-`/start-session`, triages the open issues for fixes that are small and carry no
-unanswered questions, groups them into **shared-concern** bundles, and works the
-bundles concurrently in separate git worktrees, one branch and one PR each.
+`/bundle-issues` is the odd one out ([#454][issue-454], [#456][issue-456]). The
+others serve whatever work a session is doing; this one decides what the work
+is.
 
-Two invariants make that safe rather than a conflict generator: no file may
-appear in two bundles, and at most one bundle per sweep may touch `context/`,
-whose composed outputs every other `context/` change also rewrites. It caps
-itself at three bundles by default because the binding constraint is review
-load, not execution — a sweep that opens eight PRs has moved the queue rather
-than shortened it ([#454][issue-454]).
+**Triage wants maximum context; execution wants none.** A session that tries
+both has to shortlist the backlog by title before reading any bodies — and title
+is a proxy, where the body is the evidence. So `/bundle-issues` spends a whole
+session reading *every* open body, verifies each against the working tree,
+closes the ones already fixed, and writes what is left into **Bundle Issues**:
+open issues titled `Bundle: <concern>`, each carrying its issues, its files, its
+gates, its stop rule and the SHA it was verified at.
 
-It is uncomposed. The surface-varying half of a sweep is the session start, and
-that is already resolved by the composed `/start-session` it chains — ADR-0018
-principle 8 again, the same way `/promote-journal-inbox` needs no variant.
+Reading everything at once also buys something no shortlist can: **clusters**.
+Six issues describing one underlying cause are visible with the whole backlog in
+context and invisible without it.
+
+`/start-session` surfaces ready bundles at the top of its brief, above the raw
+issue list, because a bundle is triaged and verified work where the list below
+it is neither. Detection is a `Bundle:` title prefix filtered client-side from a
+plain listing — never an issue *search*, which is eventually consistent and
+could hide a bundle written minutes earlier.
+
+There is **no consumer skill**, and that is the point of the shape. A Bundle
+Issue is a self-contained work order, so picking one up is ordinary session
+work. #456 shipped a `/start-sweep-session` that worked bundles concurrently in
+git worktrees and retired it in the same change: everything else it did had
+moved into the Bundle Issue or was already standing policy, and its one
+remaining feature optimised the constraint that was not binding — its own cap
+existed because *review* load is the bottleneck, which is equally an argument
+that parallel execution buys little. `home/retired-paths` carries the reasoning.
 
 [issue-454]: https://github.com/pmgledhill102/agentic-coding-config/issues/454
+[issue-456]: https://github.com/pmgledhill102/agentic-coding-config/issues/456
 
 **Maintenance and review:**
 
