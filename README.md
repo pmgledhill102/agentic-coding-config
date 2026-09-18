@@ -421,6 +421,35 @@ the rest are written directly.
 [issue-313]: https://github.com/pmgledhill102/agentic-coding-config/issues/313
 [issue-265]: https://github.com/pmgledhill102/agentic-coding-config/issues/265
 
+**Session lifecycle:**
+
+```text
+/start-session        # sync git + issue state, print a one-screen session brief
+/start-sweep-session  # start a session aimed at backlog volume: bundle the small
+                      # unambiguous issues and work the bundles in parallel
+/end-session          # push outstanding work, tidy branches and issues, then retro
+/retrospective        # name the session's costs and route findings into Issues
+```
+
+`/start-sweep-session` is the odd one out, and deliberately. The other three
+serve whatever work a session is doing; this one chooses the work — it chains
+`/start-session`, triages the open issues for fixes that are small and carry no
+unanswered questions, groups them into **shared-concern** bundles, and works the
+bundles concurrently in separate git worktrees, one branch and one PR each.
+
+Two invariants make that safe rather than a conflict generator: no file may
+appear in two bundles, and at most one bundle per sweep may touch `context/`,
+whose composed outputs every other `context/` change also rewrites. It caps
+itself at three bundles by default because the binding constraint is review
+load, not execution — a sweep that opens eight PRs has moved the queue rather
+than shortened it ([#454][issue-454]).
+
+It is uncomposed. The surface-varying half of a sweep is the session start, and
+that is already resolved by the composed `/start-session` it chains — ADR-0018
+principle 8 again, the same way `/promote-journal-inbox` needs no variant.
+
+[issue-454]: https://github.com/pmgledhill102/agentic-coding-config/issues/454
+
 **Maintenance and review:**
 
 ```text
