@@ -700,15 +700,21 @@ esac
 # Getting that backwards is caught at install: the fetch 404s and the script
 # dies naming the skill, rather than a session quietly running the wrong body.
 #
-# SKILLS holds promote-journal-inbox and nothing else. It is the drain half of
-# the journal loop whose fill half runs here: a sandbox retro files a
-# journal-draft Issue, and this is what empties that inbox. One body serves
-# both surfaces — its pre-flight tests the repo rather than a path, and it
-# already prefers MCP with gh as the fallback — so it needs no composition,
-# which is ADR-0018 principle 8 working as intended rather than an omission
-# (#289).
+# SKILLS holds the two skills that need no composition. promote-journal-inbox
+# is the drain half of the journal loop whose fill half runs here: a sandbox
+# retro files a journal-draft Issue, and this is what empties that inbox. One
+# body serves both surfaces — its pre-flight tests the repo rather than a path,
+# and it already prefers MCP with gh as the fallback — so it needs no
+# composition, which is ADR-0018 principle 8 working as intended rather than an
+# omission (#289).
+#
+# start-sweep-session is here for the same reason and not because it is simple
+# (#454). It chains start-session, which IS composed — so the surface-varying
+# half is already resolved by the time the sweep runs, and the sweep's own text
+# never has to ask which machine it is on. Its GitHub calls prefer MCP with gh
+# as the fallback, exactly as the journal promoter's do.
 
-SKILLS="promote-journal-inbox"
+SKILLS="promote-journal-inbox start-sweep-session"
 COMPOSED_SKILLS="retrospective start-session end-session"
 
 # Helper scripts the session skills shell out to. They are NOT optional: the
