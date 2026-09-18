@@ -177,27 +177,31 @@ reported, not lost; the next run is cheap now that they are triaged.
 ## 7. Confirm, then write (Tier 2 — one confirmation)
 
 Print the plan and take one confirmation covering both the closes and the
-Bundle Issues:
+Bundle Issues. Write it as markdown, not a fenced block: the chat surface wraps
+at an unknown width, so column-aligned text loses its columns exactly where a
+reader is deciding what to approve (the same defect as the retro's step 7 and
+step 10 summaries). Tables and bullets survive wrapping; a label gutter does not.
 
-```text
-── Bundle plan ────────────────────────────────
-Read <N> open issues at <sha>
-
-Close now (already fixed):        <k>
-  #<n>  <title>
-
-Bundles to create:                <b>
-  Bundle: <concern>          #<n>, #<n>, #<n>
-  Bundle: <concern>          #<n>, #<n>
-
-Clusters worth one issue instead:
-  #<n>, #<n>, #<n> — <the shared cause>
-
-Eligible but unbundled:           <u>
-Deferred:                         <d>
-───────────────────────────────────────────────
-Create <b> Bundle Issues and close <k> fixed issues? (y/n)
-```
+> **Bundle plan** — read `<N>` open issues at `<sha>`
+>
+> **Close now (already fixed):** `<k>`
+>
+> - #`<n>` — `<title>`
+>
+> **Bundles to create:** `<b>`
+>
+> | Concern | Closes |
+> | --- | --- |
+> | `<concern>` | #`<n>`, #`<n>`, #`<n>` |
+> | `<concern>` | #`<n>`, #`<n>` |
+>
+> **Clusters worth one issue instead:**
+>
+> - #`<n>`, #`<n>`, #`<n>` — `<the shared cause>`
+>
+> **Eligible but unbundled:** `<u>` · **Deferred:** `<d>`
+>
+> Create `<b>` Bundle Issues and close `<k>` fixed issues? (y/n)
 
 On yes:
 
@@ -248,19 +252,26 @@ premise this bundle was built on.
 
 ## 8. Report
 
-```text
-── Bundle result ──────────────────────────────
-Read:      <N> open issues at <sha>
-Closed:    <k> already fixed
-Created:   Bundle #<n>  <concern>   (closes #<a>, #<b>)
-           …
-Clusters:  <c> reported
-Deferred:  <d>   — the backlog that actually needs you
-Backlog:   <N> → <N-k> open, +<b> bundle issues
-───────────────────────────────────────────────
-```
+Same rule as the plan: markdown, never a gutter-aligned fence.
 
-Two things about that last line. The bundle Issues make the count go **up** in
+> **Bundle result** — read `<N>` open issues at `<sha>`
+>
+> **Closed as already fixed:** `<k>` — #`<n>` (`<what fixed it>`)
+>
+> | Bundle | Concern | Closes |
+> | --- | --- | --- |
+> | #`<n>` | `<concern>` | #`<a>`, #`<b>` |
+>
+> - Clusters reported: `<c>`
+> - Eligible but unbundled: `<u>`
+> - Deferred: `<d>` — the backlog that actually needs you
+> - Backlog: `<N>` open before, `<N-k+b>` now with the bundle issues,
+>   `<N-k-closed-by-bundles>` once the bundle PRs merge
+
+Link each bundle number to its issue, since the report is what the user clicks
+from.
+
+Two things about that last bullet. The bundle Issues make the count go **up** in
 the short term; each one takes several issues with it when its PR merges, so the
 net is sharply down, but the number moves the wrong way first and the report
 should not hide it.
