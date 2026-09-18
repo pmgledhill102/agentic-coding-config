@@ -40,8 +40,14 @@ omit it, and do not add `body`.
 
 From that one response:
 
+- **Ready bundles** — the issues whose `title` starts with `Bundle:`, filtered
+  client-side. These are what `/bundle-issues` wrote; step 6b uses them. The
+  filter is client-side on purpose, and it is free: the rows are already in this
+  response, and the alternative — an issue *search* — is eventually consistent,
+  so a bundle written minutes ago could be missing from it.
 - **Ready to pick up** — every returned issue, sorted by its `P0`–`P4` label
-  (`-` when it has none), top 5 into the brief.
+  (`-` when it has none), top 5 into the brief. Exclude the `Bundle:` rows;
+  they have their own section and would otherwise appear twice.
 - **In progress** — the same list filtered client-side to issues whose
   `assignees` include the authenticated login. `mcp__github__get_me` supplies
   that login and can be sent in the same message; on a personal repo the owner
