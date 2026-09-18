@@ -1,6 +1,6 @@
 ---
 name: bundle-issues
-description: 'Triage the whole open backlog in one dedicated session: read every open issue body, verify each against the working tree, close the ones already fixed, and emit the remainder as Bundle Issues that a later session can pick up with no prior context. Use when the backlog needs breaking down into workable units, when asked to plan a sweep or create bundles, or before running start-sweep-session.'
+description: 'Triage the whole open backlog in one dedicated session: read every open issue body, verify each against the working tree, close the ones already fixed, and emit the remainder as Bundle Issues that a later session can pick up with no prior context. Use when the backlog needs breaking down into workable units, when asked to plan a sweep or create bundles, or when the open-issue count needs bringing down.'
 ---
 
 # Bundle the open issues

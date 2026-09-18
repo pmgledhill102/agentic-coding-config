@@ -426,24 +426,21 @@ the rest are written directly.
 ```text
 /start-session        # sync git + issue state, print a one-screen session brief
 /bundle-issues        # read the WHOLE backlog once; write Bundle Issues
-/start-sweep-session  # pick bundles up and work them in parallel, one PR each
 /end-session          # push outstanding work, tidy branches and issues, then retro
 /retrospective        # name the session's costs and route findings into Issues
 ```
 
-`/bundle-issues` and `/start-sweep-session` are the two halves of one loop, and
-the split between them is the whole design ([#454][issue-454],
-[#456][issue-456]).
+`/bundle-issues` is the odd one out ([#454][issue-454], [#456][issue-456]). The
+others serve whatever work a session is doing; this one decides what the work
+is.
 
 **Triage wants maximum context; execution wants none.** A session that tries
 both has to shortlist the backlog by title before reading any bodies — and title
 is a proxy, where the body is the evidence. So `/bundle-issues` spends a whole
 session reading *every* open body, verifies each against the working tree,
 closes the ones already fixed, and writes what is left into **Bundle Issues**:
-open issues titled `Bundle: <concern>`, each carrying its issues, its files and
-the SHA it was verified at. `/start-sweep-session` then picks those up with no
-prior context, re-verifies them, and works several concurrently in separate git
-worktrees — one branch and one PR each.
+open issues titled `Bundle: <concern>`, each carrying its issues, its files, its
+gates, its stop rule and the SHA it was verified at.
 
 Reading everything at once also buys something no shortlist can: **clusters**.
 Six issues describing one underlying cause are visible with the whole backlog in
@@ -455,18 +452,14 @@ it is neither. Detection is a `Bundle:` title prefix filtered client-side from a
 plain listing — never an issue *search*, which is eventually consistent and
 could hide a bundle written minutes earlier.
 
-One invariant makes the parallelism safe: **no two bundles may touch the same
-source file.** Generated files are deliberately excluded. Two bundles editing
-different fragments both regenerate the composed outputs, but a conflict there
-is resolved by re-running `tests/compose-context.py --write` rather than by
-judgment, and the `composed context profiles` check makes a wrong merge
-impossible to land quietly. Treating generated files as authored ones would
-serialise most of this repo's sweepable work to prevent a failure that is cheap
-and loud.
-
-Both are uncomposed. The surface-varying half is the session start, already
-resolved by the composed `/start-session` — ADR-0018 principle 8 again, the same
-way `/promote-journal-inbox` needs no variant.
+There is **no consumer skill**, and that is the point of the shape. A Bundle
+Issue is a self-contained work order, so picking one up is ordinary session
+work. #456 shipped a `/start-sweep-session` that worked bundles concurrently in
+git worktrees and retired it in the same change: everything else it did had
+moved into the Bundle Issue or was already standing policy, and its one
+remaining feature optimised the constraint that was not binding — its own cap
+existed because *review* load is the bottleneck, which is equally an argument
+that parallel execution buys little. `home/retired-paths` carries the reasoning.
 
 [issue-454]: https://github.com/pmgledhill102/agentic-coding-config/issues/454
 [issue-456]: https://github.com/pmgledhill102/agentic-coding-config/issues/456

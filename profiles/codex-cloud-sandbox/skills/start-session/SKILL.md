@@ -273,7 +273,7 @@ Filter the listing to entries matching `^[0-9]{4}-[0-9]{2}-[0-9]{2}-[a-z0-9-]+\.
 
 Note: this surface only counts the **filesystem** half of the inbox. The Issue-side half (sandbox-fallback drafts) isn't enumerated here — surfacing it would require an extra issue-listing call filtered to the `journal-draft` label, and the filesystem count is the dominant signal because that is where drafts normally land. `/promote-journal-inbox` itself drains both inboxes when invoked, so user action is consistent regardless of which path filed the draft.
 
-### 6b. Ready bundles (Tier 2 — prompt)
+### 6b. Ready bundles (Tier 1 — surface)
 
 `/bundle-issues` triages the whole backlog in a session of its own and writes
 what it found into **Bundle Issues** — open issues whose title starts with
@@ -284,21 +284,16 @@ the raw issue list in the brief.
 Step 1 already produced the bundle rows; nothing extra is fetched here.
 
 - **0 bundles**: skip silently. Do not suggest running `/bundle-issues` from
-  here — an empty backlog of bundles is the normal state, and a prompt on every
-  clean start is noise.
-- **>= 1 bundle**: list them in the brief under `Ready bundles:` and prompt
-  once:
+  here — no bundles is the normal state, and a prompt on every clean start is
+  noise.
+- **>= 1 bundle**: list them in the brief under `Ready bundles:`, above the
+  other work sections.
 
-  > `<N>` ready bundle(s). Run `/start-sweep-session` now? (y/n)
-
-  - **yes** → invoke `/start-sweep-session`. It re-verifies each bundle against
-    the current tree before touching anything, so a bundle that decayed since
-    triage costs a check rather than a bad PR.
-  - **no / empty / cancel** → carry on. The bundles keep; they are Issues, not
-    session state.
-
-This step surfaces and offers. It never works a bundle itself — `start-session`
-is read-mostly, and a sweep cuts branches and opens PRs.
+There is no prompt and no chained command. A Bundle Issue is a self-contained
+work order — it names its files, its gates, its stop rule, and tells whoever
+picks it up to re-verify first — so working one is ordinary session work, picked
+up the way any issue is. It is surfaced first because it is better-prepared
+work, not because it needs special handling.
 
 ### 7. Session brief (Tier 1 — final summary)
 
