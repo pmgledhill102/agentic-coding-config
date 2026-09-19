@@ -1088,6 +1088,49 @@ cap_precommit() {
         die "markdownlint-cli2 installed but is not on PATH"
     log "mdlint  -> $(command -v markdownlint-cli2) ($(markdownlint-cli2 --version 2>&1 | head -1))"
 
+    # semgrep is a `language: system` hook across this estate, so the hook runs
+    # whatever is on PATH and fails hard with "Executable `semgrep` not found"
+    # when nothing is -- which is why every commit in one paul-context sandbox
+    # session had to be issued as SKIP=semgrep (#407). The hook was moved to
+    # system deliberately: pre-commit's own python route costs 1.2G and ~190s
+    # per container, against ~10s and 319M here on a cold uv cache (a tenth of
+    # a second once warm), most of it semgrep-core either way. pip is the
+    # fallback rather than the route: uv sits at /root/.local/bin in this
+    # image, but one image is not the contract.
+    if ! command -v semgrep > /dev/null 2>&1; then
+        if command -v uv > /dev/null 2>&1; then
+            uv tool install semgrep > /dev/null 2>&1 ||
+                die "could not install semgrep with uv"
+        else
+            pip_install semgrep ||
+                die "could not install semgrep from PyPI"
+        fi
+    fi
+    command -v semgrep > /dev/null 2>&1 ||
+        die "semgrep reported installed but is not on PATH"
+    log "semgrep -> $(command -v semgrep)"
+
+    # cspell already runs inside pre-commit's own node environment, so the hook
+    # passes without this. What does not work without it is the documented
+    # pre-push check -- several repos tell contributors to run cspell directly
+    # before committing, and the estate prefers a native binary to an npx shim,
+    # so absence from PATH makes that instruction unfollowable and turns four
+    # batches of proper nouns into four failed commits (#407). Pinned like
+    # markdownlint-cli2 above, but not coupled to a hook rev: the cspell hook
+    # tracks the latest tag rather than a version this script could match.
+    if ! command -v cspell > /dev/null 2>&1; then
+        CS_VER=10.3.3
+        command -v npm > /dev/null 2>&1 ||
+            die "cspell needs npm, which is not on PATH"
+        npm install -g --silent "cspell@${CS_VER}" > /dev/null 2>&1 ||
+            die "could not install cspell ${CS_VER} from npm"
+    fi
+    # Same several-node-prefixes caveat as markdownlint-cli2: npm exiting 0
+    # does not mean the shim landed anywhere on PATH.
+    command -v cspell > /dev/null 2>&1 ||
+        die "cspell installed but is not on PATH"
+    log "cspell  -> $(command -v cspell) ($(cspell --version 2>&1 | head -1))"
+
     # The Terraform toolchain, opt-in. A repo's .pre-commit-config.yaml can
     # call terraform_fmt, terraform_validate, terraform_tflint and checkov;
     # without the binaries those hooks fail with exit 127 rather than finding
@@ -1102,8 +1145,23 @@ cap_precommit() {
     if [ "$WITH_TERRAFORM" -eq 1 ]; then
         # Same pinned-release pattern, and the same github.com 403 note, as
         # actionlint above.
-        if ! command -v terraform > /dev/null 2>&1; then
-            TF_VER=1.9.8
+        # The pin is compared against what is installed, not merely against
+        # whether anything is. The image ships its own terraform at 1.9.8, and
+        # every root in gcp-org-management declares required_version >= 1.11,
+        # so terraform_validate fails init in all 16 layers (#369) -- with a
+        # bare `command -v` guard the install is skipped and that stays true
+        # however the pin is bumped. An installed version NEWER than the pin is
+        # left alone, so this never walks a container backwards.
+        #
+        # The pin tracks the current stable line rather than a floor. 1.16
+        # opened 2026-08-26 and 1.17 is still in beta, so 1.16.3 is the newest
+        # stable release; 1.16.0 shipped no breaking changes and its one
+        # upgrade note concerns provisioner bastion_host_key. Bump this when a
+        # line settles, not when one opens.
+        TF_VER=1.16.3
+        tf_have=$(terraform version 2> /dev/null | sed -n '1s/^Terraform v//p')
+        if [ -z "$tf_have" ] ||
+            [ "$(printf '%s\n%s\n' "$TF_VER" "$tf_have" | sort -V | head -1)" != "$TF_VER" ]; then
             fetch "https://releases.hashicorp.com/terraform/${TF_VER}/terraform_${TF_VER}_linux_amd64.zip" \
                 "$TMP/terraform.zip" ||
                 die "could not download terraform ${TF_VER}"
@@ -1125,6 +1183,27 @@ cap_precommit() {
                 die "could not install tflint"
         fi
         log "tflint  -> $(command -v tflint)"
+
+        # tflint --init resolves plugins through the GitHub releases API, which
+        # the sandbox proxy 403s, so the ruleset is seeded from its release
+        # asset instead -- that URL redirects to a host the proxy does allow,
+        # the same asymmetry the actionlint note above records. Without this,
+        # the tflint stage of the pre-push hook cannot pass in a container at
+        # all. Idempotent: the fetch is skipped once the plugin is in place.
+        TFL_GOOGLE_VER=0.31.0
+        tfl_plugins="$HOME/.tflint.d/plugins/github.com/terraform-linters/tflint-ruleset-google/${TFL_GOOGLE_VER}"
+        if [ ! -x "$tfl_plugins/tflint-ruleset-google" ]; then
+            mkdir -p "$tfl_plugins" ||
+                die "could not create $tfl_plugins"
+            fetch "https://github.com/terraform-linters/tflint-ruleset-google/releases/download/v${TFL_GOOGLE_VER}/tflint-ruleset-google_linux_amd64.zip" \
+                "$TMP/tflint-ruleset-google.zip" ||
+                die "could not download tflint-ruleset-google ${TFL_GOOGLE_VER}"
+            unzip -o -q "$TMP/tflint-ruleset-google.zip" -d "$tfl_plugins" ||
+                die "could not unpack tflint-ruleset-google"
+            chmod 0755 "$tfl_plugins/tflint-ruleset-google" ||
+                die "could not make tflint-ruleset-google executable"
+        fi
+        log "tflplug -> $tfl_plugins"
 
         # checkov is a Python tool, so it takes the same pip route as
         # pre-commit rather than a release tarball.
@@ -1488,6 +1567,7 @@ fi
     # The duration is in `timings` as precommit-warm.
     echo "precommit_envs=$(cat "$TMP/warm-envs" 2> /dev/null || echo 0)"
     echo "gcloud=$WITH_GCLOUD"
+    echo "terraform=$WITH_TERRAFORM"
     echo "hooks=$WITH_HOOKS"
     echo "gh=$WITH_GH"
     # Machine-readable timing, so a regression is a diff between two runs rather
