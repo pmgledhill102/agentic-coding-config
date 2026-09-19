@@ -262,17 +262,17 @@ or in the environment's setup script.
   a skill on the workstation but absent here was held back deliberately, not
   lost. Say that rather than improvising its behaviour from its name.
 
-### `gh` is not installed here
+### `gh` is a property of the setup line
 
-GitHub work goes through the MCP tools. The `gh` CLI is absent from this
-container, so a step that shells out to it fails rather than degrading — and
-several do: `start-session` and `end-session` gather state through helper
-scripts that call `gh`, and those sections report `gh-unavailable` on this
-surface.
-
-Treat a `gh` command written into a skill as naming the *operation*, not the
-tool, and reach for the equivalent MCP call. Where a whole section depends on
-it, say what could not be gathered rather than reporting a clean result.
+GitHub work goes through the MCP tools. `gh` is present only when the setup
+line passes `--with-gh`, and GraphQL is blocked for every Claude Code session
+whatever the binary's state, so `gh pr view`, `gh pr list` and review-thread
+commands fail; REST reads have been seen to work. Verify, never assume. Helpers
+that shell out to `gh` report `gh-unavailable` or `gh-unauthorized`: say what
+could not be gathered rather than reporting a clean result, and treat a `gh`
+command written into a skill as naming the *operation* — reach for the MCP
+call. In a **child session** every `claude-code-remote` call fails to bind its
+approval (anthropics/claude-code#90127): prefer event-driven wakes via `github`.
 
 ## Claude Code adapter
 

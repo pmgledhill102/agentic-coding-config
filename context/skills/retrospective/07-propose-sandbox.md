@@ -12,7 +12,7 @@ Merge the step-3 levers and step-4 candidates into **at most 3 proposals, ranked
    | Installs | bootstrap flags (`--with-gcloud/-precommit/-hooks`), setup script, egress allowlist |
    | Skills | bootstrap `SKILLS` / `COMPOSED_SKILLS` whitelist |
    | Context | fragments → the cloud-sandbox profile |
-   | Permissions/hooks | bootstrap-written `settings.json` |
+   | Permissions/hooks | `--with-hooks` delivers hooks only; approvals in a container are governed by the environment's permission mode (a container-created `settings.json` *is* honoured, but nothing delivers permissions to one) |
    | Memory | **none — memory writes die with the container** (see step 6) |
 
    Note what the memory row costs you: a lesson worth keeping has no
