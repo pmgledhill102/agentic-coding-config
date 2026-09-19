@@ -128,7 +128,8 @@ line no longer says what happened:
 The same set is written to `~/.agents/.bootstrap-manifest`, which is where to
 look when a container is behaving as though something is missing.
 
-`--with-terraform` installs `terraform`, `tflint` and `checkov`, so a repo
+`--with-terraform` installs `terraform`, `tflint` and `checkov`, and seeds
+the tflint google ruleset that `tflint --init` cannot fetch here, so a repo
 whose `.pre-commit-config.yaml` calls the Terraform hooks can actually run
 them. **On by default for a sandbox**, like `--with-precommit` and for the
 same reason: a disposable container rebuilt from a script has no developer
@@ -271,9 +272,10 @@ Revocation levels and what to do about a possibly-exposed token or request key:
 | `~/.cache/pre-commit/` | the warmed hook environments, with `--with-precommit` (~222 MB) |
 | `~/.claude/settings.json` | harness hook wiring, with `--with-hooks` (merged, not replaced) |
 | `~/.claude/bin/*-claude-hook` | the three harness hook scripts, with `--with-hooks` |
-| `/usr/local/bin/pre-commit`, `/usr/bin/shellcheck`, `/usr/local/bin/actionlint`, `markdownlint-cli2` (npm global) | with `--with-precommit` |
+| `/usr/local/bin/pre-commit`, `/usr/bin/shellcheck`, `/usr/local/bin/actionlint`, `markdownlint-cli2` (npm global), `cspell` (npm global), `semgrep` (uv tool) | with `--with-precommit` |
 | `/usr/local/bin/gh` | the GitHub CLI, pinned release, with `--with-gh` |
 | `/usr/local/bin/terraform`, `/usr/local/bin/tflint`, `checkov` | the Terraform toolchain, with `--with-terraform` |
+| `~/.tflint.d/plugins/…/tflint-ruleset-google/` | the tflint google ruleset, seeded because `tflint --init` is 403ed here, with `--with-terraform` |
 
 Whitelisted today: `promote-journal-inbox`, `retrospective`, `start-session`,
 `end-session`. The other **16** skills under `home/skills/` are held back
