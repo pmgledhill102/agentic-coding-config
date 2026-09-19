@@ -1093,9 +1093,10 @@ cap_precommit() {
     # when nothing is -- which is why every commit in one paul-context sandbox
     # session had to be issued as SKIP=semgrep (#407). The hook was moved to
     # system deliberately: pre-commit's own python route costs 1.2G and ~190s
-    # per container against uv's 318M and ~5s, most of it semgrep-core either
-    # way. pip is the fallback rather than the route: uv sits at
-    # /root/.local/bin in this image, but one image is not the contract.
+    # per container, against ~10s and 319M here on a cold uv cache (a tenth of
+    # a second once warm), most of it semgrep-core either way. pip is the
+    # fallback rather than the route: uv sits at /root/.local/bin in this
+    # image, but one image is not the contract.
     if ! command -v semgrep > /dev/null 2>&1; then
         if command -v uv > /dev/null 2>&1; then
             uv tool install semgrep > /dev/null 2>&1 ||
@@ -1151,7 +1152,13 @@ cap_precommit() {
         # bare `command -v` guard the install is skipped and that stays true
         # however the pin is bumped. An installed version NEWER than the pin is
         # left alone, so this never walks a container backwards.
-        TF_VER=1.13.5
+        #
+        # The pin tracks the current stable line rather than a floor. 1.16
+        # opened 2026-08-26 and 1.17 is still in beta, so 1.16.3 is the newest
+        # stable release; 1.16.0 shipped no breaking changes and its one
+        # upgrade note concerns provisioner bastion_host_key. Bump this when a
+        # line settles, not when one opens.
+        TF_VER=1.16.3
         tf_have=$(terraform version 2> /dev/null | sed -n '1s/^Terraform v//p')
         if [ -z "$tf_have" ] ||
             [ "$(printf '%s\n%s\n' "$TF_VER" "$tf_have" | sort -V | head -1)" != "$TF_VER" ]; then
