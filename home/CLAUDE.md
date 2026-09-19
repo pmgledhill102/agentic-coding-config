@@ -34,16 +34,16 @@ Nothing has to be declared in the repo, so nothing can drift.
 git remote get-url origin
 # git@github.com:pmgledhill102/<repo>.git
 # https://github.com/pmgledhill102/<repo>.git
-# ...and the same two forms under desertfoxclan
 ```
 
-Both URL forms are in live use on the same machine, so match on the
-`<owner>/<repo>` part rather than on a prefix — a rule written against
-`https://` alone silently misses every SSH clone, and silence here reads as
-"the standards do not apply" rather than as an error.
+Both URL forms are in live use, so match on the `<owner>/<repo>` part rather
+than on a prefix: a rule written against `https://` alone silently misses every
+SSH clone, and silence reads as "the standards do not apply", not as an error.
 
-The owner set is **`pmgledhill102` and `desertfoxclan`**. It is not one login:
-four repos are owned in the org.
+The owner set is **`pmgledhill102`** alone. **`desertfoxclan` is not mine**:
+some of its repos are, and my token holds admin there, but the org is not, so
+no sweep, settings write, branch tidy or generated plan touches it. A read-only
+review when asked is fine; its output is a list of changes I make by hand.
 
 **Not mine** — a work repo, or a third-party project cloned to read or
 contribute to. Here the repo's own conventions win on everything: its branch
@@ -79,7 +79,7 @@ and guessing "not mine" in my own quietly drops every standard.
 - **Merge method: merge commits only. Squash and rebase are DISABLED at the repository, not merely discouraged.** GitHub has no default-merge-method field — the only levers are the three booleans — so a stated preference is enforced by nothing and every merge is a button click that lands on whatever was clicked last. Two costs, paid every time. **Squash replaces a branch's commits with a new SHA**, so anything built on that branch still carries the originals and re-applies work `main` already has, producing conflicts resolved against a change that already landed; rebase-merge has the same defect for the same reason. **Squash also drops commit-message trailers**, so a `Closes #N` in a commit silently fails to close its issue — the audit trail quietly ceasing to work, which is worse than the stacked-branch case because nothing announces it. Agentic PRs arrive as one or two already-written commits, so squash's benefit — collapsing WIP noise — is usually nothing. Where a branch genuinely has fixup commits, clean it up with `git rebase -i` before merging rather than re-enabling squash. The known trade-off: `git bisect` can descend into a commit that never passed CI on its own — use `git bisect --first-parent`, and `git log --first-parent` for the PR-level view
 - Watch the CI checks and ensure they pass
 - Don't merge your own PRs — let them be reviewed by someone else
-- Before pushing follow-up commits to a PR branch, always check the PR is still open. The user often reviews and merges PRs via the web UI while work continues — if already merged, create a new branch and PR instead
+- Before pushing follow-up commits to a PR branch — or stating its state, or asking anything premised on it — check the PR is still open **now**, not from an earlier read. The user often reviews and merges PRs via the web UI while work continues — if already merged, create a new branch and PR instead. This is a cached read going stale, not the read-after-write lag under Work Tracking; both produce a confident wrong assertion
 - When multiple related changes span different concerns, ask the user whether to use one branch or separate branches before committing
 
 ### Work Tracking
@@ -89,7 +89,7 @@ and guessing "not mine" in my own quietly drops every standard.
   - Hierarchy via sub-issues; dependencies via blocked-by
   - Priority labels `P0`–`P4`; type labels `type: epic|feature|task|bug` (issue types are org-only — labels ARE the convention on personal repos)
   - Some repos (e.g. `lifeos`) declare their own label taxonomy in their repo's committed agent instructions — that wins over the defaults above
-  - **Use issue listing or direct reads for anything time-sensitive — never issue search**: the search API is eventually consistent, so a just-created issue can be invisible to it for seconds to minutes. Deduplicate against a full list including closed issues, not search
+  - **A read-back of just-written state is eventually consistent — wait before diagnosing.** IAM bindings (inherited grants included), Cloud Logging entries and GitHub's search index all lag their writes by seconds to minutes, and each reports the lag as a plausible wrong answer: a bare permission denial indistinguishable from a missing role, an empty result, a 404. When a just-written thing looks absent or unauthorised, wait and retry once before investigating, and treat "the platform is broken" as the last hypothesis. The GitHub instance: use issue listing or direct reads for anything time-sensitive, never issue search, and deduplicate against a full list including closed issues
 
 ### Decision records (ADR tiers)
 
