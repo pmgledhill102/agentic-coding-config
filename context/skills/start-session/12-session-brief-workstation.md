@@ -4,7 +4,7 @@ Always print, even when everything is clean. This is the user-facing payoff — 
 
 ```text
 ── Session brief ──────────────────────────────
-Repo:     <repo>             Branch: <branch> (<clean|dirty>)
+Repo:     <repo>[  ⚠ ARCHIVED]   Branch: <branch> (<clean|dirty>)   ([…] only when state=true)
           [ran in <name>; cwd <cwd> is not a repo]   (only when repo_resolution present)
 Sync:     <default> <ahead/behind/even>   upstream <ahead/behind/even/gone/n/a>
           [auto-switched <feature> → <default> (upstream gone)]    (only when Step 3 auto-switched)
@@ -24,6 +24,10 @@ Ready to pick up next:
   …
 
 Needs attention:
+  • This repo is ARCHIVED — read-only on GitHub. No pushes, no PRs, no new
+    issues, no comments.                     (omit unless state=true; first when present)
+  • gcloud credentials expired — run `! gcloud auth login` if this session needs
+    live GCP state                           (omit unless gcloud_auth state=expired)
   • <pending journal drafts: N>    (omit when 0 / not paul-context)
   • <feature branch behind main by N>          (omit when on default, even, or auto-switched)
   • <branch upstream gone but tree dirty>      (omit unless that case fires)
@@ -39,6 +43,7 @@ Rules:
 - When `repo_resolution` is present, the `Repo:` line carries the second line naming which repo was resolved and why. It is never silent: a session that resolved its own repo should be able to see that it did.
 - Sections with nothing to say collapse to a single `none` line; "Needs attention" is omitted entirely when empty.
 - **"Ready bundles" comes first among the work sections**, above "In progress" and "Ready to pick up next". That ordering is the point of the section: a bundle is triaged and verified work, where the lists below it are neither. Sourced from gather section `gh_bundles`, rows already shaped `#<n>|<concern>` — split on `|` and emit them all. Omitted entirely when empty; `n/a (gh absent)` when the section could not answer.
+- **Rows in "Ready to pick up next" are open issues, which describe the world when they were filed.** Before acting on one — or citing it as a reason something will fail — verify its premises against current source. An issue is often fixed by adjacent work that never referenced it, and a body can be reversed by its own newest comment, so read the comments before implementing.
 - "Ready to pick up next" is sourced from gather section `gh_ready`. Each row is already pipe-separated `#<n>|P<pri>|<title>` — split on `|`, sort by priority label (P0 first, `-` last), and emit the top 5. Ready = open and not directly blocked; the filter is direct-blocks-only, so eyeball the blocked icon before claiming work.
 - "In progress" is sourced from gather section `gh_assigned`. Same `#<n>|P<pri>|<title>` row shape; no cap (usually 0–3 items).
 - "Recent merges" is sourced from gather section `recent_main_commits`. Omit the entire section when `count=0`.
