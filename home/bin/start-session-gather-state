@@ -114,13 +114,24 @@ export REPO_SLUG
 # reads as three separate problems; with it they emit one gh-unauthorized
 # sentinel that the skill maps to the same MCP recovery as gh-unavailable.
 # Costs one API round-trip on healthy surfaces.
+# The same response already carries the repo's archived flag, so select that
+# instead of .id and answer both questions in one round-trip. --jq printing
+# "false" does not change gh's exit code, so this is still as good a liveness
+# probe as .id was. Three states, never two: "unknown" whenever the probe could
+# not run at all (no gh, no slug, 403 behind the sandbox proxy), so an
+# unanswered question can never render as "not archived" (#415).
 GH_REPO_API=unavailable
+REPO_ARCHIVED=unknown
 if command -v gh >/dev/null 2>&1 && [ -n "$REPO_SLUG" ]; then
-    if gh api "repos/$REPO_SLUG" --jq .id >/dev/null 2>&1; then
+    if probe=$(gh api "repos/$REPO_SLUG" --jq '.archived' 2>/dev/null); then
         GH_REPO_API=ok
+        case "$probe" in
+            true) REPO_ARCHIVED=true ;;
+            false) REPO_ARCHIVED=false ;;
+        esac
     fi
 fi
-export GH_REPO_API
+export GH_REPO_API REPO_ARCHIVED
 
 # --- Phase 2: parallel fan-out of independent reads ---
 
@@ -433,6 +444,29 @@ run_sh recent_main_commits '
     fi
 '
 
+# shellcheck disable=SC2016
+run_sh gcloud_auth '
+    # Whether this session can read live GCP state, asked at the start rather
+    # than ten calls into an investigation that then cannot finish (#406).
+    # Output: state=absent|live|expired.
+    #
+    # print-access-token is the cheapest non-interactive probe that actually
+    # exercises a refresh, and it fails fast instead of prompting -- which is
+    # the failure being observed, since an agent has no tty to reauth on. The
+    # token is discarded here and never printed: this is an internal liveness
+    # check, not a credential read, and the deny rule proposed in #440 has to
+    # keep that distinction or it breaks this section.
+    if ! command -v gcloud >/dev/null 2>&1; then
+        echo "state=absent"
+        exit 0
+    fi
+    if gcloud auth print-access-token >/dev/null 2>&1; then
+        echo "state=live"
+    else
+        echo "state=expired"
+    fi
+'
+
 wait
 progress "all sections complete"
 
@@ -465,6 +499,13 @@ if [ "$FETCH_EXIT" -ne 0 ]; then
 fi
 printf '\n'
 
-for s in local_state recent_main_commits gh_ready gh_assigned gh_bundles claude_drift bootstrap_currency; do
+# Always emitted, including "unknown". A silently absent section would read as
+# "not archived", which is the failure this section exists to prevent. Placed
+# straight after fetch because it changes what every line below it means.
+printf '===repo_archived (exit=0)===\n'
+printf 'state=%s\n' "$REPO_ARCHIVED"
+printf '\n'
+
+for s in local_state recent_main_commits gh_ready gh_assigned gh_bundles gcloud_auth claude_drift bootstrap_currency; do
     [ -f "$TMP/$s.exit" ] && emit "$s"
 done
