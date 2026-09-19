@@ -150,10 +150,11 @@ approval the same human must give adds a click, not a control. The PR
 itself (and its CI) is the control. Revisit per-repo if a repo ever gains a
 second maintainer.
 
-### Migration order and the auto-merge hazards
+### Migration order and its hazards
 
-Do not sweep-convert the estate blind. Two known hazards sit exactly where
-this estate lives (Dependabot auto-merge):
+Do not sweep-convert the estate blind. Three known hazards sit exactly
+where this estate lives (Dependabot auto-merge on rulesets), and a fourth
+strikes with no migration at all:
 
 1. Reports of **auto-merge never firing after a ruleset migration**
    ([community discussion](https://github.com/orgs/community/discussions/162623))
@@ -163,6 +164,22 @@ this estate lives (Dependabot auto-merge):
    ([community discussion](https://github.com/orgs/community/discussions/190610))
    — and the Dependabot workflow enables auto-merge at PR-open time, before
    checks finish.
+3. **A single required status check can be dropped entirely by the
+   conversion.** Observed on four of seven repos in this estate: all four
+   had exactly one required context (`gate`) and came out with none, while
+   every repo with a multi-context list kept it. The pull-request, deletion
+   and force-push rules survive, so the repo looks protected in the UI and
+   in a casual API read — and with zero required checks a Dependabot PR
+   merges *more* smoothly, so the end-to-end test below reads green
+   precisely when the control is gone.
+4. **A required context also goes stale when the job that reports it
+   leaves the repository.** Moving a job to another repo (a repo split
+   especially), deleting the workflow that defines it, or putting it behind
+   a `paths:` filter all have the same effect as renaming it: the name stays
+   required, nothing ever reports it, and every PR blocks with no failing
+   check to point at. Whenever CI jobs move or are removed, re-derive the
+   required contexts from a completed run and assert the list — in the
+   *source* repo of a move as well as the destination.
 
 So the protocol is: **convert one repo that runs the full Dependabot
 auto-merge apparatus, let one real Dependabot PR through end-to-end
@@ -170,6 +187,18 @@ auto-merge apparatus, let one real Dependabot PR through end-to-end
 then convert the rest.** If hazard 2 bites, the workflow needs a
 wait-for-checks step before `gh pr merge --auto`; fix that in the reference
 repo first so the sweep propagates the working shape.
+
+That test does not exercise hazard 3, so after converting each repo, and
+before moving to the next, assert that the required contexts survived:
+
+```sh
+ID=$(gh api "repos/pmgledhill102/$REPO/rulesets" --jq '.[0].id')
+gh api "repos/pmgledhill102/$REPO/rulesets/$ID" \
+  --jq '[.rules[]|select(.type=="required_status_checks")
+         |.parameters.required_status_checks[].context]'
+# Must list the same contexts the classic rule required. An empty list
+# means the conversion dropped them.
+```
 
 ## Pull request templates
 
@@ -241,12 +270,18 @@ running the auto-merge apparatus — no wider.
 - **Storage stays per-repo even though the token is shared.** A personal
   account has no organisation secrets, so the same token is stored under
   the same name in each repo's Dependabot store, which keeps the workflow
-  file byte-identical everywhere. Distribution and rotation are one loop:
+  file byte-identical everywhere. Distribution and rotation are one loop,
+  and the token goes in on stdin: `--body` would put it in `argv`, visible
+  to `ps` while the command runs, and whatever set the variable would sit
+  in shell history.
 
   ```sh
+  printf 'Fine-grained PAT (input hidden): '
+  read -rs TOKEN; echo
   for r in <tier-2 repos>; do
-    gh secret set AUTOMERGE_PAT --app dependabot --repo "pmgledhill102/$r" --body "$TOKEN"
+    printf '%s' "$TOKEN" | gh secret set AUTOMERGE_PAT --app dependabot --repo "pmgledhill102/$r"
   done
+  unset TOKEN
   ```
 
 - **Why shared:** per-repo tokens multiply minting, expiry tracking and
@@ -306,13 +341,28 @@ Current practice, from `/setup-common`: every repo gets gitleaks, cspell
 and semgrep jobs plus actionlint; language skills add their gates; GitHub
 Actions are pinned to commit SHAs.
 
-One rule is estate-wide **now**, because it is a safety invariant rather
-than a convention:
+Two rules are estate-wide **now**, because they are safety invariants
+rather than conventions:
 
 - **A repo with auto-merge enabled must require at least one status
   check.** Without one, `gh pr merge --auto` merges immediately — see the
   Dependabot section's never-combination. If a repo has no check worth
   requiring, it does not get auto-merge.
+- **A required status check's workflow must not be path-filtered at the
+  trigger.** GitHub's
+  [troubleshooting table](https://docs.github.com/en/pull-requests/collaborating-with-pull-requests/collaborating-on-repositories-with-code-quality-features/troubleshooting-required-status-checks)
+  states the failure and the fix: a workflow skipped by path filtering,
+  branch filtering or a commit message leaves its checks **Pending** and
+  blocks merging, whereas a job skipped by a conditional reports
+  **Success** — so "avoid requiring workflows that can be skipped", and
+  filter at the job or step level when a build needs it. Measured
+  2026-09-05: 19 of 21 required-check workflows already complied, and the
+  two that did not each had PRs that could never merge. `setup-common`'s
+  actionlint workflow is path-filtered by design and is therefore
+  ineligible as a required check. Two gotchas for anyone checking this:
+  contexts key on the job's `name:` when set, otherwise the job id; and
+  `on: [push, pull_request]` is unfiltered and fine, so a checker that
+  looks only for a `pull_request:` mapping raises a false positive on it.
 
 Deferred until after the migration, recorded so the discussion has a home:
 
@@ -323,9 +373,6 @@ Deferred until after the migration, recorded so the discussion has a home:
   standardised.
 - Whether a uniform minimum (lint + secrets) should be required on every
   active repo, with language gates required only where the language exists.
-- Whether path-filtered workflows can be required at all (a required check
-  that doesn't run on a docs-only PR blocks the merge unless a
-  skipped-equals-passed pattern is adopted).
 
 ## Verification: settings are not behaviour
 

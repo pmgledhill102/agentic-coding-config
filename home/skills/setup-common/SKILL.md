@@ -267,10 +267,12 @@ Add to `.github/workflows/ci.yml` (or create if needed):
 
 The gitleaks job's `permissions:` block is required: the default `GITHUB_TOKEN` no longer grants `pull-requests: read`, and `gitleaks-action` needs it in PR context to fetch the PR's commit list — without it, the first PR run fails with `403 Resource not accessible by integration`. Job-level rather than workflow-level keeps it least-privilege; cspell and semgrep don't need it.
 
-Create a separate `.github/workflows/actionlint.yml` with a path filter (or add to existing CI with the same filter). `rhysd/actionlint` publishes no GitHub Action to pin, so use the official download script rather than `rhysd/actionlint@main` (a mutable branch reference that fails the repo's own semgrep gate):
+Create a separate `.github/workflows/actionlint.yml` with a path filter. Because the filter is at the trigger, this workflow is **ineligible as a required check**: a required context whose workflow a PR's paths skip stays Pending forever and blocks the merge (the standard's Checks and CI section carries the rule), so keep `Actionlint` out of the ruleset's contexts list. `rhysd/actionlint` publishes no GitHub Action to pin, so use the official download script rather than `rhysd/actionlint@main` (a mutable branch reference that fails the repo's own semgrep gate):
 
 ```yaml
 name: Actionlint
+# Path-filtered at the trigger: never add this context to the ruleset's
+# required checks — a PR that skips it would block on a Pending check forever.
 on:
   push:
     paths: ['.github/workflows/**']
@@ -439,8 +441,13 @@ Restating those reasons here is what produced the failure the spec exists to end
 2. Store the token as a **Dependabot** secret (Settings → Secrets and variables → **Dependabot**), not an Actions secret. Dependabot-triggered runs read from the Dependabot store; a secret in the Actions store is simply empty at run time, with no error.
 
 ```sh
-gh secret set AUTOMERGE_PAT --app dependabot --repo "<owner>/<repo>" --body "$TOKEN"
+printf 'Fine-grained PAT (input hidden): '
+read -rs TOKEN; echo
+printf '%s' "$TOKEN" | gh secret set AUTOMERGE_PAT --app dependabot --repo "<owner>/<repo>"
+unset TOKEN
 ```
+
+The token goes in on stdin rather than `--body`: `--body` puts the secret in `argv`, visible to `ps` while the command runs, and whatever set the variable sits in shell history.
 
 Permissions are Contents read/write plus Pull requests read/write, and no more. Contents write is the floor, not an over-grant: the merge writes to the base branch, and GitHub has no narrower "may merge but not push" permission.
 
