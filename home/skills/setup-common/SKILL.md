@@ -22,7 +22,15 @@ charset = utf-8
 indent_style = space
 indent_size = 2
 
-[*.{go,py}]
+# Go and Python both indent by 4, but they cannot share a section: gofmt emits
+# tabs and has no option not to, so a Go file left on the `[*]` default of
+# `space` puts the editor and the formatter in a fight from the moment this
+# file is stamped.
+[*.go]
+indent_style = tab
+indent_size = 4
+
+[*.py]
 indent_size = 4
 
 [Makefile]

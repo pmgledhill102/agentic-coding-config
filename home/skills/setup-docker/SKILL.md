@@ -34,10 +34,18 @@ Append this repo to the existing `.pre-commit-config.yaml`:
   - repo: https://github.com/hadolint/hadolint
     rev: <latest tag>
     hooks:
-      - id: hadolint-docker
+      - id: hadolint
 ```
 
 Look up the latest release tag and use it for the `rev:` value.
+
+`id: hadolint` runs the locally installed `hadolint` binary, so it is a
+prerequisite: check it is on `PATH` and, if it isn't, tell the user to install
+it (`brew install hadolint`) and stop. Use it in preference to the
+`hadolint-docker` variant, which runs the linter in a container: on a machine
+with no working Docker daemon that hook does not skip, it aborts the entire
+pre-commit run with exit 3, which blocks every commit in the repo rather than
+just the Dockerfile check.
 
 ### 4. GitHub Actions workflow
 
@@ -100,6 +108,12 @@ Read `.github/dependabot.yml` and add the `docker` ecosystem entry if it isn't a
 ### 6. Verify
 
 Run `pre-commit run --all-files` to confirm hooks work. Fix any lint issues.
+
+Check the command's exit code, not just the per-hook lines: a hook whose
+runtime is missing aborts the whole run and is reported as neither `Passed` nor
+`Failed` against any hook. Exit 0 means every hook passed and exit 1 means a
+hook found issues — anything else is a broken hook configuration, not a lint
+failure, and must be fixed before the setup is finished.
 
 ## Important
 
