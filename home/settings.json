@@ -283,6 +283,8 @@
       "Bash(~/.claude/bin/gh-pr-checks-wait *)",
       "Bash(~/.claude/bin/gcp-credentials status)",
       "Bash(~/.claude/bin/gcp-credentials release)",
+      "Bash(~/.claude/bin/estate-report)",
+      "Bash(~/.claude/bin/estate-report *)",
       "mcp__github__add_comment_to_pending_review",
       "mcp__github__add_issue_comment",
       "mcp__github__add_reply_to_pull_request_comment",
