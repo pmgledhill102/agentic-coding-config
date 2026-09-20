@@ -120,6 +120,20 @@ jobs:
       - name: The spec must hold its own invariants
         run: python3 tests/github-repo-standard.py
 
+  estate-report:
+    name: estate-report thresholds
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # The report's whole claim over doing this in skill prose is that its
+      # arithmetic is exact. A wrong threshold renders a plausible table, and a
+      # plausible table is what someone picks a day's work from. The test pulls
+      # the jq filters out of the shipped script rather than holding a copy, so
+      # it cannot pass against logic that no longer ships. No network needed.
+      - name: Flag thresholds and bucketing
+        run: sh tests/estate-report-test.sh
+
   actionlint:
     name: Action Lint
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository

@@ -118,6 +118,29 @@ by. `refresh` is started by `request` and is not meant to be invoked directly.
 See `home/commands/gcp-credentials.md` for the flow, and ADR 021 in
 `pmgledhill102/gcp-org-management` for the design.
 
+### Estate report
+
+- `Bash(~/.claude/bin/estate-report)`
+- `Bash(~/.claude/bin/estate-report *)`
+
+Two rules because the bare command is the common case and the matcher treats
+`estate-report *` as requiring at least one argument — a single prefix rule
+would leave the no-argument form prompting every time, which is the failure
+[#237](https://github.com/pmgledhill102/agentic-coding-config/issues/237)
+found across all four session-lifecycle rules.
+
+Approved unattended because the script is read-only in the strongest sense:
+every call it makes is a `GET`, it writes nothing outside a `mktemp -d` it
+removes on exit, and it has no flag that changes anything. The flags it does
+take only narrow what it reads (`--owner`, `--repos`) or change the rendering
+(`--json`), so `estate-report *` cannot reach a destructive mode — there
+isn't one.
+
+Note what this does *not* approve: the report's **output** is estate evidence,
+naming private repos and what is wrong in them. Running it freely is fine;
+committing or pasting a run into a public issue is not. See the `estate`
+skill for that rule.
+
 ### draw.io (CLI export, read-only)
 
 - `Bash(/Applications/draw.io.app/Contents/MacOS/draw.io *)`
