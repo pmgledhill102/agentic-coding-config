@@ -61,7 +61,7 @@ the `retired-paths` list that just arrived through the external.
 
 ## The interactive shell is zsh
 
-Two differences from bash bite silently, which is why loops belong in a
+Three differences from bash bite silently, which is why loops belong in a
 script file run with `sh` or `bash` rather than composed inline:
 
 - **No word-splitting on unquoted variables.** `set -- $TWO_WORDS` splits
@@ -71,6 +71,10 @@ script file run with `sh` or `bash` rather than composed inline:
 - **`:` is a modifier.** `"$MODEL:generateContent"` flirts with zsh's
   `:g`-style parameter-modifier parsing; write `${MODEL}:generateContent`.
   A bare `$VAR:` in a URL is a trap
+- **`ls` here is eza, which prints nothing when piped.** `ls -a1 | grep …`
+  yields an empty stream rather than an error, so an empty listing reads as a
+  deleted working tree. Parse `find . -maxdepth 1`, `/bin/ls` or `git ls-files`
+  instead; bare `ls` for human eyes is fine
 
 Empty arrays also behave differently in zsh under `set -u`.
 
