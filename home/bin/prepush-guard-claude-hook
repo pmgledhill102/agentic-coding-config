@@ -24,6 +24,99 @@
 
 set -u
 
+# --- Path helpers for resolving the repo the push targets. ----------------
+
+# unsafe_path is true for a path this hook cannot know before the command
+# runs: a variable, a command substitution, a glob, a quoted or ~-relative
+# path. Guessing at one is how a guard blocks the wrong repository.
+unsafe_path() {
+    case "$1" in
+        '' | *'$'* | *'`'* | *'*'* | *'?'* | *'"'* | *"'"* | '~'*) return 0 ;;
+    esac
+    return 1
+}
+
+join_path() {
+    case "$2" in
+        /*) printf '%s' "$2" ;;
+        *) printf '%s/%s' "$1" "$2" ;;
+    esac
+}
+
+# segment_scan classifies one command segment, given the directory the shell
+# is in when it runs. Prints "cd:<dir>" for a directory change, "push:<dir>"
+# for a git push and the directory it would run in, or nothing. Returns
+# non-zero when the segment names a path that cannot be resolved statically.
+#
+# Runs in a subshell so `set --` and IFS stay local.
+segment_scan() (
+    dir=$2
+    IFS=' 	'
+    # shellcheck disable=SC2086  # deliberate: split the segment into words.
+    set -- $1
+    [ $# -gt 0 ] || return 0
+    case "$1" in
+        cd)
+            # A bare `cd` goes to $HOME, which is not a push target worth
+            # guessing at, so treat it as unresolvable.
+            [ $# -ge 2 ] || return 1
+            unsafe_path "$2" && return 1
+            printf 'cd:%s' "$(join_path "$dir" "$2")"
+            ;;
+        git)
+            shift
+            while [ $# -gt 0 ]; do
+                case "$1" in
+                    -C)
+                        [ $# -ge 2 ] || return 1
+                        unsafe_path "$2" && return 1
+                        dir=$(join_path "$dir" "$2")
+                        shift 2
+                        ;;
+                    -c | --git-dir | --work-tree | --namespace)
+                        [ $# -ge 2 ] || return 1
+                        shift 2
+                        ;;
+                    -*) shift ;;
+                    *) break ;;
+                esac
+            done
+            [ "${1:-}" = "push" ] && printf 'push:%s' "$dir"
+            ;;
+    esac
+    return 0
+)
+
+# resolve_push_dir prints the directory the push runs in. Returns non-zero
+# when no push segment resolves, which the caller treats as "skip".
+#
+# A PreToolUse hook fires BEFORE the command runs, so the payload's cwd is
+# where the shell already is -- not where `cd /other/clone && git push` is
+# about to be. Reading it blindly evaluates the wrong repository, and because
+# a PreToolUse denial rejects the WHOLE Bash call, the false positive also
+# destroys any heredoc or file write earlier in the same command. That cost a
+# rewritten script three times in one session (#404), which is why anything
+# unresolvable skips the guard instead of guessing: an unguarded push costs
+# one orphan branch, a false positive costs the whole tool call.
+resolve_push_dir() (
+    dir=$1
+    IFS='
+'
+    # shellcheck disable=SC2046,SC2086  # deliberate: split on the separators.
+    set -- $(printf '%s' "$cmd" | tr ';&|' '\n')
+    for seg in "$@"; do
+        out=$(segment_scan "$seg" "$dir") || return 1
+        case "$out" in
+            push:*)
+                printf '%s' "${out#push:}"
+                return 0
+                ;;
+            cd:*) dir=${out#cd:} ;;
+        esac
+    done
+    return 1
+)
+
 # --- Read payload; degrade gracefully without jq. -------------------------
 command -v jq >/dev/null 2>&1 || exit 0
 payload=$(cat)
@@ -31,8 +124,13 @@ cmd=$(printf '%s' "$payload" | jq -r '.tool_input.command // empty')
 cwd=$(printf '%s' "$payload" | jq -r '.cwd // empty')
 
 # --- Fast-exit: fires on EVERY Bash call, so not-a-push must be cheap. ----
+# Matching the literal phrase "git push" missed `git -C <path> push`, which is
+# one of the two shapes #404 is about -- so the guard silently waved through
+# exactly the cross-repo form it was being fixed to handle. This is the cheap
+# half of the test; resolve_push_dir below does the positional match, the way
+# precommit-claude-hook already classifies.
 case "$cmd" in
-  *"git push"*) ;;
+  *push*) ;;
   *) exit 0 ;;
 esac
 case "$cmd" in
@@ -43,20 +141,17 @@ esac
 
 command -v gh >/dev/null 2>&1 || exit 0
 
-# --- Resolve the branch being pushed (current branch; see limitation). ----
-if [ -n "$cwd" ]; then
-  git() { command git -C "$cwd" "$@"; }
-fi
-branch=$(git symbolic-ref --short -q HEAD) || exit 0   # detached HEAD
-default=$(git symbolic-ref --short -q refs/remotes/origin/HEAD | sed 's|^origin/||')
+# --- Resolve the repo the push targets, then its branch (see limitation). -
+target=$(resolve_push_dir "${cwd:-$PWD}") || exit 0
+[ -n "$target" ] || exit 0
+root=$(git -C "$target" rev-parse --show-toplevel 2>/dev/null) || exit 0
+
+branch=$(git -C "$root" symbolic-ref --short -q HEAD) || exit 0   # detached HEAD
+default=$(git -C "$root" symbolic-ref --short -q refs/remotes/origin/HEAD | sed 's|^origin/||')
 [ -n "$default" ] && [ "$branch" = "$default" ] && exit 0
 
 # --- Ask GitHub. Any failure (no PR, offline, auth) -> allow. -------------
-if [ -n "$cwd" ]; then
-  pr=$(cd "$cwd" && gh pr view "$branch" --json state,number,url 2>/dev/null) || exit 0
-else
-  pr=$(gh pr view "$branch" --json state,number,url 2>/dev/null) || exit 0
-fi
+pr=$(cd "$root" && gh pr view "$branch" --json state,number,url 2>/dev/null) || exit 0
 state=$(printf '%s' "$pr" | jq -r '.state // empty')
 case "$state" in
   MERGED|CLOSED) ;;
