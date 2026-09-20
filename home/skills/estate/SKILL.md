@@ -83,12 +83,25 @@ mcp__github__list_pull_requests  state: open, perPage: 100,
 `body` alone will overflow the result across ~40 repos. Nothing here needs
 bodies: titles, labels and dates carry every signal the table uses.
 
-**Count the rows you received. Do not trust `totalCount`.** Observed on this
-estate: a first page reported `totalCount: 80` and a second `63`, while the two
-pages together returned 76 rows — the correct figure. Whatever the cause, a
-count read straight off the field is wrong by a margin large enough to change
-which repo looks worst, and wrong silently. Page until `hasNextPage` is false,
-using `after: <endCursor>`, and sum what actually arrived.
+**The read is not atomic.** With `perPage: 100` most repos return in a single
+call, and that repo's figures are a true snapshot. Where a repo needs paging,
+the set can move underneath you between calls.
+
+Observed while building this: a first page reported `totalCount: 80` and a
+second `63`. Neither was wrong — roughly twenty issues were genuinely closed in
+a concurrent session between the two calls, and each figure was accurate for
+its moment. The unreliable number was the one derived by summing rows across
+both pages, which splices two different points in time.
+
+So: page until `hasNextPage` is false using `after: <endCursor>`, and print the
+run's start time so the table carries its own as-of. A multi-page repo's numbers
+are a smear across the run, not a snapshot — which is fine for choosing where to
+spend a day, and not fine for anything that needs to reconcile.
+
+**Do not conclude the API is wrong.** Two figures disagreeing across calls is
+far more likely to be concurrent work than a platform defect, and this estate's
+standing rule is to treat "the platform is broken" as the last hypothesis.
+Sessions run in parallel here; the backlog moving mid-read is normal life.
 
 Never use `search_issues` for this. It is eventually consistent, and a backlog
 view built on a stale index reports confident wrong numbers.
