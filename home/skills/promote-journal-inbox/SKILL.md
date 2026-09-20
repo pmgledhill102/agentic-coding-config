@@ -20,7 +20,23 @@ If the first command's exit code is non-zero (or stdout is not `true`), abort wi
 
 If `basename` doesn't match `paul-context`, abort with `promote-journal-inbox must run from a paul-context checkout, not <where>` and stop. The test is the repo, not the path: a clone at any location passes, which is what lets this run in a sandbox as well as on a workstation.
 
-If the working tree is dirty (`git status --porcelain` non-empty), surface the dirty paths and ask the user to commit/stash before promotion. Don't bundle unrelated changes into journal commits.
+Check the three things that can actually contaminate a journal commit, rather than the whole tree:
+
+```sh
+git diff --cached --quiet || echo "staged changes present"
+git diff --quiet        || echo "tracked files modified"
+git ls-files --others --exclude-standard -- journal/
+```
+
+If any of them reports, surface those paths and ask the user to commit or stash before promotion. Otherwise proceed, whatever else is lying around untracked.
+
+**Untracked files outside `journal/` are deliberately not blocking, and that is not an oversight to tidy back into a whole-tree check.** Every stage in this skill names an explicit path — `git add journal/<filename>`, at Phase 1 step 3 and Phase 2 step 5 — and there is no `git add -A`, no `git add .` and no `git commit -a` anywhere in it. So an untracked file elsewhere in the tree cannot reach a journal commit: the old gate blocked on a hazard the rest of the skill already makes impossible. One unrelated untracked note cost a stash, a promotion, a pop, a second stash when `end-session` hit the same tree, and a blocking question to the user with no bearing on the outcome (#419).
+
+What stays blocking, and why each one is a real path into a journal commit:
+
+- **Staged changes.** `git commit` commits the whole index, not just the paths named in the preceding `git add`, so anything staged before this skill ran lands in the first journal commit. This is the true version of the hazard the old gate was aimed at.
+- **Tracked-but-modified files.** The same, the moment they are staged.
+- **Untracked files inside `journal/`.** One can collide with a draft about to be written there, and the conflict check only tests `journal/<filename>` for the drafts actually being drained.
 
 ## Phase 1 — Filesystem inbox drain
 
