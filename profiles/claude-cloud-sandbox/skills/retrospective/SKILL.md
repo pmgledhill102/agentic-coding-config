@@ -203,16 +203,18 @@ Wait for explicit confirmation. Don't proceed on ambiguous input.
    - **Derive the filename.** `<source-repo-slug>` = sanitised basename of `git remote get-url origin` from the current cwd (lowercase, `[a-z0-9-]+`). If no git remote, use `basename "$PWD"`. `<topic-slug>` = kebab-cased session summary, ≤5 words. `<filename>` = `<YYYY-MM-DD>-<source-repo-slug>-<topic-slug>.md`.
    - **Resolve same-project same-day collisions** at write-time: if an open Issue with the same title already exists, append `-2`, `-3`, … before `.md` until unique. Rare in practice — same project, same day, same topic — but the suffix prevents silent merge of two distinct retros.
    - **Stage the draft first, always.** `Write` the journal markdown to `/tmp/<filename>`. `Edit(/tmp/**)` is auto-allowed on every surface (and `Edit` rules cover the `Write` tool), so this write always succeeds and the draft exists on disk before any network call. Nothing below can lose it.
-   - **Then file it as an Issue — on every surface, with no branch.** Create the issue on `pmgledhill102/paul-context` with the `journal-draft` label and the title `journal: <filename-without-.md>`, body taken from the staged file. Prefer `mcp__github__issue_write`; the `gh` form is the portable fallback:
+   - **Then file it as an Issue — on every surface, with no branch.** Create the issue on `pmgledhill102/paul-context` with the `journal-draft` and `P4` labels and the title `journal: <filename-without-.md>`, body taken from the staged file. Prefer `mcp__github__issue_write`; the `gh` form is the portable fallback:
 
      ```sh
      gh issue create --repo pmgledhill102/paul-context \
-         --label journal-draft \
+         --label journal-draft --label P4 \
          --title "journal: <filename-without-.md>" \
          --body-file /tmp/<filename>
      ```
 
      The `journal-draft` label and the `journal:` (with trailing space) title prefix are how `/promote-journal-inbox` finds the draft. Promotion infers the eventual filename by stripping `journal:` (with trailing space) from the Issue title and appending `.md`, so the filename is stable from draft → committed.
+
+     **`P4` is load-bearing, not decoration — don't drop it as noise.** `estate-report` counts an issue with no `P0`–`P4` label as untriaged and flags a repo above five of them, so unlabelled drafts accumulate into a flag that points at the journal inbox rather than at any real triage debt. A priority keeps them out of that count. `P4` is also the honest reading: a draft awaiting a mechanical move is the lowest-urgency thing in the repo.
 
      **Never copy the draft into a local `_incoming/` instead.** That route used to be preferred and was the worse of the two: `_incoming/*` is gitignored, so a copy there cannot be committed and dies with the container — during `end-session`, exactly when the container is about to be walked away from. An Issue is durable the instant it is created, and is the same route on every surface.
    - **If the Issue create fails** (offline, no GitHub route): print the full draft to the session log with clear `===BEGIN JOURNAL===` / `===END JOURNAL===` delimiters and tell the user to save it manually. The staged `/tmp` copy also still exists. Don't silently discard content.
