@@ -68,6 +68,35 @@ Two readings that are easy to get wrong:
   not twelve tasks. Counting it as backlog inflates the repo's apparent load
   and points the day at the wrong work.
 
+## Whole-estate runs need a workstation; scoped runs work anywhere
+
+An agent sandbox **binds a session to its configured repositories** and refuses
+every GitHub path reaching wider — `/user/repos` and
+`/installation/repositories` both 403. That refusal sits upstream of the
+credential, so **no token at any scope changes it**, and the session's identity
+still resolves fine. If a run here exits 2 saying so, that is the binding, not
+a permissions problem to solve.
+
+So:
+
+- **Whole estate** — run on the workstation, where enumeration works.
+- **Scoped** — `--repos a,b,c` over the repos a session actually has. This is a
+  **supported mode, not a consolation prize**: a cloud session with four or
+  five deliberately chosen repos gives a real report over them, and the flags
+  mean exactly what they always mean.
+
+A scoped run labels itself, and that label is the point:
+
+```text
+estate — 4 repos, as of 2026-09-20T10:08Z  (SCOPED: --repos, not the whole estate)
+```
+
+**Never present a scoped table as the estate.** Without that marker a report
+omitting thirty-five repos reads exactly like one omitting none — nothing in it
+looks wrong, which is what makes it worse than an error. `--json` carries the
+same `scoped` field for the same reason. When summarising a scoped run, say
+which repos it covered.
+
 ## Some repos are excluded, and the report says so
 
 `lifeos` and `lifeos-sandbox` keep a personal to-do list in Issues rather than
@@ -114,11 +143,10 @@ The script exits non-zero and says why. Relay the reason; **never substitute a
 partial view for a clean one**.
 
 - **Exit 1, no token** — needs `GH_TOKEN`, `GITHUB_TOKEN`, or `gh auth login`.
-- **Exit 2, nothing enumerated** — usually a repo-scoped token, such as a
-  sandbox installation token, which cannot list an account's repositories.
-  `--repos a,b,c` works around it for a known set. A separate exit-2 message
-  covers the case where everything found was excluded, so don't go debugging
-  credentials over a list you wrote yourself.
+- **Exit 2, session bound to its configured repositories** — see the section
+  above. Not a credential problem; do not go looking for a better token.
+- **Exit 2, everything was excluded** — a distinct message, so nobody debugs
+  credentials over a list they wrote themselves.
 - **`not checked` lines** — those repos are **unknown, not clean**. Say so when
   summarising. A repo dropped silently is indistinguishable from a healthy one,
   which is the exact failure the report exists to catch.
