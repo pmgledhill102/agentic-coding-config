@@ -98,7 +98,7 @@ flag_for() { # flag_for <json overrides> -- the derived flag
       {repo:"r", open:10, p0:0, p1:0, p24:10, untriaged:0,
        human:0, bot:0, oldest_human:0, oldest_bot:0, push_age:1,
        exceptions:[]} * .' \
-    | jq -s -r --arg now t -f "$WORK/render.jq" \
+    | jq -s -r --arg now t --arg scoped no -f "$WORK/render.jq" \
     | sed -n 's/^r  *[0-9].*  \([a-zA-Z0-9]*\)$/\1/p'
 }
 
@@ -128,7 +128,7 @@ check "big active backlog is unflagged" "" \
 QUIET=$(echo '{"repo":"sleepy", "open":0, "p0":0, "p1":0, "p24":0, "untriaged":0,
                "human":0, "bot":0, "oldest_human":0, "oldest_bot":0,
                "push_age":300, "exceptions":[]}' \
-        | jq -s -r --arg now t -f "$WORK/render.jq")
+        | jq -s -r --arg now t --arg scoped no -f "$WORK/render.jq")
 check "quiet repo is collapsed" "1" "$(echo "$QUIET" | grep -c '^quiet (1): sleepy$')"
 check "quiet repo has no row"   "0" "$(echo "$QUIET" | grep -c '^sleepy  ')"
 
@@ -216,6 +216,61 @@ check "json carries excluded names"   '["lifeos","lifeos-sandbox"]' \
       "$(echo "$JOUT" | jq -c '.excluded')"
 check "json omits excluded repos"     "0" \
       "$(echo "$JOUT" | jq '[.repos[] | select(.repo | startswith("lifeos"))] | length')"
+
+# --- scoped versus whole-estate runs ---------------------------------------
+# A scoped run is a supported mode: a cloud session bound to four or five
+# deliberately attached repos gives a real report over them. The danger is not
+# that it runs, it is that its table used to render identically to a
+# whole-estate one -- so a report omitting thirty-five repos looked exactly
+# like one omitting none, with nothing in it appearing wrong.
+
+OUT=$(run_stubbed)
+check "enumerated runs are not scoped" "0" "$(echo "$OUT" | grep -c 'SCOPED')"
+
+OUT=$(run_stubbed --repos alpha,beta)
+check "--repos labels itself scoped"   "1" \
+      "$(echo "$OUT" | head -1 | grep -c '(SCOPED: --repos, not the whole estate)$')"
+
+check "json marks an enumerated run"   "false" \
+      "$(run_stubbed --json | jq -c '.scoped')"
+check "json marks a scoped run"        "true" \
+      "$(run_stubbed --repos alpha --json | jq -c '.scoped')"
+
+# --- the session-binding refusal -------------------------------------------
+# An agent sandbox refuses /user/repos upstream of the credential. Blaming the
+# token sends the reader after a better PAT that cannot exist at any scope, so
+# the message has to name the binding. This is the exact body the proxy returns.
+cat > "$WORK/bin/curl" <<'STUB'
+#!/bin/sh
+out=/dev/null
+url=""
+while [ $# -gt 0 ]; do
+    case "$1" in
+        -o) shift; out="$1" ;;
+        -H|-w|--max-time) shift ;;
+        https://*) url="$1" ;;
+        *) ;;
+    esac
+    shift
+done
+case "$url" in
+    */user/repos*)
+        printf '%s' '{"message":"This GitHub API path is not available: sessions are bound to their configured repositories. Use repository-scoped endpoints (repos/{owner}/{repo}/...)."}' > "$out"
+        echo 403 ;;
+    *) cat "$FIXTURES/meta.json" > "$out"; echo 200 ;;
+esac
+STUB
+chmod +x "$WORK/bin/curl"
+
+OUT=$(run_stubbed); RC=$?
+
+check "binding refusal exits 2"        "2"   "$RC"
+check "it names the session binding"   "1" \
+      "$(echo "$OUT" | grep -c 'bound to its configured repositories')"
+check "it does not blame the token"    "1" \
+      "$(echo "$OUT" | grep -c 'not the token')"
+check "it offers the scoped route"     "1"   "$(echo "$OUT" | grep -c '\-\-repos a,b,c')"
+check "it offers the workstation"      "1"   "$(echo "$OUT" | grep -c 'run on a workstation')"
 
 # --- summary ---------------------------------------------------------------
 if [ "$FAIL" -gt 0 ]; then

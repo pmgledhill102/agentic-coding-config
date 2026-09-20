@@ -137,16 +137,45 @@ JQ
 # desertfoxclan is explicitly not part of this estate.
 : > "$WORK/excluded"
 
+# Whether this run covers the estate or a chosen subset. A scoped run is a
+# supported mode, not a degraded one -- a cloud session with four or five
+# deliberately attached repos gives a genuinely useful report. What it must
+# never do is render identically to a whole-estate run, because then a table
+# that omits thirty-five repos looks exactly like one that omits none.
+SCOPED=no
+
 if [ -n "$REPO_LIST" ]; then
     # An explicit list is an instruction, so the exclusions do not apply to it:
     # naming an excluded repo here is how you deliberately look at one.
     echo "$REPO_LIST" | tr ',' '\n' | sed '/^$/d' > "$WORK/repos"
+    SCOPED=yes
 else
     page=1
     : > "$WORK/repos"
     while [ "$page" -le 10 ]; do
         code=$(get "/user/repos?per_page=100&affiliation=owner&page=$page" "$WORK/page.json")
-        [ "$code" = "200" ] || { echo "estate-report: repo list failed (HTTP $code)" >&2; break; }
+        if [ "$code" != "200" ]; then
+            # A 403 here is usually not about the credential. An agent sandbox
+            # binds a session to its configured repositories and refuses every
+            # GitHub path that reaches wider -- /user/repos and
+            # /installation/repositories alike -- upstream of the token, so no
+            # token at any scope changes it. Saying "your token is too narrow"
+            # sends the reader hunting for a better PAT that cannot exist.
+            # `grep -q` rather than a jq parse: the body is the proxy's, not
+            # GitHub's, so it is not guaranteed to be JSON at all.
+            if [ "$code" = "403" ] &&
+                grep -q "bound to their configured repositories" "$WORK/page.json" 2> /dev/null; then
+                echo "estate-report: this session is bound to its configured repositories," >&2
+                echo "  so the estate cannot be enumerated here. This is the sandbox's session" >&2
+                echo "  binding, not the token -- no credential changes it." >&2
+                echo "" >&2
+                echo "  For a scoped report, pass the repos this session has: --repos a,b,c" >&2
+                echo "  For the whole estate, run on a workstation." >&2
+                exit 2
+            fi
+            echo "estate-report: repo list failed (HTTP $code)" >&2
+            break
+        fi
         count=$(jq 'length' "$WORK/page.json")
         jq -r --arg o "$OWNER" \
             '.[] | select(.archived | not) | select(.owner.login == $o) | .name' \
@@ -265,7 +294,9 @@ map(. + {flag: flag}) as $rows
 | ($rows | map(select(.flag != "quiet")) | sort_by(rank, -.open)) as $active
 | ($rows | map(select(.flag == "quiet")) | map(.repo) | sort)     as $quiet
 | ($rows | map(.exceptions[] + {repo: .repo}) | sort_by(.p, .repo)) as $exc
-| [ "estate — \($rows | length) repos, as of \($now)",
+| [ "estate — \($rows | length) repos, as of \($now)"
+    + (if $scoped == "yes"
+       then "  (SCOPED: --repos, not the whole estate)" else "" end),
     "",
     "P0 / P1 across the estate (\($exc | length))",
     ""
@@ -287,12 +318,15 @@ JQ
 NOW=$(date -u +%Y-%m-%dT%H:%MZ)
 
 if [ "$FORMAT" = json ]; then
-    jq -s --arg now "$NOW" --arg owner "$OWNER" --rawfile exc "$WORK/excluded" \
+    jq -s --arg now "$NOW" --arg owner "$OWNER" --arg scoped "$SCOPED" \
+        --rawfile exc "$WORK/excluded" \
         '{generated_at: $now, owner: $owner,
+          scoped: ($scoped == "yes"),
           excluded: ($exc | split("\n") | map(select(length > 0))),
           repos: .}' "$WORK/rows.jsonl"
 else
-    jq -s -r --arg now "$NOW" -f "$WORK/render.jq" "$WORK/rows.jsonl"
+    jq -s -r --arg now "$NOW" --arg scoped "$SCOPED" \
+        -f "$WORK/render.jq" "$WORK/rows.jsonl"
 fi
 
 # --- 3a. exclusions --------------------------------------------------------
