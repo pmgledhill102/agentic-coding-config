@@ -18,4 +18,5 @@ Where the pre-flight reported `repo_candidates`, open with a scope line — `Tid
 - Background processes (user-owned, surfaced): `<count>`
 - GCP sandbox project created this session: `<project, "none", "n/a (no GCP grant this session)", or "n/a (broker client absent)", or "n/a (broker client predates this check)">` — surface only; it is the repo's, shared, and auto-deleted at its TTL, so it is never deleted here
 - Could not prune (remote ref deletion refused): `<list or omit>`
+- Armed check-in triggers: `<count, "none", or "n/a (not checked)">` — surfaced only; deletion is the user's (step 14b)
 - Anything skipped/surfaced: `<list>`
