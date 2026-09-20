@@ -679,12 +679,13 @@ esac
 # absent pending a currency review: they are repo-scaffolding procedures that a
 # sandbox session rarely needs, and they predate this surface by some months.
 #
-# WHY THESE FETCH A PRE-BUILT SKILL.md AND gcp-credentials DOES NOT: the 17
-# skills under `home/skills/` are checked in with frontmatter and guarded
-# against drifting from their source command by tests/skills-match-commands.py.
-# There is nothing to synthesise, so this loop just fetches. The credential
-# skill above predates that machinery and is still generated from its command
-# file at install time; when it joins `home/skills/` these two paths merge.
+# WHY THESE FETCH A PRE-BUILT SKILL.md AND gcp-credentials DOES NOT: every
+# skill named in the two lists below is already a finished SKILL.md with its
+# frontmatter written — checked in under `home/skills/`, or, for a composed
+# skill, built under `profiles/<profile>/skills/` and checked in there. There
+# is nothing to synthesise, so this loop just fetches. The credential skill
+# above predates that machinery and is still generated from its command file
+# at install time; when it joins the checked-in set these two paths merge.
 #
 # TWO LISTS, BECAUSE THERE ARE TWO SOURCES (#265). A composed skill has a
 # per-surface body: the sandbox variant calls the GitHub MCP server where the
