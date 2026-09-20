@@ -123,12 +123,20 @@ Sections where empty output is expected (e.g., `merged_brs` grep returning no ma
 
 ## The squash-merged script
 
-Emits branches that satisfy both:
+Lists every local branch whose upstream is gone (`upstream: gone` — the tracking branch was deleted upstream, typical after a GitHub squash-merge + auto-delete), one per line:
 
-1. `upstream: gone` — the tracking branch was deleted upstream (typical after a GitHub squash-merge + auto-delete).
-2. `git diff --quiet main..<branch>` succeeds — the branch's tree is already represented on main.
+```text
+<branch> tip=<sha> diff=<empty|differs> pr=<sha-match|newer-commits|none|unchecked>
+```
 
-Both are required. Rule 1 alone would include legitimate un-merged branches whose remote was deleted; rule 2 alone can't easily distinguish branches the user hasn't merged yet. Together, they identify branches whose content has landed via squash-merge and are safe for `-D`.
+**It reports evidence; it does not decide.** That is the change #302 and #435 forced, and both halves are worth keeping written down, because the previous contract read as a proof and was not one:
+
+- `diff=` is a two-dot *tree* diff against `main`. It answers "does this branch's tree still match main's tip", not "did this work land", so it flips to `differs` the moment `main` advances past the squash — minutes, on an active repo. The old design treated the empty case as the common one; on a repo taking merges it is the rare one.
+- `pr=` is a merged-PR lookup through `gh`, which is absent or proxy-403ed on a cloud sandbox, so `unchecked` is the sandbox's permanent answer. It matches on `headRefOid` against the branch's local tip. Matching on head ref *name* — what it did before — calls a branch merged when commits were pushed to it after its PR merged, and `-D` on that branch destroys commits held nowhere else.
+
+The containment proof therefore lives in the skill body, which reaches GitHub through the MCP server on every surface: one batched `list_pull_requests(state: "closed")`, and a candidate qualifies only when a **merged** PR carries it as `head.ref` *and* that PR's `head.sha` equals the reported `tip=`. See step 6 Batch B in the composed skill.
+
+**Open, and deliberately not settled here:** `paul-context`'s `prune-merged-branches.sh` answers the same "is this branch merged?" question in its own way. Whether the two should share one definition is a cross-repo question ([#435](https://github.com/pmgledhill102/agentic-coding-config/issues/435), fourth acceptance box) and is not reconciled by this change.
 
 ## Permission model
 

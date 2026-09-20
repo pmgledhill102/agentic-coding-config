@@ -30,7 +30,8 @@ This command **requires a git-backed repository** — but it does not check for 
 So make **no standalone Bash call before the gather**. Run the gather (Phase 1) and branch on what it reports:
 
 - **`repo_resolution`** — cwd was not a repo, exactly one repo sat beneath it, and the gather ran there. `cd` to its `repo=` value before any later step (the script's own `cd` died with it), and name the repo in the summary. No prompt: one candidate is not a choice.
-- **`repo_candidates`** — several repos sat beneath cwd. It is the only section and the script exits 2. List the candidates, ask which, `cd` there, and re-run the gather. Never guess.
+- **`repo_candidates`** — several repos sat beneath cwd. It is the only section and the script exits 2, but it does not come back empty-handed: each `candidate=` line carries that repo's own `dirty=`, `unpushed=` and `stashes=` counts, probed read-only and without network ([#450](https://github.com/pmgledhill102/agentic-coding-config/issues/450)). Report **every** candidate with its counts before asking anything — a repo nobody chose is otherwise a repo nobody looked at, and on a sandbox a non-zero `unpushed=` is work one reclaimed container away from gone whichever repo it sits in. Then ask which repo to tidy, `cd` there, and re-run the gather. Never guess.
+  The tidy-up runs in the chosen repo only. The others were **checked, not cleaned** — carry that distinction into the step 15 summary, which has a scope line for it, rather than letting one repo's "none" stand for the container.
 - **`not_a_git_repo`** — no repo in cwd and none beneath it. Print the line it contains and stop. Do not run any further checks, do not proceed to Phase 2.
 
 ## Surface
@@ -206,8 +207,8 @@ soon after this skill finishes — so deleting them achieves nothing and costs a
 prompt. Report `n/a (sandbox — container discarded)` in the step 15 summary and
 move on.
 
-Do not run `end-session-squash-merged` here either. It exists to decide which
-branches are safe to delete, and nothing is being deleted.
+Do not run `end-session-squash-merged` here either. It lists the branches a
+delete decision would be made about, and nothing is being deleted.
 
 **This is a skip of *cleanup*, never of *push*.** The distinction matters more
 here than anywhere else in this skill: a local branch left behind costs
@@ -357,11 +358,17 @@ From gather section `gcp_projects`. The first line is `state=`:
 
 `helper-too-old` is not a fault. A container pins the broker client at the SHA its bootstrap ran, while this skill arrives with whatever composed it, so a session can hold a helper that has never heard of this check. It resolves itself when the container next picks up current config, and until then the honest report is that the question could not be asked — not that nothing was created.
 
-For each `created=` line, surface:
+For each `created=` line, surface three things in one block — what exists, why this session is leaving it, and the one route that would remove it:
 
 > created `<project>` — this repo's sandbox, built by this session's approval. Shared with every later session on the repo, and auto-deleted when its TTL lapses (7 days by default).
+>
+> Leaving it because `<this session's own read: the work it was built for is ongoing / it is the repo's only sandbox / nothing about how it came to exist looks like a mistake>`.
+>
+> If that read is wrong, `~/.claude/bin/gcp-credentials teardown` asks for it to be destroyed — one human approval, and this session's grant goes with it. Otherwise it expires on its own.
 
-**Surface only. Never delete it, and never propose deleting it as tidy-up.**
+All three lines, every time, for a sandbox **this session created**. The middle line is the point of the change: the decision to leave the project is being made either way, and saying it out loud is what makes it cheap to overrule in a word ([#414](https://github.com/pmgledhill102/agentic-coding-config/issues/414)).
+
+**Surface only. Never delete it, and never propose deleting it as tidy-up.** Naming a route is not proposing it — see below.
 
 That prohibition is the whole point of the step, so it is worth stating why rather than leaving it as a rule to be reasoned around, and there are two independent reasons.
 
@@ -371,15 +378,15 @@ That prohibition is the whole point of the step, so it is worth stating why rath
 
 What the step is for, then, is neither cleanup nor cost: it is telling whoever caused shared infrastructure to exist that they did, at the one moment they are looking at it. If the sandbox should outlive its TTL, that is `/sandbox extend` during the work — capped at 30 days, and deliberately not automatic, since a sandbox extended on every use would never expire at all. Not a decision to take on the way out.
 
-#### If the project genuinely should not exist
+#### Why the route is named every time
 
-Wrong repo, an experiment abandoned, a sandbox built by a request that should never have been made. There is a route for that, and it is `gcp-credentials teardown`: one human approval on a card naming the project and every live grant on it, after which the broker revokes those grants and deletes the project. Name it **once**, beside the `created=` line, and in these words or near them:
+`gcp-credentials teardown` is one human approval on a card naming the project and every live grant on it, after which the broker revokes those grants and deletes the project. It is the only route, and the cases that want it are real: wrong repo, an experiment abandoned, a sandbox built by a request that should never have been made.
 
-> If that sandbox should not exist, `~/.claude/bin/gcp-credentials teardown` asks for it to be destroyed — one human approval, and this session's grant goes with it. Otherwise it expires on its own.
+This step used to name it **conditionally** — "if the project genuinely should not exist". The condition did no work, because the only party positioned to judge it is the session doing the reporting, and under a conditional that session judges silently: it prints the project, decides the condition does not hold, and stops. The read is made either way; what the condition removed was the chance to disagree with it. So the route is named unconditionally and the read is stated beside it, which changes what is printed and not what is done.
 
-Then stop. What that line is, and what it is not:
+Then stop. What those lines are, and what they are not:
 
-- **It is not a recommendation, and the default is to leave the sandbox alone.** Everything above still holds: the project is the repo's, it costs nothing to leave, and it deletes itself. A step that reports a project and then nudges towards destroying it has argued itself out of its own reasoning in the space of four paragraphs.
+- **They are not a recommendation, and the default is to leave the sandbox alone.** Everything above still holds: the project is the repo's, it costs nothing to leave, and it deletes itself. A step that reports a project and then nudges towards destroying it has argued itself out of its own reasoning in the space of four paragraphs. The middle line exists to make the default visible, not to soften it.
 - **Only beside a `created=` line.** A live grant on a sandbox this session did not build is someone else's project met in passing, and offering to destroy that is not this step's business — nor, at the end of a session, anybody's.
 - **Never run it unprompted, and never run it to tidy up.** This is Tier 3: the user asks for it, or it does not happen. Approving one revokes every live grant on the sandbox including this session's own, which is why the helper stops the refresh loop and removes the token and grant files when it succeeds. It blocks until the human answers, so run it while there is still a session to answer in — not as the last thing before walking away.
 
@@ -387,9 +394,11 @@ Then stop. What that line is, and what it is not:
 
 Print a concise summary. Each line says "none" loudly when clean, so noise scales with actual mess. (Step 1.5's fast-path also lands here directly when the predicate holds — same format, all "none" lines.)
 
+Where the pre-flight reported `repo_candidates`, open with a scope line — `Tidied: <repo>. Also checked, not cleaned: <repo> (dirty=<n> unpushed=<n> stashes=<n>), …` — so every "none" below is read against the repo it is true of. Without it a summary from a multi-repo container claims the container is clean on the strength of one repo ([#450](https://github.com/pmgledhill102/agentic-coding-config/issues/450)).
+
 - Branches pruned: `n/a (sandbox — container discarded)`
 - Stashed/committed work this run: `<describe or "none">`
-- **Unpushed commits: `<count, or "none">`** — the line that matters most here. The container is reclaimed after a period of inactivity and takes unpushed work with it, so anything non-zero is the one piece of mess that cannot be tidied in a later session.
+- **Unpushed commits: `<repo>: <count, or "none">`, one line per repo checked** — the line that matters most here. The container is reclaimed after a period of inactivity and takes unpushed work with it, so anything non-zero is the one piece of mess that cannot be tidied in a later session. Name the repo even when there was only one candidate: an unqualified count reads as a statement about the container, and where the pre-flight found several repos it is true of one of them.
 - Main rebased: `<yes/no, behind/ahead counts>`
 - CI on PRs touched this run: `<per-PR: green / running / FAILED: <workflow name + run URL>, or "no PR touched">`
 - Open PRs needing action: `<count by category, "none", or "n/a (no GitHub route)">`
