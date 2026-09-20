@@ -132,9 +132,9 @@ found across all four session-lifecycle rules.
 Approved unattended because the script is read-only in the strongest sense:
 every call it makes is a `GET`, it writes nothing outside a `mktemp -d` it
 removes on exit, and it has no flag that changes anything. The flags it does
-take only narrow what it reads (`--owner`, `--repos`, `--exclude`) or change
-the rendering (`--json`), so `estate-report *` cannot reach a destructive mode
-— there isn't one.
+take only narrow what it reads (`--owner`, `--repos`) or change the rendering
+(`--json`), so `estate-report *` cannot reach a destructive mode — there
+isn't one.
 
 Note what this does *not* approve: the report's **output** is estate evidence,
 naming private repos and what is wrong in them. Running it freely is fine;
