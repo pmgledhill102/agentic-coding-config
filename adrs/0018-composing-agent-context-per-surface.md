@@ -111,8 +111,12 @@ lets the model invoke them unprompted, bundle adjacent files, and are the
 cross-provider standard rather than a per-vendor directory.
 
 Keeping both means every content change is made twice — which is exactly
-why `tests/skills-match-commands.py` exists, and that test is scaffolding
-for a migration, not a permanent fixture.
+why `tests/skills-match-commands.py` existed, and that test was
+scaffolding for a migration, not a permanent fixture. The migration has
+since landed: the command twins were retired and the test was deleted
+with them. `home/commands/gcp-credentials.md` survives as the source the
+cloud bootstrap generates that one skill from, not as a twin of a
+checked-in skill.
 
 ### 4. Fragments are the source; delivered artefacts are derived
 
@@ -312,16 +316,19 @@ section still agree, because they are supposed to differ.
 - **The content review is unavoidable and is not small.** Splitting
   content by surface requires deciding, line by line, which surface each
   line is true on. Much of `home/` predates the cloud surface entirely.
-- **Variant twins can drift, and no check can catch it.** A skill and its
-  command copy are guarded by byte-equality, which is what
-  `tests/skills-match-commands.py` asserts. Two composed variants of one
-  section are *deliberately* different, so the same guard is structurally
-  unavailable: a fix applied to one twin and missed on the other is
-  invisible until someone reads that surface's artefact. This is the
-  previous entry's failure reached by a second route — the first is a
-  fragment nobody revisits, this is a pair that stops agreeing — and
-  principle 8's bar is the mitigation rather than the fix. Fewer pairs,
-  fewer places for it to happen.
+- **Variant twins can drift, and no check can catch it.** The premise
+  here is now historical: while a skill still had a command copy, the
+  pair was guarded by byte-equality, which is what
+  `tests/skills-match-commands.py` asserted — both the twins and that
+  test have since been retired (principle 3). The consequence survives
+  on its own logic, because it never depended on that guard existing.
+  Two composed variants of one section are *deliberately* different, so
+  byte-equality is structurally unavailable to them: a fix applied to
+  one variant and missed on the other is invisible until someone reads
+  that surface's artefact. This is the previous entry's failure reached
+  by a second route — the first is a fragment nobody revisits, this is a
+  pair that stops agreeing — and principle 8's bar is the mitigation
+  rather than the fix. Fewer pairs, fewer places for it to happen.
 - **An invented difference is indistinguishable from a real one.** The
   build proves a variant was composed correctly, never that it needed to
   exist. #289 is the worked example: a sandbox variant was proposed on the

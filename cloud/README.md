@@ -228,20 +228,79 @@ documented. Treat that as a knowing decision rather than a default.
 
 ## Codex
 
-**Not yet established.** The mechanism should port — cloud sessions on both
-Claude and Codex ignore user-level config from your machine and both run an
-environment setup script, and `bootstrap.sh` writes its canonical skill to
-`~/.agents/skills`, which Codex scans natively.
+Set the same three things once per environment, in the Codex environment's
+settings. This section states what a run on 2026-08-13 established, not what
+the documentation implies.
 
-What a first run needs to answer:
+### 1. Setup script
 
-1. Does the sandbox run a setup script, and in what shell?
-2. Can it reach `raw.githubusercontent.com`, or is there an allowlist to extend?
-3. Is the skill discovered from `~/.agents/skills`?
-4. Does the helper work unchanged? It is POSIX `sh` plus `curl` and `jq`, with
-   nothing Claude-specific in it.
+```sh
+PROFILE=codex-cloud-sandbox
+REF=main
+# Rev: 1
 
-Fill this section in from that run rather than from the documentation.
+curl -sSL --retry 3 --retry-delay 2 \
+  "https://raw.githubusercontent.com/pmgledhill102/agentic-coding-config/$REF/cloud/bootstrap.sh" \
+  -o /tmp/bootstrap.sh || echo "[setup] could not fetch bootstrap.sh"
+
+{ sh /tmp/bootstrap.sh "$REF" --profile "$PROFILE"; echo $? > /tmp/bootstrap.rc; } 2>&1 \
+  | tee /tmp/bootstrap.log
+
+echo "[setup] bootstrap exit=$(cat /tmp/bootstrap.rc 2>/dev/null) at $(date -u +%FT%TZ)"
+exit 0
+```
+
+**One word differs from the Claude block above — the profile.** Everything
+said there about `REF`, the absent shebang, keeping the field POSIX, the
+`Rev:` comment and the trailing `exit 0` applies here unchanged, and the
+profile table under *What a profile includes* says what `codex-cloud-sandbox`
+turns on: gcloud and pre-commit yes, harness hooks no.
+
+The setup phase has network access and reached `raw.githubusercontent.com` to
+fetch the bootstrap with nothing added to the allowlist. The helper runs
+unchanged on `codex-universal` — POSIX `sh`, `curl` and `jq` are all present,
+and nothing in it is Claude-specific. The skill is discovered from
+`~/.agents/skills`, which Codex scans natively: it listed `gcp-credentials`
+among its custom skills and invoked it **unprompted** from a prompt that never
+mentioned credentials. The two-step phrase flow works end to end, including
+refusing to run the target script when the mint failed.
+
+### 2. Allowed domains
+
+The same two entries as the Claude section — the broker host and
+`dl.google.com` — obtained the same way, and for the same reasons.
+
+**Two Codex-specific network settings matter more than the list does, because
+neither fails in a way that points at itself:**
+
+- **Agent-phase internet is off by default and must be enabled.** The entire
+  broker flow — request, wait, renew — happens in the *agent* phase, not in
+  setup. With it off the bootstrap installs cleanly during setup and then
+  nothing works, which reads as a broken helper rather than as a network
+  policy.
+- **The optional restriction to `GET`/`HEAD`/`OPTIONS` blocks the broker
+  outright.** Its endpoints are all `POST`, so an environment with the network
+  on and the host allowlisted still fails every request while that filter is
+  set — and the failure arrives as an HTTP status from a host that plainly
+  resolved.
+
+*An observation, not a guarantee:* the run reached the broker through Codex's
+proxy with no `HTTP_PROXY`/`HTTPS_PROXY` tuning and no custom CA certificates.
+The documentation does not say whether either is set, and at least one
+third-party write-up reports `curl` needing proxy-aware configuration, so
+treat this as what one run saw rather than as something the surface promises.
+
+### 3. Environment variables
+
+The same two variables as the Claude section, with the same values and the
+same reason to use the **`cloud`** key rather than the `local` one. The
+no-secrets-store caveat there applies here too.
+
+**Set them in the environment's own settings, not from the setup script.**
+Codex runs setup in a separate Bash session, so an `export` there does not
+survive into the agent phase — which is the only phase where the helper runs.
+The symptom is a helper that reports missing configuration at the moment of
+use, having installed without complaint.
 
 ## Local machines
 
