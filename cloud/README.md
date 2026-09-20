@@ -493,10 +493,13 @@ commits would be the container inventing policy the repo never asked for.
 
 This is the vendor-neutral half of enforcement: git runs `.git/hooks` itself,
 so it needs no agent configuration and covers Claude, Codex and a human typing
-`git commit` identically. The harness-hook half — `home/hooks/hooks.json`,
-which feeds failures back into the agent's context — is tracked separately
-in #254, and is blocked on whether a container-created
-`~/.claude/settings.json` registers hooks at all.
+`git commit` identically. The harness-hook half — the one that feeds failures
+back into the agent's context — is delivered by `--with-hooks`, and the next
+section covers how. It was once blocked on whether a container-created
+`~/.claude/settings.json` registers hooks at all (#254); it does, measured, and
+the declaration it merges is `home/settings.json`. The `home/hooks/hooks.json`
+this paragraph used to name was the plugin copy, withdrawn with the plugin
+in #312.
 
 ## Harness hooks
 
