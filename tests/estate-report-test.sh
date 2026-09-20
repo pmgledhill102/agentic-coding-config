@@ -132,6 +132,91 @@ QUIET=$(echo '{"repo":"sleepy", "open":0, "p0":0, "p1":0, "p24":0, "untriaged":0
 check "quiet repo is collapsed" "1" "$(echo "$QUIET" | grep -c '^quiet (1): sleepy$')"
 check "quiet repo has no row"   "0" "$(echo "$QUIET" | grep -c '^sleepy  ')"
 
+# --- enumeration, owner filter and exclusions (stubbed curl) ---------------
+# The jq checks above cover the arithmetic. This block covers the shell half --
+# which repos are fetched at all -- by putting a fake `curl` on PATH. That is
+# the same stubbing approach tests/stub-broker.py takes for the credential
+# client, and it closes the gap the script shipped with: enumeration had never
+# run under test, only the aggregation downstream of it.
+
+mkdir -p "$WORK/bin" "$WORK/fix"
+
+cat > "$WORK/fix/repos.json" <<'JSON'
+[
+ {"name":"alpha",          "archived":false, "owner":{"login":"testowner"}},
+ {"name":"lifeos",         "archived":false, "owner":{"login":"testowner"}},
+ {"name":"lifeos-sandbox", "archived":false, "owner":{"login":"testowner"}},
+ {"name":"beta",           "archived":false, "owner":{"login":"testowner"}},
+ {"name":"oldthing",       "archived":true,  "owner":{"login":"testowner"}},
+ {"name":"someoneelses",   "archived":false, "owner":{"login":"otherorg"}}
+]
+JSON
+
+cat > "$WORK/fix/meta.json" <<'JSON'
+{"pushed_at": "2020-01-01T00:00:00Z"}
+JSON
+
+cat > "$WORK/fix/issues.json" <<'JSON'
+[{"number":1,"title":"a task","labels":[{"name":"P2"}],"created_at":"2020-01-01T00:00:00Z"}]
+JSON
+
+cat > "$WORK/bin/curl" <<'STUB'
+#!/bin/sh
+# Stand-in for curl: honours -o <file> and -w, ignores the rest, always 200.
+out=/dev/null
+url=""
+while [ $# -gt 0 ]; do
+    case "$1" in
+        -o) shift; out="$1" ;;
+        -H|-w|--max-time) shift ;;
+        https://*) url="$1" ;;
+        *) ;;
+    esac
+    shift
+done
+case "$url" in
+    */user/repos*) cat "$FIXTURES/repos.json"  > "$out" ;;
+    */issues*)     cat "$FIXTURES/issues.json" > "$out" ;;
+    *)             cat "$FIXTURES/meta.json"   > "$out" ;;
+esac
+echo 200
+STUB
+chmod +x "$WORK/bin/curl"
+
+run_stubbed() { # run_stubbed [args...] -- estate-report against the fixtures
+    FIXTURES="$WORK/fix" PATH="$WORK/bin:$PATH" GH_TOKEN=stub \
+        sh "$SCRIPT" --owner testowner "$@" 2>&1
+}
+
+OUT=$(run_stubbed)
+
+check "excluded repos are not rows"   "0" "$(echo "$OUT" | grep -c '^lifeos')"
+check "the exclusions are reported"   "1" \
+      "$(echo "$OUT" | grep -c '^excluded (2): lifeos, lifeos-sandbox$')"
+check "non-excluded repos survive"    "1" "$(echo "$OUT" | grep -c '^alpha ')"
+check "archived repos are dropped"    "0" "$(echo "$OUT" | grep -c '^oldthing')"
+check "other owners are dropped"      "0" "$(echo "$OUT" | grep -c '^someoneelses')"
+
+# A stale name in the list must not be reported as though it excluded a repo
+# that was never there -- otherwise the count drifts from reality silently.
+OUT=$(run_stubbed --exclude beta,doesnotexist)
+check "--exclude extends the default" "0" "$(echo "$OUT" | grep -c '^beta ')"
+check "absent names are not counted"  "1" \
+      "$(echo "$OUT" | grep -c '^excluded (3): lifeos, lifeos-sandbox, beta$')"
+
+# --repos is an explicit instruction and outranks the exclusion list.
+OUT=$(run_stubbed --repos lifeos)
+check "--repos overrides exclusions"  "1" "$(echo "$OUT" | grep -c '^lifeos ')"
+check "nothing excluded via --repos"  "0" "$(echo "$OUT" | grep -c '^excluded')"
+
+# The JSON form has to carry the exclusions too, or a later renderer rebuilds
+# the blind spot the table was given the line to avoid.
+JOUT=$(run_stubbed --json)
+check "json carries excluded names"   '["lifeos","lifeos-sandbox"]' \
+      "$(echo "$JOUT" | jq -c '.excluded')"
+check "json omits excluded repos"     "0" \
+      "$(echo "$JOUT" | jq '[.repos[] | select(.repo | startswith("lifeos"))] | length')"
+
 # --- summary ---------------------------------------------------------------
 if [ "$FAIL" -gt 0 ]; then
     echo ""

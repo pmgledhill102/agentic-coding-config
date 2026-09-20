@@ -68,6 +68,25 @@ Two readings that are easy to get wrong:
   not twelve tasks. Counting it as backlog inflates the repo's apparent load
   and points the day at the wrong work.
 
+## Some repos are excluded, and the report says so
+
+`lifeos` and `lifeos-sandbox` keep a personal to-do list in Issues rather than
+engineering work, so the script excludes them by default. Counted as backlog
+they would arrive large and permanently `untriaged` — life tasks will never
+carry `P0`–`P4` labels — and outrank real work on volume, which teaches you to
+stop reading the top of the table.
+
+Every run prints what it left out:
+
+```text
+excluded (2): lifeos, lifeos-sandbox
+```
+
+**Read that line rather than skipping it.** An exclusion nobody sees is a blind
+spot nobody can audit, and unlike an unreachable repo it never comes back on
+its own. `--exclude a,b` extends the list for one run; `--repos` overrides it
+entirely, which is how you deliberately look at an excluded repo.
+
 ## The numbers are an as-of, not a reconciliation
 
 Sessions run in parallel on this estate, so the backlog genuinely moves during
@@ -97,7 +116,9 @@ partial view for a clean one**.
 - **Exit 1, no token** — needs `GH_TOKEN`, `GITHUB_TOKEN`, or `gh auth login`.
 - **Exit 2, nothing enumerated** — usually a repo-scoped token, such as a
   sandbox installation token, which cannot list an account's repositories.
-  `--repos a,b,c` works around it for a known set.
+  `--repos a,b,c` works around it for a known set. A separate exit-2 message
+  covers the case where everything found was excluded, so don't go debugging
+  credentials over a list you wrote yourself.
 - **`not checked` lines** — those repos are **unknown, not clean**. Say so when
   summarising. A repo dropped silently is indistinguishable from a healthy one,
   which is the exact failure the report exists to catch.
