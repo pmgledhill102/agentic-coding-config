@@ -71,13 +71,16 @@ The standard repository signature:
 | Setting | Value |
 | --- | --- |
 | Allow merge commits | **on** |
-| Allow squash merging | **on** |
+| Allow squash merging | **off** |
 | Allow rebase merging | **off** |
 | Automatically delete head branches | on |
 | Allow auto-merge | on where CI gates exist (see Dependabot) |
 
-Merge-commit is the default method; squash is for a branch genuinely
-carrying WIP or fixup noise; rebase-merge is disabled outright. The full
+Merge-commit is the only enabled method; squash and rebase are both
+disabled at the repository, not merely discouraged. Where a branch genuinely
+carries WIP or fixup commits, tidy it with `git rebase -i` before merging —
+that keeps the cleanup where its author can see it, rather than making every
+repo permanently able to lose trailers for an occasional convenience. The full
 rationale lives in the Git Workflow section of the composed agent policy
 (`context/fragments/core.md`) — in one line: squash and rebase both rewrite
 the branch's commits to new SHAs, which punishes anything stacked on the
@@ -99,12 +102,15 @@ Two operational facts, both learned the hard way on 2026-08-29
   `allow_merge_commit: true` and still be unable to merge; only the branch
   rules reveal it.
 
-Commit-message formats, so `main` reads identically whichever method a PR
-used:
+Commit-message format, for the one method that is enabled:
 
 - Merge commits: title `PR_TITLE`, body `PR_BODY` (API-only; `gh repo edit`
   has no flag for this pair)
-- Squash: title from PR title (`--squash-merge-commit-message pr-title`)
+
+No squash message format is set, and setting one is not an omission to
+correct: `gh` gates `--squash-merge-commit-message` on `--enable-squash-merge`
+being present in the same invocation, so specifying the format re-enables the
+button the standard just turned off.
 
 ## Branch rules: rulesets, not classic protection
 
