@@ -769,6 +769,32 @@ it sits. See
 `paul-context/decisions/2026-05-05-journal-inbox-promotion.md` for the
 full rationale.
 
+## Permissions: deny
+
+```json
+"deny": [
+  "Bash(gcloud auth print-access-token:*)",
+  "Bash(gcloud auth print-identity-token:*)",
+  "Bash(gcloud auth application-default print-access-token:*)"
+]
+```
+
+The three token-printing forms the broker policy forbids. Until this block
+existed, `permissions` had exactly one key — `allow` — which is why removing
+`Bash(gcloud auth print-access-token *)` from the allowlist in 2026-08 did
+less than it looked: **removing a command from the allowlist only makes it
+prompt, it does not block it** (#440). What stood between an agent and a live
+token in the transcript was a prose rule and a permission prompt.
+
+**`deny` is the workstation half only, and that is the smaller half.** The
+permission allowlist travels in a repo's own `.claude/settings.json` and no
+delivery channel carries it to a cloud session, so these rules do nothing on
+the surface where a brokered token actually lives. The `credguard-claude-hook`
+entry under PreToolUse below is the half that reaches both surfaces, which is
+why the same three forms are matched twice rather than once. Keep them in
+step: a form added here and not there is enforced on the machine that needs it
+least.
+
 ## Never allow
 
 These tools have been explicitly reviewed and rejected for auto-approval.
@@ -793,13 +819,44 @@ the user revisits it.
 
 ## Hooks
 
-Every hook below is also declared in `home/hooks/hooks.json`, which is what
-carries them to a cloud session — see "Two channels, one set of hooks" at the
-end of this section for how the two copies avoid running twice.
+This file is the only declaration of the hooks below; `cloud/bootstrap.sh`
+fetches it and merges its `.hooks` block, which is what carries them to a
+cloud session — see "One set of hooks, two surfaces, one declaration" at the
+end of this section. The `home/hooks/hooks.json` plugin copy this note used to
+point at went away with the plugin in #312.
 
 ### PreToolUse (Bash)
 
-1. **pr-checks registration-race rewrite** —
+1. **Credential-printing guard** — `~/.claude/bin/credguard-claude-hook`.
+   **Blocks** with `exit 2` when a Bash command would print a live credential:
+   the three `gcloud` token-printing forms from the deny block above, tolerant
+   of interleaved flags and line continuations, plus an
+   `Authorization: Bearer` header anywhere in a command — that one because
+   `/proc/<pid>/cmdline` is world-readable, so a token in argv is exposed to
+   every other process for the life of the call (#375). 5s timeout, and it
+   runs first in the array because it is the cheapest and the only blocker
+   whose whole job is to fire before anything else happens.
+
+   **This is a guardrail, not a security boundary.** It matches strings in a
+   Bash command, so `eval`, variable indirection, `$(printf …)` and aliases
+   all defeat it — `tests/credguard-test.sh` asserts two such evasions are
+   *allowed*, so the limit is visible rather than assumed. It is not trying to
+   contain a hostile agent. It is trying to stop drift, and to stop a
+   **compliant** agent faithfully following installed instruction text that
+   tells it to print a token — which is exactly what #439 found shipped in a
+   third-party skill, and what #377 showed beating the broker in a live
+   sandbox. Resist making it cleverer: a guard that looks airtight invites
+   someone to trust it as containment.
+
+   One accepted false positive: the phrase blocks even inside an `echo`.
+   `precommit-claude-hook` matches positionally to avoid exactly this (#191),
+   and the trade is deliberately the other way here — telling an echo from an
+   invocation needs real parsing, and the costs are asymmetric: a blocked echo
+   is rephrased, a leaked token is rotated.
+
+   Fail-open when `jq` is missing or the payload carries no command.
+
+2. **pr-checks registration-race rewrite** —
    `~/.claude/bin/prchecks-wait-claude-hook`. Rewrites
    `gh pr checks ... --watch` commands (via `hookSpecificOutput.updatedInput`,
    which replaces the tool's arguments before execution) to run through
@@ -827,9 +884,9 @@ end of this section for how the two copies avoid running twice.
    `Bash(~/.claude/bin/gh-pr-checks-wait *)` keeps the rewritten command
    auto-approved, matching the existing `Bash(gh pr checks *)` grant.
 
-2. **PR-state push guard** — `~/.claude/bin/prepush-guard-claude-hook`.
+3. **PR-state push guard** — `~/.claude/bin/prepush-guard-claude-hook`.
    Before any `git push` Claude makes, asks GitHub (`gh pr view <branch>`)
-   whether the current branch's PR is already `MERGED`/`CLOSED`, and if so
+   whether the pushed branch's PR is already `MERGED`/`CLOSED`, and if so
    **blocks** with `exit 2` and instructions to start a fresh branch. 30s
    timeout.
 
@@ -852,7 +909,27 @@ end of this section for how the two copies avoid running twice.
    it inspects the **current** branch — a push naming a different refspec is
    waved through.
 
-3. **pre-commit lint gate** — `~/.claude/bin/precommit-claude-hook`. A single
+   **Which repo it judges is the whole of #404.** A PreToolUse hook fires
+   before the command runs, so the payload's `cwd` is where the shell already
+   is, not where `cd /other/clone && git push` is about to be. Reading `cwd`
+   blindly blocked three pushes in one session, each naming a merged branch in
+   a repository the push was not aimed at — and since a PreToolUse denial
+   rejects the *whole* Bash call, one of them discarded a heredoc written
+   earlier in the same command, so the guard destroyed work it was not
+   guarding. It now walks the command's segments in order, following `cd` and
+   `git -C` to the directory the push will actually run in.
+
+   Anything it cannot resolve statically — a variable, a glob, a command
+   substitution, a quoted path — **skips the guard** rather than guessing. The
+   costs are asymmetric and that asymmetry is the design: an unguarded push
+   costs one orphan branch, a false positive costs the entire tool call.
+
+   Fixed in the same pass: the fast-exit matched the literal phrase
+   `git push`, so `git -C <path> push` never reached the guard at all — one of
+   the two shapes #404 is about was silently waved through. It now matches
+   positionally, the way `precommit-claude-hook` classifies.
+
+4. **pre-commit lint gate** — `~/.claude/bin/precommit-claude-hook`. A single
    script that runs the pre-commit framework against the repo's
    `.pre-commit-config.yaml` on the `git commit` / `git push` commands Claude
    makes via its Bash tool, **blocking** on failure with `exit 2` (the only
@@ -895,7 +972,7 @@ likely to run these with; the `command -v` guard keeps a sandbox that edits a
 
 ### One set of hooks, two surfaces, one declaration
 
-This block is the only declaration of the five hooks, and both surfaces read it:
+This block is the only declaration of the six hooks, and both surfaces read it:
 
 - **workstation** — chezmoi deploys this file to `~/.claude/settings.json`
 - **cloud sandbox** — `cloud/bootstrap.sh --with-hooks` fetches *this* file and

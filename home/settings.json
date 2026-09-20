@@ -324,6 +324,11 @@
       "Read(~/.claude/settings.json)",
       "Edit(/private/tmp/**)",
       "Edit(/tmp/**)"
+    ],
+    "deny": [
+      "Bash(gcloud auth print-access-token:*)",
+      "Bash(gcloud auth print-identity-token:*)",
+      "Bash(gcloud auth application-default print-access-token:*)"
     ]
   },
   "hooks": {
@@ -342,6 +347,11 @@
       {
         "matcher": "Bash",
         "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/bin/credguard-claude-hook",
+            "timeout": 5
+          },
           {
             "type": "command",
             "command": "~/.claude/bin/prchecks-wait-claude-hook",

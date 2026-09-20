@@ -844,7 +844,13 @@ done
 if [ "$WITH_HOOKS" -eq 1 ]; then
     command -v jq > /dev/null 2>&1 || die "--with-hooks needs jq to merge settings.json"
 
-    for script in prchecks-wait-claude-hook prepush-guard-claude-hook precommit-claude-hook; do
+    # Keep this list in step with the PreToolUse/PostToolUse commands in
+    # home/settings.json: the .hooks block below is taken from that file, so a
+    # hook named there but missing here installs a settings.json pointing at a
+    # script this container never fetched. credguard is the one that matters
+    # most, because permissions.deny does not travel to a sandbox at all --
+    # this hook is the only credential guard that reaches this surface (#440).
+    for script in credguard-claude-hook prchecks-wait-claude-hook prepush-guard-claude-hook precommit-claude-hook; do
         fetch "$RAW/home/bin/$script" "$TMP/$script" ||
             die "could not fetch hook script $script from $REF"
         head -1 "$TMP/$script" | grep -q '^#!' || die "fetched $script is not a script"
