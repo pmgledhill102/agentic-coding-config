@@ -1,8 +1,9 @@
-### 1. Gather state (Tier 1 — one script call, two MCP calls)
+### 1. Gather state (Tier 1 — one script call, two MCP queries, one attempt)
 
-Two things run here: the gather script, which answers everything local, and two
-GitHub MCP queries, which answer everything about issues and PRs. Neither
-substitutes for the other, and all three always run.
+Three things run here: the gather script, which answers everything local; two
+GitHub MCP queries, which answer everything about issues and PRs; and one
+attempt at the armed-trigger listing, which may not be available. Neither the
+script nor the queries substitutes for the other, and all of them always run.
 
 **(a) The gather script.** It does `git fetch --all --prune --tags` first, then fans out its read-only queries (status/branch/log, stashes, worktrees, merged branches) in parallel. Default-branch CI is deliberately not gathered — see step 3.
 
@@ -49,6 +50,29 @@ and do not add `body`.
 
 If the MCP server is unavailable too, both summary lines read `n/a (no GitHub
 route)`. An unchecked list must never render as "none".
+
+**(c) Armed check-in triggers.** One listing, plus the call that says which
+session you are:
+
+```text
+mcp__Claude_Code_Remote__list_triggers(enabled: true)
+mcp__Claude_Code_Remote__get_session()     # session_id omitted = this session
+```
+
+`enabled: true` drops the ones that already fired or were auto-disabled, so
+what comes back is what is still going to wake something. `get_session` gives
+this session's id; keep only triggers whose `persistent_session_id` matches it,
+because the listing is account-wide (step 14b).
+
+**Attempt it rather than deciding from the surface.** MCP servers are enabled
+per repository, so the server may be absent on a workstation and present in a
+sandbox or the reverse — neither surface can be assumed either way. If the tool
+is not there, or the call fails, that is **`triggers-unavailable`**: the
+summary line reads `n/a (not checked)` and Phase 1 continues. Skipping the
+attempt on a surface believed to lack it is how this went unimplemented for a
+month — `list_triggers`, `send_later` and `delete_trigger` were all verified
+working from a cloud sandbox on 2026-09-20, against a policy line asserting
+they were not ([#498](https://github.com/pmgledhill102/agentic-coding-config/issues/498)).
 
 Rules for interpreting the script's exit codes:
 

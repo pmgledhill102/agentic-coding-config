@@ -9,10 +9,11 @@ Apply when **all** of the following hold (single-pass check over already-collect
 - `stashes` is empty
 - the step 1(b) issue query returned nothing assigned to you
 - the step 1(b) PR query returned no open PRs
+- no armed check-in trigger belongs to this session (an armed trigger is leftover state that outlives the session, so it fails the predicate; `triggers-unavailable` fails it too, for the same reason a `n/a` GitHub line does)
 
 Three sections the workstation predicate checks are absent here, because the steps that consume them do no work on this surface: `merged_brs` (step 6), `worktrees` (step 12) and `stale_claude_files` (step 11). A predicate term whose step is skipped can only make the fast-path fire less often, never more correctly.
 
-**The two MCP calls run before this predicate is evaluated, not instead of it.** They are step 1's work, not a recovery path, so "the query was skipped" is never a reason a line is empty. A line whose query genuinely failed reads `n/a (no GitHub route)` and **fails** the predicate — the fast-path is a narration optimisation, not permission to report an unchecked section as clean.
+**Step 1's MCP calls run before this predicate is evaluated, not instead of it.** They are step 1's work, not a recovery path, so "the query was skipped" is never a reason a line is empty. A line whose query genuinely failed reads `n/a (no GitHub route)` and **fails** the predicate — the fast-path is a narration optimisation, not permission to report an unchecked section as clean.
 
 If the predicate holds:
 

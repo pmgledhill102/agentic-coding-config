@@ -12,6 +12,7 @@ Apply when **all** of the following hold (single-pass check over already-collect
 - `open_prs` is empty
 - `stale_claude_files` is empty (or content is `chezmoi-unavailable`)
 - `worktrees` has exactly one entry (just the primary)
+- no armed check-in trigger belongs to this session (an armed trigger is leftover state that outlives the session, so it fails the predicate; `triggers-unavailable` fails it too, for the same reason a `n/a` GitHub line does)
 
 If the predicate holds:
 
