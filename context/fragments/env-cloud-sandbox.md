@@ -6,13 +6,13 @@ profile — see ADR-0018 principle 5.
 
 ## This container is the whole environment
 
-There is no chezmoi here, and `~/.claude/` is not chezmoi-managed. It is
-written by `cloud/bootstrap.sh` when the environment is built, so a file
-found there arrived with the container rather than from a workstation.
+There is no chezmoi here, and `~/.claude/` is not chezmoi-managed.
+`cloud/bootstrap.sh` writes most of it at build time, but the platform
+launcher writes there too and refreshes its files each session, so presence
+says nothing about age or owner — `~/.agents/.bootstrap-manifest` lists ours.
 
-Anything installed by hand is lost when the container is reclaimed, and is
-invisible to the next session. Changes that must survive belong in the repo
-or in the environment's setup script.
+Anything installed by hand dies with the container and is invisible to the
+next session. What must survive belongs in the repo or the setup script.
 
 ## Capabilities available here
 
