@@ -273,8 +273,8 @@ commands fail; REST reads have been seen to work. Verify, never assume. Helpers
 that shell out to `gh` report `gh-unavailable` or `gh-unauthorized`: say what
 could not be gathered rather than reporting a clean result, and treat a `gh`
 command written into a skill as naming the *operation* — reach for the MCP
-call. In a **child session** every `claude-code-remote` call fails to bind its
-approval (anthropics/claude-code#90127): prefer event-driven wakes via `github`.
+call. `claude-code-remote` works here: `list_triggers`, `send_later` and `delete_trigger` all
+succeeded on 2026-09-20. Judge it by what a call returns, not by what kind of session you think you are — on an approval-binding failure (anthropics/claude-code#90127, reported for child sessions), fall back to event-driven wakes via `github`.
 
 ## Codex adapter
 
