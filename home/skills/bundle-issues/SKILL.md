@@ -21,7 +21,8 @@ a clean session do the work.
 
 ## Be austere about everything that is not reading
 
-Every token spent elsewhere is a token not available for bodies. Concretely:
+Every token spent elsewhere is a token not available for bodies, or for the
+threads that correct them. Concretely:
 
 - **Do not chain `/start-session`.** Its brief is exactly the summary this
   session does not need — it lists five issues when this one is about to read
@@ -74,10 +75,22 @@ mcp__github__list_issues(owner, repo, state: "OPEN", perPage: 100,
 Paginate until `hasNextPage` is false. `body` is what makes this session
 expensive and what makes it worth running — do not drop it to save room.
 
-Note what is deliberately absent: no `comments`. A discussion thread is usually
-where an issue's *unanswered questions* live, and an issue with unanswered
-questions is not sweepable anyway — so paying for comments buys detail about
-issues that are about to be deferred.
+**Ask for `comments` as well, and note what comes back: a per-issue count, not
+the threads.** One extra field decides whether reading them is affordable rather
+than guessing. Then read the threads on every issue that has any, if the total
+is small enough not to crowd out the bodies — 44 open issues on `paul-context`
+carried 36 comments between them and 27 had none, which is the usual shape.
+
+This step used to say the opposite, and the reasoning is worth keeping because
+it is half right: comments *are* where unanswered questions live, and an issue
+with one defers anyway. The missing half is that they also hold **answers**,
+which turn a `DEFER` into an `ELIGIBLE`, and **corrections**, which turn a body
+into a description of a defect that has since moved. Neither is visible from the
+body, by construction.
+
+If the counts come back large enough to threaten the whole-backlog read, drop
+this blanket fetch rather than the per-candidate read in step 5. That one is
+never optional, and it is only ever a handful of issues.
 
 ## 3. Screen out claimed work (Tier 1)
 
@@ -120,11 +133,33 @@ Verdicts:
 | `CLAIMED` | An open PR or a branch already addresses it. |
 | `BLOCKED` | A blocked-by dependency is still open. |
 
-The bar for `ELIGIBLE` is **no unanswered questions**. An issue that asks the
-user something, or whose first step is deciding what "right" means, is `DEFER` —
-however small the eventual edit turns out to be.
+The bar for `ELIGIBLE` is **no unanswered questions, and an answer path that
+exists**. An issue that asks the user something, or whose first step is deciding
+what "right" means, is `DEFER` — however small the eventual edit turns out to be.
 
-## 5. Verify every candidate against the tree (Tier 1)
+Two tests the bar as first written did not make:
+
+- **Was the question already answered in the thread?** A body reading "needs a
+  decision about X" defers only while X is open. Where a comment settles it, the
+  issue is `ELIGIBLE` and the answer goes into the bundle, attributed to the
+  comment so the working session can check it. This is the costly direction to
+  get wrong: the deferred list is supposed to be the work that genuinely needs
+  the user, so an issue deferred on a closed question corrupts the one output
+  this session calls its real product.
+
+  **This test needs step 2 to have read the threads**, and it is the only part
+  of the comment handling that does. Step 5 cannot rescue it — an issue deferred
+  here never reaches step 5. So when step 2 skipped the blanket fetch on volume,
+  say so in the report: the deferred list is then "deferred on the body", which
+  is a weaker claim than the one this skill usually makes for it.
+- **Is the fix answerable, or only legible?** Where an item's fix names a tool,
+  command, file or setting, confirm the repo names that thing somewhere. An item
+  that requires inventing a contract the repo does not state is not eligible
+  however clearly it is written. a-c-c#279 asked for a call to `list_triggers`
+  "or the surface equivalent", which no surface in the estate names — it read as
+  question-free, was bundled, and the working session correctly stopped.
+
+## 5. Verify every candidate against the tree and its own comments (Tier 1)
 
 For each issue not already `DEFER`ed, confirm the defect is still present. This
 is the step with a documented failure behind it: three of five issues once
@@ -138,6 +173,34 @@ grep -rn "<the string the issue says is wrong>" <path>
 - Not found → re-read before concluding. The wording may have changed while the
   defect remains. Only mark `FIXED` when the *defect* is gone, not when the
   quoted string has moved.
+
+**Then read that issue's comments, every time.** Not the counts — the threads.
+This is mandatory whatever step 2 decided about volume, because it is bounded by
+the number of candidates rather than the size of the backlog, and because the
+cost of skipping it is lopsided:
+
+| A comment you miss on an issue that… | costs |
+| --- | --- |
+| defers | nothing — it was staying on the backlog either way |
+| gets bundled or closed | a half-done fix, and the issue closed on it |
+
+The second is a-c-c#425: a bundle enumerated the body's asks, a comment had
+added a second clause to the same amendment, the PR shipped one of the two and
+closed the issue. Caught a session later, by accident.
+
+What to do with what you find:
+
+- **A comment that adds to the ask** → fold it into that issue's line in the
+  bundle, at the same specificity as the body's asks.
+- **A comment that reverses or corrects the body** → surface it as its own line
+  above the issue list. It must be impossible to miss, because the working
+  session is about to act on a body that is wrong. `paul-context#68` is the
+  worked specimen: one comment supplies the blocker the body leaves unnamed, a
+  later one is titled "Correction to my comment above" and retracts it, and the
+  body's headline evidence has been false for a month.
+- **A comment that answers the body's open question** → the issue is eligible
+  after all, per step 4. Say in the bundle where the answer came from.
+- **A comment that opens a new question** → `DEFER`, whatever the body says.
 
 ## 6. Cluster, then bundle (Tier 1)
 
@@ -224,8 +287,12 @@ Body:
 
 ## Issues
 
+<Where a thread reverses or corrects an issue's body, say so here, above the
+list, quoting the operative sentence. Do not leave it to be discovered.>
+
 - [ ] #<n> — <what the fix is, specifically enough to be mechanical>
-- [ ] #<n> — <…>
+- [ ] #<n> — <…, including anything a comment added or settled, said as plainly
+      as the body's own asks and attributed to the comment>
 
 ## Files
 
@@ -247,10 +314,19 @@ current value up rather than reusing it.
 
 ## Stop rule
 
-If a fix turns out to need a judgment call, stop and report. Eligibility
-asserted there were no unanswered questions, so finding one falsifies the
-premise this bundle was built on.
+If a fix turns out to need a judgment call, stop and report. Eligibility checked
+each issue's body **and its comments** for an open question, and checked that
+this repo names whatever the fix depends on. So finding an open question
+falsifies the premise this bundle was built on rather than merely complicating
+it — report it, do not decide it.
 ```
+
+**The bundle has to carry what the thread said, not point at it.** This session
+is discarded before the work starts — that is the whole design — so anything it
+learned from a comment and did not write down is lost, and the working session
+has no way to know it was ever there. A bundle is a device for *not* reading the
+issue; it earns that only by carrying whatever reading the issue would have
+supplied.
 
 **Never restate a time-sensitive literal from an issue body as an instruction.**
 A version, URL, tag or SHA quoted in an issue is only as current as the day it
@@ -303,4 +379,8 @@ point of separating it from the work that does not.
 - **Never bundle across repos.** A session works the repo it is in.
 - **Never put two bundles on the same source file**, and never extend that ban
   to generated files.
-- **Never bundle an issue with an open question**, however small the edit looks.
+- **Never bundle an issue with an open question**, however small the edit looks
+  — and read its comments before deciding it has none.
+- **Never bundle or close an issue on its body alone.** A body can be reversed
+  by its own newest comment, and the issue that is about to be closed is exactly
+  the one where missing that is expensive.
