@@ -21,6 +21,8 @@ The durable route is **journal + Issue**:
 
 That second half is not optional bookkeeping. A journal entry records what was learned; only the Issue changes what the next session does, and there is no memory file here to do that job instead.
 
+**A lesson recorded only as a memory file has not been made durable — it has been made local**, and here "local" lasts until the container is reclaimed. The same scope question applies to every lesson: machine-local findings have nowhere to live on a disposable machine, and estate-wide ones — a working practice, a git habit — need the Issue regardless.
+
 #### 6a. No cd-shortcut
 
 **Always name the target repo explicitly. Never `cd` into it.** Even when the target repo is checked out at a known path locally, do NOT change into it to file the issue from there. Retros run from a remote sandbox don't have target repos cloned — the command must be portable.

@@ -12,11 +12,16 @@ For each proposal and observation, decide what artifact it produces:
 | **Settings change** | Permission to add or remove, hook to register, env var to set | File an Issue against `pmgledhill102/agentic-coding-config` describing the change and why — same routing as any other a-c-c finding. **Never edit a `settings.json` directly** (see 6b) |
 | **Observation only** | Noted but below the proposal bar | No artifact; mention in the journal's Observations section |
 
-**The durable-lesson route on this machine is a memory file.** It is the memory row of step 5's lever table, and it works here because the machine persists:
+**Ask the question before naming the route: is this lesson machine-local, or estate-wide?** This machine persists, so a memory file is available here — which is exactly why it gets reached for first and the question gets skipped.
+
+- **Machine-local** — a path, a tool that only exists here, a quirk of this machine's setup. A memory file is the right route, and the whole route.
+- **Estate-wide** — a working practice, a git habit, anything that should hold on every machine and in every container. **A memory file is not sufficient.** It goes in an Issue against the repo whose lever applies, usually `agentic-coding-config`, whose fragments and bootstrap are how a lesson reaches every surface. A memory file alongside it is an optional convenience for this machine, not the record.
+
+**A lesson recorded only as a memory file has not been made durable — it has been made local.** It reaches future sessions on this machine and no others, and the write looks equally successful either way, which is why the scope question is answered first rather than weighed afterwards.
+
+Where the answer is machine-local, the memory route is the memory row of step 5's lever table:
 
 `Write` to `~/.claude/projects/<project>/memory/<slug>.md` with frontmatter (`name`, `description`, `type` of `user|feedback|project|reference`), then `Edit` `MEMORY.md` to add a one-line index entry, following the auto-memory conventions in the global CLAUDE.md.
-
-A memory file is **machine-local**, which is the thing to weigh when choosing this route over an Issue. It reaches future sessions on this machine and no others. A lesson that should change behaviour everywhere — on every machine, and in every container — belongs in an Issue against the repo whose lever applies, usually `agentic-coding-config`, as well as or instead of a memory file.
 
 #### 6a. No cd-shortcut
 
