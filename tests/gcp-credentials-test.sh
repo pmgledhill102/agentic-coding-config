@@ -452,7 +452,18 @@ if jq -e 'has("project") | not' < "$TD_BODY" > /dev/null 2>&1; then
 else
     no "never sends a project — the broker 400s one, deliberately"
 fi
-if jq -e '.repo == "git@github.com:o/sandbox-repo.git"' < "$TD_BODY" > /dev/null 2>&1; then
+# The contract is WHICH sandbox the broker is asked about, not which transport
+# the URL is spelled in. Matched as a pattern rather than as the fixture string
+# because an agent proxy can inject `url.https://github.com/.insteadOf` at git's
+# COMMAND-LINE config scope (via GIT_CONFIG_COUNT/KEY/VALUE in the environment),
+# which no config file can override -- and `git remote get-url`, which the
+# helper uses, APPLIES insteadOf rewrites where `git config --get
+# remote.origin.url` does not. So the same checkout yields the raw SSH form on a
+# workstation and the rewritten https form under such a proxy. The owner/repo
+# are still pinned, so a wrong remote, an empty value or a different repo all
+# fail this.
+if jq -e '.repo | test("^(git@github[.]com:|(https|ssh)://(git@)?github[.]com/)o/sandbox-repo[.]git$")' \
+    < "$TD_BODY" > /dev/null 2>&1; then
     ok "sends the repo resolved from the cwd's origin"
 else
     no "sends the repo resolved from the cwd's origin"
@@ -482,12 +493,29 @@ expect_rc "denied" 3
 expect_file "grant kept on a deny" "$CB_DIR/grant.json"
 expect_file "token kept on a deny" "$CB_DIR/access_token"
 
+# The two ways a teardown ends with no decision are opposites sharing one exit
+# code, so the MESSAGE is the only thing telling a session which recovery
+# applies. Both are asserted, each including that it does not carry the other's
+# wording -- a merge that collapsed them back into one string would otherwise
+# still pass half of this.
 canned poll 200 '{"state":"pending"}'
 run_in "$TD_REPO" teardown --timeout 0
 expect_rc "gave up waiting" 4
 expect_out "warns a late approval still destroys it" "late approval"
+expect_no_out "does not claim the card is closed — it is not" "card is dead"
 expect_file "grant kept on a timeout" "$CB_DIR/grant.json"
 expect_file "token kept on a timeout" "$CB_DIR/access_token"
+
+# The broker closed the card: nothing can land on it late, so there is nothing
+# here left to watch for and the recovery is a new card, not more waiting.
+canned poll 200 '{"state":"expired"}'
+run_in "$TD_REPO" teardown
+expect_rc "the broker expired the card" 4
+expect_out "says the card is dead, not merely unanswered" "card is dead"
+expect_out "names the recovery — a fresh teardown" "fresh 'gcp-credentials teardown'"
+expect_no_out "does not leave the card open the way the timeout message does" "may still be live"
+expect_file "grant kept when the card expires" "$CB_DIR/grant.json"
+expect_file "token kept when the card expires" "$CB_DIR/access_token"
 
 echo "an approved teardown cleans up after itself"
 canned poll 200 '{"state":"approved","project":"example-project-sbx"}'

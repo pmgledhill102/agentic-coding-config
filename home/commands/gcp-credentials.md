@@ -540,7 +540,8 @@ nobody was expecting is denied.**
 | 0 | Torn down, **or** nothing to tear down | Read the output — the second case says so plainly and changed nothing. |
 | 2 | Usage error, or the broker refused the request shape (HTTP 400) | A 400 here is this helper and the broker disagreeing about the contract. Report it; retrying sends the same bytes. |
 | 3 | **Denied** | Stop. The sandbox and every grant on it are untouched. |
-| 4 | Timed out or the card expired | Nothing was destroyed and nothing changed locally — but the card may still be live, so a late approval would tear it down with nothing watching. Tell the user. |
+| 4 | **The card expired** — the broker closed it | Nothing was destroyed and nothing changed locally, and the broker treats the silence as a deny. The card is dead, so nothing can land on it late and there is nothing to keep watching. A fresh `teardown` opens a new card. |
+| 4 | **Timed out** — this helper stopped waiting first | Nothing was destroyed and nothing changed locally — but the card may still be live, so a late approval would tear it down with nothing watching. Tell the user. |
 | 5 | Rate limited | Wait. Teardown shares the credential-request budget. |
 | 8 | Helper too old | Same remedy as [above](#reading-the-outcome). |
 | 1 | Broker unreachable, or more than one sandbox matched | Report it. Nothing was destroyed. |
