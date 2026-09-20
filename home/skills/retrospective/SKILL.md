@@ -36,7 +36,13 @@ API call it costs
 
 ### 1. Close the loop (always first)
 
-Before analysing this session, read what the last few retros produced and what became of it:
+**Before reading anything, check the session can reach `paul-context` at all.** The closed-loop reads below, the journal draft in step 8, and every cross-repo Issue step 6 routes all target a repo that is *not* the one this session is working in — most often `pmgledhill102/paul-context`. A **repo-scoped session** — a cloud sandbox is one — can only reach the repos attached to it, and a GitHub call against an unattached repo is **refused outright**. This is a different failure from having no local clone: the API call itself is denied, and the denial arrives as a 403 or a 404 that reads like "no such Issues" rather than "no access", so it is easy to record as an empty history and move on.
+
+Confirm the scope *here*, at the top, rather than at the point of the first write. A cheap read is enough — listing that repo's Issues either works or is denied. Discovering the denial in step 8 means the whole session has been analysed with nowhere to put the output.
+
+If the repo is out of scope, the remedy is to **attach it** (`add_repo`, on surfaces that have it) — and **that is the user's call, not yours**. Say which repo is missing and what it blocks, and ask. Do not attach repos unilaterally, and do not silently continue as though the history were empty: a retro that cannot reach `paul-context` can still analyse the session, but it must say up front that the journal draft and the cross-repo Issues have no destination.
+
+With scope confirmed, read what the last few retros produced and what became of it:
 
 - **Recent journal entries** — the last 3–5. List recent `journal-draft`-labeled Issues on `pmgledhill102/paul-context` (`mcp__github__list_issues` when connected, else `gh issue list --repo pmgledhill102/paul-context --label journal-draft --state all`), which covers everything not yet promoted. If a `paul-context` checkout happens to be at hand — you are standing in it, or it sits beside the current repo — also read its `journal/` (newest by filename date) for the promoted ones. This lookup is **read-only and best-effort**: missing it costs a little history, never a lost draft, which is why it carries none of the care that resolving a *write* destination used to need.
 - **Retro-filed Issues** — their bodies carry the `From retro: paul-context/journal/...` backlink. Check the repos the recent journals routed to, listing both open and closed Issues. These are historical, so body-text search is acceptable here (the never-search rule guards *time-sensitive* reads; a week-old issue is safely indexed).
@@ -116,11 +122,16 @@ For each proposal and observation, decide what artifact it produces:
 | **Settings change** | Permission to add or remove, hook to register, env var to set | File an Issue against `pmgledhill102/agentic-coding-config` describing the change and why — same routing as any other a-c-c finding. **Never edit a `settings.json` directly** (see 6b) |
 | **Observation only** | Noted but below the proposal bar | No artifact; mention in the journal's Observations section |
 
-**The durable-lesson route on this machine is a memory file.** It is the memory row of step 5's lever table, and it works here because the machine persists:
+**Ask the question before naming the route: is this lesson machine-local, or estate-wide?** This machine persists, so a memory file is available here — which is exactly why it gets reached for first and the question gets skipped.
+
+- **Machine-local** — a path, a tool that only exists here, a quirk of this machine's setup. A memory file is the right route, and the whole route.
+- **Estate-wide** — a working practice, a git habit, anything that should hold on every machine and in every container. **A memory file is not sufficient.** It goes in an Issue against the repo whose lever applies, usually `agentic-coding-config`, whose fragments and bootstrap are how a lesson reaches every surface. A memory file alongside it is an optional convenience for this machine, not the record.
+
+**A lesson recorded only as a memory file has not been made durable — it has been made local.** It reaches future sessions on this machine and no others, and the write looks equally successful either way, which is why the scope question is answered first rather than weighed afterwards.
+
+Where the answer is machine-local, the memory route is the memory row of step 5's lever table:
 
 `Write` to `~/.claude/projects/<project>/memory/<slug>.md` with frontmatter (`name`, `description`, `type` of `user|feedback|project|reference`), then `Edit` `MEMORY.md` to add a one-line index entry, following the auto-memory conventions in the global CLAUDE.md.
-
-A memory file is **machine-local**, which is the thing to weigh when choosing this route over an Issue. It reaches future sessions on this machine and no others. A lesson that should change behaviour everywhere — on every machine, and in every container — belongs in an Issue against the repo whose lever applies, usually `agentic-coding-config`, as well as or instead of a memory file.
 
 #### 6a. No cd-shortcut
 
@@ -241,20 +252,22 @@ The file is retired. If `~/.claude/retros.md` still exists locally from before, 
 
 ### 10. Brief summary
 
-Print a compact wrap-up:
+Print a compact wrap-up as plain labelled lines — label, colon, single space, value:
 
 ```text
 Retrospective complete.
 
-  Closed loop:                4 accepted / 3 rejected / 1 pending; MCP-opportunity category retired
-  Journal:                    paul-context/journal/2026-08-19-agentic-coding-config-foo.md (filed as Issue #57; pending /promote-journal-inbox)
-  Proposals:                  2 of 3 cap used — 1 removal, 1 addition
-  Issues created (here):      1 — #41
-  Issues raised cross-repo:   1 — github.com/.../issues/14
-  Durable lessons:            1 — journal + issue
+Closed loop: 4 accepted / 3 rejected / 1 pending; MCP-opportunity category retired
+Journal: paul-context/journal/2026-08-19-acc-foo.md (Issue #57; pending /promote-journal-inbox)
+Proposals: 2 of 3 cap used — 1 removal, 1 addition
+Issues created (here): 1 — #41
+Issues raised cross-repo: 1 — github.com/.../issues/14
+Durable lessons: 1 — journal + issue
 
 Next /start-session in the cross-repo'd repos will surface the new Issues as ready work.
 ```
+
+**No label gutter, deliberately — do not pad the values back into a column.** The previous form aligned every value at column 31, which pushed the longest line to 143 characters, so the block wrapped and interleaved at terminal width. That is the same failure the step 7 table fixed, at 136 characters — this one was worse. Six wrap-up lines have no columns to compare down, so alignment buys nothing and costs the width that breaks it; leave the labels ragged and keep every line short enough to survive a narrow terminal.
 
 ## First run: dispositions carried from #263
 
