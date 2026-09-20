@@ -32,6 +32,7 @@
 #   estate-report --json          emit the aggregate, for another renderer
 #   estate-report --owner NAME    default: pmgledhill102
 #   estate-report --repos a,b,c   skip enumeration, use this list
+#   estate-report --exclude a,b   skip these, on top of the built-in list
 #
 # Exit: 0 report produced (possibly with unchecked repos, which are named),
 #       1 no usable token, 2 enumeration produced nothing.
@@ -42,11 +43,27 @@ OWNER=pmgledhill102
 FORMAT=table
 REPO_LIST=""
 
+# Repos that keep their backlog in Issues but are not engineering work --
+# lifeos and its sandbox are a personal to-do list. Counted like any other repo
+# they arrive with a large backlog and an `untriaged` flag, because life tasks
+# will never carry P0-P4 labels, and they then outrank real engineering work on
+# volume and sit at the top of the table permanently. That trains you to ignore
+# the top of the table, which is the one thing this design cannot survive.
+#
+# A default rather than a flag because the common invocation is the bare
+# command, and an exclusion you have to remember to pass is one you will forget.
+# If this list ever reaches about five, move the rule to a GitHub topic on the
+# repos themselves -- see #503 for why that is not the starting point.
+EXCLUDE="lifeos lifeos-sandbox"
+
 while [ $# -gt 0 ]; do
     case "$1" in
         --json)   FORMAT=json ;;
         --owner)  shift; OWNER="${1:-}" ;;
         --repos)  shift; REPO_LIST="${1:-}" ;;
+        --exclude)
+            shift
+            EXCLUDE="$EXCLUDE $(echo "${1:-}" | tr ',' ' ')" ;;
         -h|--help)
             sed -n '/^# Usage:/,/^#       2 enum/p' "$0" | sed 's/^# \{0,1\}//'
             exit 0 ;;
@@ -118,7 +135,11 @@ JQ
 #
 # Filter on owner. /user/repos also returns org repos the token can see, and
 # desertfoxclan is explicitly not part of this estate.
+: > "$WORK/excluded"
+
 if [ -n "$REPO_LIST" ]; then
+    # An explicit list is an instruction, so the exclusions do not apply to it:
+    # naming an excluded repo here is how you deliberately look at one.
     echo "$REPO_LIST" | tr ',' '\n' | sed '/^$/d' > "$WORK/repos"
 else
     page=1
@@ -133,10 +154,28 @@ else
         [ "$count" -eq 100 ] || break
         page=$((page + 1))
     done
+
+    # Drop the excluded repos, recording which were actually present. Only a
+    # name that was really there is reported, so a stale entry in the list does
+    # not appear as though it excluded something.
+    # shellcheck disable=SC2086  # deliberate word splitting: EXCLUDE is a list
+    for name in $EXCLUDE; do
+        grep -qxF "$name" "$WORK/repos" || continue
+        echo "$name" >> "$WORK/excluded"
+        grep -vxF "$name" "$WORK/repos" > "$WORK/kept" || true
+        mv "$WORK/kept" "$WORK/repos"
+    done
 fi
 
 REPO_COUNT=$(wc -l < "$WORK/repos" | tr -d ' ')
 if [ "$REPO_COUNT" -eq 0 ]; then
+    if [ -s "$WORK/excluded" ]; then
+        # Distinct from the token case below, and saying the wrong one sends
+        # someone debugging credentials over a list they wrote themselves.
+        echo "estate-report: every repo found for '$OWNER' is excluded." >&2
+        echo "  excluded: $(tr '\n' ' ' < "$WORK/excluded")" >&2
+        exit 2
+    fi
     echo "estate-report: no repositories found for owner '$OWNER'." >&2
     echo "  A repo-scoped token (a sandbox installation token) cannot list an account's" >&2
     echo "  repositories. Pass --repos a,b,c, or run where a user token is available." >&2
@@ -248,10 +287,22 @@ JQ
 NOW=$(date -u +%Y-%m-%dT%H:%MZ)
 
 if [ "$FORMAT" = json ]; then
-    jq -s --arg now "$NOW" --arg owner "$OWNER" \
-        '{generated_at: $now, owner: $owner, repos: .}' "$WORK/rows.jsonl"
+    jq -s --arg now "$NOW" --arg owner "$OWNER" --rawfile exc "$WORK/excluded" \
+        '{generated_at: $now, owner: $owner,
+          excluded: ($exc | split("\n") | map(select(length > 0))),
+          repos: .}' "$WORK/rows.jsonl"
 else
     jq -s -r --arg now "$NOW" -f "$WORK/render.jq" "$WORK/rows.jsonl"
+fi
+
+# --- 3a. exclusions --------------------------------------------------------
+# Say what was left out, every time. The report already refuses to drop a repo
+# silently -- an unreachable one reports as `not checked`, never as clean --
+# and a silently excluded repo has the same defect and is worse for being
+# permanent. An exclusion nobody can see is a blind spot nobody can audit.
+if [ -s "$WORK/excluded" ] && [ "$FORMAT" != json ]; then
+    echo ""
+    echo "excluded ($(wc -l < "$WORK/excluded" | tr -d ' ')): $(tr '\n' ',' < "$WORK/excluded" | sed -e 's/,$//' -e 's/,/, /g')"
 fi
 
 # --- 4. unchecked ----------------------------------------------------------
