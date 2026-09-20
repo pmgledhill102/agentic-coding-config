@@ -10,8 +10,16 @@
   "tier_axis": "consequence — what happens if a dependency in the repo is compromised. Not activity, not visibility, not repo kind. Assignments are private and live in paul-context.",
   "tiers": {
     "baseline": {
-      "applies_to": "Every repository, archived ones included where the write succeeds. Two idempotent calls, never wrong.",
+      "applies_to": "Every repository, archived ones included where the write succeeds. Merge behaviour and the security block: idempotent calls, never wrong. Merge-commits-only is estate policy stated universally rather than per tier, so it is asserted here where every tier inherits it -- a repo nobody has judged yet defaults to baseline, and the nine assigned it were previously compared for no merge field at all (#428).",
       "extends": null,
+      "repository": {
+        "allow_merge_commit": true,
+        "allow_squash_merge": false,
+        "allow_rebase_merge": false,
+        "delete_branch_on_merge": true,
+        "merge_commit_title": "PR_TITLE",
+        "merge_commit_message": "PR_BODY"
+      },
       "security": {
         "dependency_graph": true,
         "vulnerability_alerts": true,
@@ -37,14 +45,6 @@
     "protected": {
       "applies_to": "Deployed or reachable: the code runs somewhere, or something else depends on it.",
       "extends": "baseline",
-      "repository": {
-        "allow_merge_commit": true,
-        "allow_squash_merge": false,
-        "allow_rebase_merge": false,
-        "delete_branch_on_merge": true,
-        "merge_commit_title": "PR_TITLE",
-        "merge_commit_message": "PR_BODY"
-      },
       "ruleset": {
         "name": "default-branch",
         "target": "branch",
@@ -202,7 +202,7 @@
   ],
   "prohibitions_are_narrow": "`applies_below_tier` is resolved through `extends`, not by name: a repo is below a tier when that tier is not in its own tier's extends chain. Each prohibition carries its own `because` because the distinction is hardening versus safety control — a dependabot.yml on a dormant repo is beneficial coverage, an ungated auto-merge is not. A blanket \"nothing above your tier\" would erode the permissive defaults of principles/repos.md and must not be written.",
   "unspecified": {
-    "allow_forking": "Decision pending in paul-context (#114). The private baseline carries a value; this spec does not until the standard does.",
+    "allow_forking": "Not settable on a personal account: PATCH with allow_forking:false returns 422 (org-owned private repos only). Fork control is one of the arguments for an organisation, not a value this spec can carry.",
     "actions_allowed": "Decision pending in paul-context (#114): `all` vs `selected`, sequenced with SHA-pinning (#44).",
     "has_wiki, has_projects, has_discussions, has_issues": "Decision pending in paul-context (#19). setup-repo currently turns wiki and projects off; that is the skill's choice, not yet the standard's.",
     "default_workflow_permissions, can_approve_pull_request_reviews": "Not stated by the standard. The audit collects both; nothing asserts them.",
