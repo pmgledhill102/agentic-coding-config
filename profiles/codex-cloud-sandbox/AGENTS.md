@@ -237,9 +237,8 @@ the sandbox will still be here" is not one of the three.
 
 ## Cloud sandbox
 
-True only in an ephemeral cloud sandbox. Nothing here applies on a
-workstation, and the workstation fragment is never composed into a sandbox
-profile — see ADR-0018 principle 5.
+True only in an ephemeral cloud sandbox; the workstation fragment is never
+composed into one — see ADR-0018 principle 5.
 
 ### This container is the whole environment
 
@@ -253,14 +252,15 @@ next session. What must survive belongs in the repo or the setup script.
 
 ### Capabilities available here
 
-- **Brokered Google Cloud access**, when `CREDENTIAL_BROKER_URL` is set in
-  the environment. Request it with the `gcp-credentials` skill rather than
-  asking a human to run `gcloud` commands by hand. The trigger is not "I
-  need to change something in GCP" but **"I am about to assert something
-  about live GCP state"**.
-- **Skills delivered by the bootstrap.** Those offered here are the whole set —
-  a skill on the workstation but absent here was held back deliberately, not
-  lost. Say that rather than improvising its behaviour from its name.
+- **Brokered Google Cloud access**, when `CREDENTIAL_BROKER_URL` is set.
+  Request it with the `gcp-credentials` skill rather than asking a human to
+  run `gcloud` by hand. The trigger is not "I need to change something in
+  GCP" but **"I am about to assert something about live GCP state"**.
+- **Skills delivered by the bootstrap** are the whole set — absent here means
+  held back deliberately, not lost. Say so rather than improvising.
+- **A blocked host is not a dead end.** Ask for it: the proxy takes the new
+  domain within seconds, though `WebFetch` may keep refusing until the session
+  resumes, so retry with `curl` first. Re-test recorded blocks; they age badly.
 
 ### `gh` is a property of the setup line
 

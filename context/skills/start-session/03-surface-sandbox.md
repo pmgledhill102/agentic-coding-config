@@ -26,10 +26,10 @@ waiting to see a sentinel and recovering from it. Tool names below are Claude
 Code's spelling (`mcp__github__list_issues`); a client that namespaces MCP
 tools differently is naming the same server and the same tool.
 
-**No chezmoi here.** `~/.claude/` was written by `cloud/bootstrap.sh` when the
-container was built, so there is no source tree to be behind and nothing to
-apply. What is worth checking instead is how old the bootstrap itself is —
-step 5b.
+**No chezmoi here.** `cloud/bootstrap.sh` wrote most of `~/.claude/` at build
+time and the platform launcher writes there too, so there is no source tree to
+be behind and nothing to apply — and presence says nothing about a file's age
+or owner. What is worth checking is how old the bootstrap is — step 5b.
 
 **The container is disposable.** Anything not committed and pushed is lost when
 it is reclaimed, which is what makes the brief's unpushed-commits line matter

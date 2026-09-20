@@ -241,7 +241,9 @@ Generated outputs are not listed: regenerate them with the repo's own tooling.
 ## Before starting
 
 Re-verify each issue against the current tree. This bundle asserts the defects
-were live at the SHA above and says nothing about now.
+were live at the SHA above and says nothing about now — and any version, URL,
+tag or SHA quoted below is as old as the issue it came from, so look the
+current value up rather than reusing it.
 
 ## Stop rule
 
@@ -249,6 +251,15 @@ If a fix turns out to need a judgment call, stop and report. Eligibility
 asserted there were no unanswered questions, so finding one falsifies the
 premise this bundle was built on.
 ```
+
+**Never restate a time-sensitive literal from an issue body as an instruction.**
+A version, URL, tag or SHA quoted in an issue is only as current as the day it
+was written, and a bundle promotes it from an example into a work order. Carry
+the requirement and name the lookup: *"bump to the current stable line from
+`releases.hashicorp.com`; the floor the estate needs is `>= 1.11`"*, never
+*"bump to a 1.13.x"*. Bundle #459 did the latter, copying an example from an
+issue written three weeks earlier, and the 1.13 line had been unpatched for ten
+months by the time the bundle was worked (#474).
 
 ## 8. Report
 
