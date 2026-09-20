@@ -47,8 +47,9 @@ python3 tests/allowlist-covers-commands.py  # allow rules match documented invoc
 python3 tests/github-repo-standard.py       # the repo-settings spec holds its own invariants
 sh tests/estate-report-test.sh           # estate flag thresholds and bucketing
 
-# shell — CI scans home/bin/, cloud/ and tests/. Select by shebang: home/bin/
-# also holds a Python script, and `shellcheck home/bin/*` errors on it.
+# shell — CI scans home/bin/, cloud/ and tests/. Select by shebang rather than
+# globbing: `shellcheck home/bin/*` errors on any non-shell file, and the
+# selection is what keeps that from being a tripwire the next time one lands.
 find home/bin cloud tests -type f \
   -exec sh -c 'head -1 "$1" | grep -q "^#!.*sh$"' _ {} \; -print0 \
   | xargs -0 shellcheck

@@ -342,20 +342,40 @@ Every other phase reads the working tree. This one asks whether the repo's GitHu
 
 So the auto-merge workflow's *contents* are not checked here. Its load-bearing properties are declared in [`home/standards/github-repo.json`](https://github.com/pmgledhill102/agentic-coding-config/blob/main/home/standards/github-repo.json) under the `automerge` tier's `files` block, and `paul-context`'s `tools/repo-spec-diff.py` diffs every repo in the tier against them — together with the spec's top-level `prohibited` list, which is what catches a *below*-tier repo carrying auto-merge apparatus it has no gate for. Phase F defers to the spec for these files exactly as it already defers to the sweep for settings; a second copy of the properties here would rebuild the duplication the spec was written to remove.
 
-### F1 — Effective branch rules (needs `gh`)
+### F1 — Effective branch rules (needs GitHub API access, not necessarily `gh`)
 
-`repo-audit.sh` reports how many rulesets a repo has, not what they contain — and the rule that matters most is invisible in a count. One call, for the repo under review:
+`repo-audit.sh` reports how many rulesets a repo has, not what they contain — and the rule that matters most is invisible in a count. Two calls, for the repo under review:
 
 ```sh
-gh api "repos/{owner}/{repo}/rules/branches/$(git symbolic-ref --short HEAD)" --jq '[.[].type]'
-gh api "repos/{owner}/{repo}" --jq '{merge: .allow_merge_commit, squash: .allow_squash_merge, rebase: .allow_rebase_merge, auto: .allow_auto_merge}'
+# Route in order of preference: mcp__github__* where the MCP server is
+# connected, then `gh api` where the CLI is present, then curl. The last one
+# works in a cloud sandbox, which has no `gh`.
+#
+# Two `sed` expressions, not one: ERE has no non-greedy quantifier, so the
+# `.git` suffix is stripped separately. Both remote forms are in live use.
+R=$(git remote get-url origin | sed -E 's#^.*[:/]([^/]+/[^/]+)$#\1#; s#\.git$##')
+A="https://api.github.com/repos/$R"
+H="Authorization: Bearer ${GH_TOKEN:-$GITHUB_TOKEN}"
+J=$(curl -sS -H "$H" "$A")
+
+printf '%s' "$J" | jq -c '{merge: .allow_merge_commit, squash: .allow_squash_merge, rebase: .allow_rebase_merge, auto: .allow_auto_merge}'
+
+# The DEFAULT branch, never HEAD. A review normally runs from a feature
+# branch, which carries no ruleset, so HEAD returns `[]` -- indistinguishable
+# from "this repo has no rules configured". That is a silent wrong answer of
+# exactly the kind this phase exists to catch, and it was shipped here until
+# the snippet was run rather than read.
+B=$(printf '%s' "$J" | jq -r .default_branch)
+curl -sS -H "$H" "$A/rules/branches/$B" | jq -c '[.[].type]'
 ```
+
+**Both of these work in a cloud sandbox.** Measured against a repo the session is bound to: `200` and `200`. Do not skip F1 because `gh` is absent — see Degradation for what genuinely cannot run, and why the difference matters.
 
 Findings:
 
 - `required_linear_history` present → **P1**. It forbids merge commits on the branch regardless of `allow_merge_commit`, so the repo can report `merge: true` and still be unable to merge by the sanctioned route. The failure surfaces at merge time on an approved, green PR, far from its cause.
 - `allow_merge_commit: false` → **P1**; `allow_rebase_merge: true` → **P2** (the standard disables it outright).
-- Both a classic branch-protection rule and a ruleset on the same branch → **P2**: most-restrictive-wins means a blocking rule can hide in either layer. Migrate to the ruleset and delete the classic rule.
+- Both a classic branch-protection rule and a ruleset on the same branch → **P2**: most-restrictive-wins means a blocking rule can hide in either layer. Migrate to the ruleset and delete the classic rule. **This is the one bullet that needs `/branches/{branch}/protection`**, which a GitHub App token is refused (`Resource not accessible by integration`). Where that is the credential — every cloud sandbox — report this bullet alone as `not checked (token lacks admin scope)` and still report the other three, which ran.
 - `allow_auto_merge: true` with no `required_status_checks` rule → **P1**. Without required checks `--auto` merges *immediately*; the "wait for CI" comes from the ruleset, not the flag.
 
 ### F2 — Did it actually work? (needs only the clone)
@@ -382,9 +402,30 @@ Whether the workflow itself is *correct* is not this phase's question — the sp
 
 Note the limit rather than implying coverage: a fine-grained PAT's repository list cannot be read from outside the token, so no check here or in the estate sweep can prove the token actually covers this repo. That is only knowable by using it.
 
+**The pairing has two inputs and they degrade differently — do not skip both because one is unavailable.** The required-status-checks half comes out of F1's ruleset call, which runs anywhere the API is reachable, including a cloud sandbox. Only the `AUTOMERGE_PAT` half needs `/dependabot/secrets`, which a GitHub App token is refused on scope. So where the secret store cannot be read: evaluate the checks half, and report the other as `not checked (token lacks scope)` rather than reporting the pairing unevaluated. An auto-merge workflow with no required status checks is a **P1** on its own — `--auto` merges immediately, PAT or no PAT.
+
 ### Degradation
 
-Where `gh` is unavailable (cloud sandboxes have no `gh`, and direct `api.github.com` calls are proxy-blocked), F1 and F3 report `not checked (no GitHub API access)` — **never "clean"**. F2 still runs. Reporting an unchecked layer as passing is the exact failure this phase exists to catch.
+**`gh` being absent is not the same as the API being unreachable, and conflating them is how this phase came to stand down on checks it could run.** A cloud sandbox has no `gh` and *can* reach `api.github.com`: `/user` resolves the right identity, and both F1 calls return `200`. Gate each check on a response, never on `command -v gh`.
+
+Four refusals, each meaning something different. The body says which:
+
+| Response | Meaning | What to report |
+| --- | --- | --- |
+| `200` | It ran | The finding |
+| `Resource not accessible by integration` | GitHub refused the **token's permissions** — a GitHub App installation token lacks admin and Dependabot-secret scopes | `not checked (token lacks scope)` |
+| `not permitted through this proxy` | The agent proxy's **endpoint denylist** | `not checked (proxy denylist)` |
+| `sessions are bound to their configured repositories` | The sandbox's **session binding** — the repo under review is in scope by definition, so this should not appear here | `not checked (session binding)` |
+
+The distinction is not pedantry. A scope refusal might be fixed by a different credential; a proxy denylist never is; and a session binding is upstream of the credential entirely, so reporting any of them as "no API access" sends the next person after the wrong remedy. That is what the old wording did, and what #501 was filed for.
+
+What this means per check, measured in a cloud sandbox:
+
+- **F1 runs**, including the `required_linear_history` and auto-merge findings — the two P1s. Only the classic-protection bullet degrades, on token scope.
+- **F3 does not run**: Dependabot secrets are refused on token scope. Report it as such, not as clean.
+- **F2 always runs** — it reads the clone and needs no API at all.
+
+Report an unchecked layer as **unknown, never clean**. That has always been the rule here; the bug was a stale reason gating it, not the principle. **Re-measure before trusting any line above** — a recorded block is a fact about one day, and this section is the second one in this estate to go stale that way.
 
 ## Output: findings summary (always inline)
 
@@ -420,7 +461,7 @@ Repo hygiene
 
 Settings vs behaviour
   Merge methods: merge=<y/n> squash=<y/n> rebase=<y/n>   [expected: y/y/n]
-  Branch rules: <rule types, or "not checked (no API access)">
+  Branch rules: <rule types, or "not checked (<reason from Degradation>)">
   Linear history required: <y/n>                         [expected: n]
   Effective: can this repo produce a merge commit? <yes|no>
   Observed: merge commits since <date>: <N>
@@ -527,4 +568,4 @@ The command itself does not maintain a state file — its source of truth is the
 - **Pre-commit framework interaction.** If the repo has `.pre-commit-config.yaml`, the markdown report file (`docs/reviews/repo-review-*.md`) may trip markdownlint depending on configured rules. The report uses standard markdown so this is rare; if it happens, add `exclude: ^docs/reviews/` to the relevant hook rather than rewriting the report format.
 - **GitHub Actions SHA-pinning check uses a regex.** False positives on weird `uses:` syntax; false negatives on actions referenced via composite or local paths. Treat the count as approximate.
 - **Phase F is deliberately not an estate sweep.** `paul-context`'s `tools/repo-audit.sh` owns that, and the two must not grow into competing answers. If a settings check would be as useful across 40 repos as on one, it belongs in the audit script, not here — and the same test now sends declared file properties to the sweep, via the spec's `files` and `prohibited` blocks. Phase F's remit is the single-repo view: the effective rules a count cannot show, and the behavioural check that reads this repo's own history.
-- **Phase F degrades to "not checked" without `gh`, and that is correct.** Cloud sandboxes have no `gh` and cannot reach `api.github.com`, so F1 and F3 cannot run there. Reporting them as clean would reproduce the failure the phase exists to catch. Only F2 (`git log --merges`) is always available.
+- **Phase F degrades per check, not per surface, and the reason is part of the finding.** This footnote used to say cloud sandboxes cannot reach `api.github.com`, so F1 and F3 could not run there. That was measured false (#501): F1's two calls both return `200` in a sandbox, and only the classic-protection bullet and F3 are refused, on the *token's* scope rather than reachability. Gate on the response, report the reason from the table in Degradation, and never report an unchecked layer as clean — that part was always right. F2 needs no API and always runs.
