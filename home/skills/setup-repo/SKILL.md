@@ -260,10 +260,18 @@ After a full run, verify the configuration took effect:
   diff expected.json actual.json && echo "repository settings match the spec"
   ```
 
-  A non-empty diff is a **stop-and-fix**, not a line in the summary. A
-  mismatch here that was noted and not acted on is how 29 repos ended up
-  with merge commits disabled (#352): re-run the failing step and diff
-  again before reporting done.
+  A non-empty diff is a **stop-and-fix**, not a line in the summary:
+  re-run the failing step and diff again before reporting done.
+
+  What this check cannot catch is a spec that changed after the repo was
+  configured. The repos that cannot merge a PR (#352) each passed
+  verification at the time — against the March 2026 spec, which was
+  squash-only with merge commits disabled and `required_linear_history`
+  set, a posture this skill itself specified until 2026-08-12. A repo
+  configured under a superseded spec reads as "configured" forever,
+  because nothing re-reads it. Only a re-run repairs it, which is why
+  step 1 treats a re-run on an already-configured repo as a drift repair
+  rather than a no-op. Tightening this step would not have found them.
 - Run `gh api "repos/{owner}/{repo}/rules/branches/{default_branch}" --jq '[.[].type]'` and confirm the effective rules are the spec's `rules_required` for the tier (`jq '.tiers.protected.rules_required' "$SPEC"`), plus `required_status_checks` where CI exists — and specifically that `required_linear_history` is **absent**: if present, merge commits are blocked and step 5 did not apply as intended
 - Where step 5 migrated a classic rule, confirm `gh api repos/{owner}/{repo}/branches/{default_branch}/protection` now returns 404 — here that is the desired end state, meaning the ruleset alone carries the rules
 - Confirm the required contexts equal the derived list exactly — no extras surviving from before
