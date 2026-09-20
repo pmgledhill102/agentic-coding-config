@@ -298,9 +298,9 @@ def main():
         "shipped context": lambda s: s["tiers"]["protected"]["ruleset"]["rules"][3]["parameters"]
             ["required_status_checks"].append({"context": "ci"}),
         "auto-merge ungated": lambda s: s["tiers"]["automerge"].__setitem__("rules_required", []),
-        "merge disabled": lambda s: s["tiers"]["protected"]["repository"].__setitem__(
+        "merge disabled": lambda s: s["tiers"]["baseline"]["repository"].__setitem__(
             "allow_merge_commit", False),
-        "typo field": lambda s: s["tiers"]["protected"]["repository"].__setitem__(
+        "typo field": lambda s: s["tiers"]["baseline"]["repository"].__setitem__(
             "allow_merge_commits", True),
         "named repo": lambda s: s["tiers"]["automerge"].__setitem__(
             "applies_to", "pmgledhill102/example"),
@@ -315,7 +315,7 @@ def main():
         "prohibition on a typo field": lambda s: s["prohibited"][0]["match"].append(
             {"setting": "allow_auto_merges", "value": True}),
         "unexplained prohibition": lambda s: s["prohibited"][0].pop("because"),
-        "squash re-enabled": lambda s: s["tiers"]["protected"]["repository"].__setitem__(
+        "squash re-enabled": lambda s: s["tiers"]["baseline"]["repository"].__setitem__(
             "allow_squash_merge", True),
         "labels_required not a list": lambda s: s["tiers"]["baseline"].__setitem__(
             "labels_required", "P0"),
