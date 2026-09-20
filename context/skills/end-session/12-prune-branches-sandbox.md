@@ -6,8 +6,8 @@ soon after this skill finishes — so deleting them achieves nothing and costs a
 prompt. Report `n/a (sandbox — container discarded)` in the step 15 summary and
 move on.
 
-Do not run `end-session-squash-merged` here either. It exists to decide which
-branches are safe to delete, and nothing is being deleted.
+Do not run `end-session-squash-merged` here either. It lists the branches a
+delete decision would be made about, and nothing is being deleted.
 
 **This is a skip of *cleanup*, never of *push*.** The distinction matters more
 here than anywhere else in this skill: a local branch left behind costs

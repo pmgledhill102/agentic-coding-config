@@ -60,9 +60,27 @@ case "$RESOLVE_STATE" in
     ambiguous)
         # Several candidates is the one case the script must not decide. It
         # reports them and stops; the skill asks which.
+        #
+        # Every candidate is probed, not just the one that will be chosen
+        # (#450). Tidy-up happens in one repo, but the three kinds of state
+        # that a reclaimed container destroys — dirty tree, unpushed commits,
+        # stashes — exist per repo, and a repo nobody chose is a repo nobody
+        # looked at. The probes are local-only and take no network: status,
+        # a log of commits on no remote, and the stash list.
         printf '===repo_candidates (exit=2)===\n'
         printf 'cwd=%s\n' "$(pwd)"
-        printf '%s\n' "$RESOLVE_OUT" | sed -n 's/^candidate=/candidate=/p'
+        printf '%s\n' "$RESOLVE_OUT" | sed -n 's/^candidate=//p' | while IFS= read -r c; do
+            [ -n "$c" ] || continue
+            dirty=$(git -C "$c" status --porcelain=v1 2>/dev/null | grep -c . || true)
+            # --branches --not --remotes: commits on any local branch that no
+            # remote-tracking ref holds. Unlike @{u}..HEAD it needs neither a
+            # checked-out branch nor a configured upstream, and it sees every
+            # branch rather than the current one.
+            unpushed=$(git -C "$c" log --branches --not --remotes --oneline 2>/dev/null | grep -c . || true)
+            stashes=$(git -C "$c" stash list 2>/dev/null | grep -c . || true)
+            printf 'candidate=%s dirty=%s unpushed=%s stashes=%s\n' \
+                "$c" "$dirty" "$unpushed" "$stashes"
+        done
         printf '\n'
         exit 2
         ;;

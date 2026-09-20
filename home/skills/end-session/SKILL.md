@@ -30,7 +30,8 @@ This command **requires a git-backed repository** — but it does not check for 
 So make **no standalone Bash call before the gather**. Run the gather (Phase 1) and branch on what it reports:
 
 - **`repo_resolution`** — cwd was not a repo, exactly one repo sat beneath it, and the gather ran there. `cd` to its `repo=` value before any later step (the script's own `cd` died with it), and name the repo in the summary. No prompt: one candidate is not a choice.
-- **`repo_candidates`** — several repos sat beneath cwd. It is the only section and the script exits 2. List the candidates, ask which, `cd` there, and re-run the gather. Never guess.
+- **`repo_candidates`** — several repos sat beneath cwd. It is the only section and the script exits 2, but it does not come back empty-handed: each `candidate=` line carries that repo's own `dirty=`, `unpushed=` and `stashes=` counts, probed read-only and without network ([#450](https://github.com/pmgledhill102/agentic-coding-config/issues/450)). Report **every** candidate with its counts before asking anything — a repo nobody chose is otherwise a repo nobody looked at, and on a sandbox a non-zero `unpushed=` is work one reclaimed container away from gone whichever repo it sits in. Then ask which repo to tidy, `cd` there, and re-run the gather. Never guess.
+  The tidy-up runs in the chosen repo only. The others were **checked, not cleaned** — carry that distinction into the step 15 summary, which has a scope line for it, rather than letting one repo's "none" stand for the container.
 - **`not_a_git_repo`** — no repo in cwd and none beneath it. Print the line it contains and stop. Do not run any further checks, do not proceed to Phase 2.
 
 ## Surface
@@ -161,11 +162,35 @@ Two batches. Present each list, ask **one** y/n per batch, then act on the whole
 
 Take the list from gather section `merged_brs`.
 
-**Batch B — Squash-merged branches** — branches whose upstream was deleted (`[upstream: gone]`, typical after GitHub squash-merge + branch delete) AND whose work is provably on `main`. These won't show up in Batch A because squash-merging rewrites history; `-d` would refuse them. The script accepts either of two "work is delivered" signals as the safety net — empty diff vs `main`, or GitHub records a merged PR with the branch as `headRefName` (fallback for cases where main has subtle post-squash drift that fails the diff but the PR clearly merged):
+**Batch B — Branches whose upstream is gone** — `[upstream: gone]` is the usual shape after a GitHub squash-merge with branch delete. Squash-merging rewrites history, so these never appear in Batch A and `-d` refuses them. The script lists the candidates and the evidence it could gather locally; it does **not** decide that any of them is safe to delete:
 
 ```sh
 ~/.claude/bin/end-session-squash-merged
 ```
+
+One line per candidate:
+
+```text
+<branch> tip=<sha> diff=<empty|differs> pr=<sha-match|newer-commits|none|unchecked>
+```
+
+Neither evidence field is a containment proof on its own, which is why the script stopped claiming one ([#302](https://github.com/pmgledhill102/agentic-coding-config/issues/302)). `diff=` is a two-dot *tree* diff against `main`, so it reads `differs` the moment `main` advances past the squash — on an active repo, minutes after the merge. `pr=unchecked` means the question was never asked (no `gh`, or `gh` not authorised for repo data), never that no PR merged.
+
+**The proof is one MCP call, made here, once for the whole batch** — not per branch:
+
+```text
+mcp__github__list_pull_requests(owner, repo, state: "closed", perPage: 100)
+```
+
+A candidate is provably delivered when the response holds a PR that
+
+1. is **merged** — `merged_at` is set; a closed-unmerged PR proves the opposite,
+2. carries the branch as `head.ref`, **and**
+3. whose `head.sha` equals that candidate's `tip=`.
+
+All three are required, and (3) is the one that is easy to drop. Matching on `head.ref` alone deletes a branch that took commits *after* its PR merged — those commits are on no other ref, so `-D` destroys them ([#435](https://github.com/pmgledhill102/agentic-coding-config/issues/435)). The script's own `pr=sha-match` is the same test run through `gh` where `gh` works; `pr=newer-commits` is exactly that failure caught, and such a branch is never a delete candidate.
+
+If the MCP call cannot be made, Batch B is **unproven, not empty**: report it as `n/a (no GitHub route)` and delete nothing. An unchecked batch must never render as "none".
 
 For each batch:
 
@@ -173,7 +198,7 @@ For each batch:
 - Otherwise present the full list and ask once: "delete all of these? (y/n)".
 - On `y`: `-d` for Batch A, `-D` for Batch B.
 
-If a `[gone]` branch has a non-empty diff vs `main` AND no merged PR is found, surface it by name ("`feat/x` — upstream gone but diffs against `main` and no merged PR found, left alone") so the user can decide manually. Don't roll it into Batch B — the safety net protects the auto-delete path too.
+Surface by name, outside the batch, every candidate the proof did not cover, with the reason: "`feat/x` — upstream gone, merged PR #N found but its head SHA is not this branch's tip (commits pushed after the merge), left alone", or "`feat/y` — upstream gone and no merged PR found, left alone". The user decides those manually; don't roll them into Batch B, because the proof protects the auto-delete path and nothing else.
 
 For remote-tracking refs, `git fetch --prune` in step 2 already handled stale `origin/*` refs. Don't delete anything on the remote itself — prefer deletion to happen server-side at merge time (`delete_branch: true` on the merge call), so no session ever pushes a ref deletion.
 
@@ -303,11 +328,17 @@ From gather section `gcp_projects`. The first line is `state=`:
 
 `helper-too-old` is not a fault. A container pins the broker client at the SHA its bootstrap ran, while this skill arrives with whatever composed it, so a session can hold a helper that has never heard of this check. It resolves itself when the container next picks up current config, and until then the honest report is that the question could not be asked — not that nothing was created.
 
-For each `created=` line, surface:
+For each `created=` line, surface three things in one block — what exists, why this session is leaving it, and the one route that would remove it:
 
 > created `<project>` — this repo's sandbox, built by this session's approval. Shared with every later session on the repo, and auto-deleted when its TTL lapses (7 days by default).
+>
+> Leaving it because `<this session's own read: the work it was built for is ongoing / it is the repo's only sandbox / nothing about how it came to exist looks like a mistake>`.
+>
+> If that read is wrong, `~/.claude/bin/gcp-credentials teardown` asks for it to be destroyed — one human approval, and this session's grant goes with it. Otherwise it expires on its own.
 
-**Surface only. Never delete it, and never propose deleting it as tidy-up.**
+All three lines, every time, for a sandbox **this session created**. The middle line is the point of the change: the decision to leave the project is being made either way, and saying it out loud is what makes it cheap to overrule in a word ([#414](https://github.com/pmgledhill102/agentic-coding-config/issues/414)).
+
+**Surface only. Never delete it, and never propose deleting it as tidy-up.** Naming a route is not proposing it — see below.
 
 That prohibition is the whole point of the step, so it is worth stating why rather than leaving it as a rule to be reasoned around, and there are two independent reasons.
 
@@ -317,21 +348,23 @@ That prohibition is the whole point of the step, so it is worth stating why rath
 
 What the step is for, then, is neither cleanup nor cost: it is telling whoever caused shared infrastructure to exist that they did, at the one moment they are looking at it. If the sandbox should outlive its TTL, that is `/sandbox extend` during the work — capped at 30 days, and deliberately not automatic, since a sandbox extended on every use would never expire at all. Not a decision to take on the way out.
 
-#### If the project genuinely should not exist
+#### Why the route is named every time
 
-Wrong repo, an experiment abandoned, a sandbox built by a request that should never have been made. There is a route for that, and it is `gcp-credentials teardown`: one human approval on a card naming the project and every live grant on it, after which the broker revokes those grants and deletes the project. Name it **once**, beside the `created=` line, and in these words or near them:
+`gcp-credentials teardown` is one human approval on a card naming the project and every live grant on it, after which the broker revokes those grants and deletes the project. It is the only route, and the cases that want it are real: wrong repo, an experiment abandoned, a sandbox built by a request that should never have been made.
 
-> If that sandbox should not exist, `~/.claude/bin/gcp-credentials teardown` asks for it to be destroyed — one human approval, and this session's grant goes with it. Otherwise it expires on its own.
+This step used to name it **conditionally** — "if the project genuinely should not exist". The condition did no work, because the only party positioned to judge it is the session doing the reporting, and under a conditional that session judges silently: it prints the project, decides the condition does not hold, and stops. The read is made either way; what the condition removed was the chance to disagree with it. So the route is named unconditionally and the read is stated beside it, which changes what is printed and not what is done.
 
-Then stop. What that line is, and what it is not:
+Then stop. What those lines are, and what they are not:
 
-- **It is not a recommendation, and the default is to leave the sandbox alone.** Everything above still holds: the project is the repo's, it costs nothing to leave, and it deletes itself. A step that reports a project and then nudges towards destroying it has argued itself out of its own reasoning in the space of four paragraphs.
+- **They are not a recommendation, and the default is to leave the sandbox alone.** Everything above still holds: the project is the repo's, it costs nothing to leave, and it deletes itself. A step that reports a project and then nudges towards destroying it has argued itself out of its own reasoning in the space of four paragraphs. The middle line exists to make the default visible, not to soften it.
 - **Only beside a `created=` line.** A live grant on a sandbox this session did not build is someone else's project met in passing, and offering to destroy that is not this step's business — nor, at the end of a session, anybody's.
 - **Never run it unprompted, and never run it to tidy up.** This is Tier 3: the user asks for it, or it does not happen. Approving one revokes every live grant on the sandbox including this session's own, which is why the helper stops the refresh loop and removes the token and grant files when it succeeds. It blocks until the human answers, so run it while there is still a session to answer in — not as the last thing before walking away.
 
 ### 15. Phase 1 summary
 
 Print a concise summary. Each line says "none" loudly when clean, so noise scales with actual mess. (Step 1.5's fast-path also lands here directly when the predicate holds — same format, all "none" lines.)
+
+Where the pre-flight reported `repo_candidates`, open with a scope line — `Tidied: <repo>. Also checked, not cleaned: <repo> (dirty=<n> unpushed=<n> stashes=<n>), …` — so every "none" below is read against the repo it is true of. Without it a summary from a multi-repo checkout claims the machine is clean on the strength of one repo ([#450](https://github.com/pmgledhill102/agentic-coding-config/issues/450)). A non-zero count on a repo that was only checked is surfaced, not acted on: it belongs to a session in that repo.
 
 - Branches pruned (merged): `<list or "none">`
 - Branches pruned (squash-merged): `<list or "none">`

@@ -2,6 +2,8 @@
 
 Print a concise summary. Each line says "none" loudly when clean, so noise scales with actual mess. (Step 1.5's fast-path also lands here directly when the predicate holds — same format, all "none" lines.)
 
+Where the pre-flight reported `repo_candidates`, open with a scope line — `Tidied: <repo>. Also checked, not cleaned: <repo> (dirty=<n> unpushed=<n> stashes=<n>), …` — so every "none" below is read against the repo it is true of. Without it a summary from a multi-repo checkout claims the machine is clean on the strength of one repo ([#450](https://github.com/pmgledhill102/agentic-coding-config/issues/450)). A non-zero count on a repo that was only checked is surfaced, not acted on: it belongs to a session in that repo.
+
 - Branches pruned (merged): `<list or "none">`
 - Branches pruned (squash-merged): `<list or "none">`
 - Stashed/committed work this run: `<describe or "none">`
