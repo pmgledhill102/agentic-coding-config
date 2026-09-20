@@ -85,11 +85,26 @@ Append these repos to the existing `.pre-commit-config.yaml`:
       - id: terraform_fmt
       - id: terraform_validate
       - id: terraform_tflint
+        args:
+          - --args=--config=__GIT_WORKING_DIR__/.tflint.hcl
       - id: terraform_trivy
+        args:
+          - --args=--ignorefile=__GIT_WORKING_DIR__/.trivyignore
       - id: terraform_checkov
+        args:
+          - --args=--config-file=__GIT_WORKING_DIR__/.checkov.yaml
 ```
 
 Look up the latest release tag and use it for the `rev:` value.
+
+Keep those `args:` even though the bare hook ids look correct and test clean:
+each of these three hooks runs once per scanned directory and resolves a
+relative config path against *that* directory, so a repo-root `.tflint.hcl`,
+`.trivyignore` or `.checkov.yaml` is picked up under `pre-commit run
+--all-files` — where the run starts at the root — and silently ignored on an
+ordinary commit that touches only a subdirectory. `__GIT_WORKING_DIR__` is
+pre-commit-terraform's placeholder for the repository root, so the explicit
+path makes both runs read the same config.
 
 ### 4. GitHub Actions workflow
 

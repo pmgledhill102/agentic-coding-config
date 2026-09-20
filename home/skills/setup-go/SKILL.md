@@ -122,12 +122,21 @@ jobs:
       - uses: actions/checkout@<full-sha> # <version>
       - uses: actions/setup-go@<full-sha> # <version>
         with:
-          go-version-file: go.mod
+          go-version: stable
       - name: Install govulncheck
         run: go install golang.org/x/vuln/cmd/govulncheck@latest
       - name: Run govulncheck
         run: govulncheck ./...
 ```
+
+The two jobs deliberately select the toolchain differently, so keep them as
+written. Lint asks "does this code hold up under the version the module claims
+to support?", which is `go-version-file: go.mod` — the module's compatibility
+floor. Govulncheck asks "is anything here known-vulnerable today?", and it
+scans the standard library of whatever toolchain it runs under: pointed at the
+floor it reports every stdlib fix released since that version, which is a large
+count of findings that the module cannot act on, so it gets `go-version:
+stable`.
 
 Don't duplicate if Go lint jobs already exist. Look up latest action versions.
 
