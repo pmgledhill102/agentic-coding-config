@@ -11,8 +11,8 @@
       "title": "Agent context — Claude Code on a workstation",
       "environment": "env-workstation",
       "outputs": {
-        "home/AGENTS.md": ["core", "ephemeral-first"],
-        "home/CLAUDE.md": ["core", "ephemeral-first", "env-workstation", "provider-claude"]
+        "home/AGENTS.md": { "budget": 238, "fragments": ["core", "ephemeral-first"] },
+        "home/CLAUDE.md": { "budget": 378, "fragments": ["core", "ephemeral-first", "env-workstation", "provider-claude"] }
       }
     },
     "codex-workstation": {
@@ -20,22 +20,22 @@
       "title": "Agent context — Codex on a workstation",
       "environment": "env-workstation",
       "outputs": {
-        "profiles/codex-workstation/AGENTS.md": ["core", "ephemeral-first", "env-workstation", "provider-codex"]
+        "profiles/codex-workstation/AGENTS.md": { "budget": 378, "fragments": ["core", "ephemeral-first", "env-workstation", "provider-codex"] }
       }
     },
     "codex-cloud-sandbox": {
       "title": "Agent context — Codex in a cloud sandbox",
       "environment": "env-cloud-sandbox",
       "outputs": {
-        "profiles/codex-cloud-sandbox/AGENTS.md": ["core", "ephemeral-first", "env-cloud-sandbox", "provider-codex"]
+        "profiles/codex-cloud-sandbox/AGENTS.md": { "budget": 315, "fragments": ["core", "ephemeral-first", "env-cloud-sandbox", "provider-codex"] }
       }
     },
     "claude-cloud-sandbox": {
       "title": "Agent context — Claude Code in a cloud sandbox",
       "environment": "env-cloud-sandbox",
       "outputs": {
-        "profiles/claude-cloud-sandbox/AGENTS.md": ["core", "ephemeral-first"],
-        "profiles/claude-cloud-sandbox/CLAUDE.md": ["core", "ephemeral-first", "env-cloud-sandbox", "provider-claude"]
+        "profiles/claude-cloud-sandbox/AGENTS.md": { "budget": 238, "fragments": ["core", "ephemeral-first"] },
+        "profiles/claude-cloud-sandbox/CLAUDE.md": { "budget": 315, "fragments": ["core", "ephemeral-first", "env-cloud-sandbox", "provider-claude"] }
       }
     }
   },

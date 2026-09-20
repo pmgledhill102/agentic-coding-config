@@ -38,7 +38,8 @@ failures into quiet ones, so the build is what catches them:
 1. every committed output matches what the fragments currently produce
 2. no non-workstation profile includes a workstation-only fragment
 3. every policy output has exactly one H1, so markdownlint MD025 holds
-4. always-loaded line counts are reported against the budget
+4. every always-loaded output is within its own budget (a ratchet, in the
+   manifest beside the output it governs)
 5. every file under `profiles/` is claimed by the manifest
 6. every fragment under `context/skills/` is used by at least one output
 """
@@ -50,12 +51,6 @@ import sys
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 MANIFEST = ROOT / "context" / "manifest.json"
-
-# Claude Code targets under 200 lines of always-loaded policy; imports count.
-# Exceeding it is reported, not fatal: the number existing in the build is the
-# point, and the fix is a content decision (ADR-0018 principle 2), not a
-# mechanical one this script can make.
-BUDGET_LINES = 200
 
 HEADING = re.compile(r"^(#{1,5})(\s+\S)", re.M)
 FENCE = re.compile(r"^(```|~~~)")
@@ -170,10 +165,14 @@ def variant_ratio(manifest, skill):
     """Report how many of a skill's sections carry a per-surface variant.
 
     ADR-0018 principle 8: the default is one shared body, and a split has to
-    earn itself. This is that bar expressed as a number in the build, the same
-    way the line count expresses the always-loaded budget — a report, never a
-    gate. A high ratio is a content decision, and a build that failed on one
-    would be a build people learn to override.
+    earn itself. This is that bar expressed as a number in the build — a
+    report, never a gate. A high ratio is a content decision, and a build that
+    failed on one would be a build people learn to override.
+
+    The always-loaded line count used to be reported the same way and is not
+    any more: it became a per-output ratchet that fails (#405). The difference
+    is that a budget has a number somebody chose and can raise deliberately,
+    where this ratio has no threshold anyone could defend.
 
     It is worth watching because a variant pair is the one thing here that no
     check can guard. A skill and its command twin must be byte-identical, so
@@ -219,7 +218,8 @@ def main():
     failures, wrote = [], []
     for profile, spec in manifest["profiles"].items():
         own_env = spec["environment"]
-        for output, fragments in spec["outputs"].items():
+        for output, decl in spec["outputs"].items():
+            fragments, budget = decl["fragments"], decl["budget"]
 
             # Check 2. The failure this prevents is shipping "run chezmoi
             # apply" to a surface with no chezmoi — wrong policy stated with
@@ -240,9 +240,30 @@ def main():
             if h1 != 1:
                 failures.append(f"{profile} -> {output}: {h1} level-1 headings, expected 1")
 
+            # Check 4. The always-loaded ratchet.
+            #
+            # This was one shared 200-line budget, printed and never enforced.
+            # No output had ever been under it, so every run ended in six OVER
+            # BUDGET lines that meant nothing — a check reporting a number
+            # nobody could act on, which is indistinguishable from no check.
+            #
+            # It is now per-output, set to each output's measured count at the
+            # moment the budget was taken, and it FAILS. Today's size is
+            # accepted; further growth is a decision somebody makes by editing
+            # the number in the manifest, which is the whole point (#405).
+            #
+            # Every count prints whether or not it trips, so drift is visible
+            # while there is still headroom rather than only when it runs out.
             lines = len(expected.splitlines())
-            flag = "  OVER BUDGET" if lines > BUDGET_LINES else ""
+            flag = f"  OVER BUDGET ({budget})" if lines > budget else ""
             print(f"  {output:52s} {lines:4d} lines{flag}")
+            if lines > budget:
+                failures.append(
+                    f"{output}: {lines} lines exceeds its budget of {budget}. "
+                    f"Always-loaded policy is the expensive tier: either cut "
+                    f"something, move it to a skill body, or raise the budget "
+                    f"in context/manifest.json as a deliberate decision"
+                )
 
             emit(output, expected, write, failures, wrote)
 
@@ -317,8 +338,8 @@ def main():
     if write:
         print(f"\nwrote {len(wrote)} file(s)" + (": " + ", ".join(wrote) if wrote else " (all current)"))
     else:
-        print(f"\nall composed outputs match their fragments "
-              f"(budget {BUDGET_LINES} lines for always-loaded policy)")
+        print("\nall composed outputs match their fragments, "
+              "each within its always-loaded budget")
     return 0
 
 
