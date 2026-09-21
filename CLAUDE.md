@@ -36,24 +36,45 @@ blocked-by dependencies).
 No build step. Quality gates (run before pushing; CI runs the same):
 
 ```bash
-markdownlint-cli2 "**/*.md"              # markdown lint
-sh tests/gcp-credentials-test.sh         # credential-helper behaviour
-sh tests/precommit-hook-test.sh          # pre-commit hook matching
-sh tests/bootstrap-failure-test.sh       # a half-installed bootstrap reports itself
-sh tests/retired-paths.sh                # the prune list is safe and sectioned
-sh tests/retired-paths-test.sh           # ...and its validator still catches
-python3 tests/compose-context.py         # composed profiles and skills match their fragments
-python3 tests/allowlist-covers-commands.py  # allow rules match documented invocations
-python3 tests/github-repo-standard.py       # the repo-settings spec holds its own invariants
-sh tests/estate-report-test.sh           # estate flag thresholds and bucketing
+markdownlint-cli2 "**/*.md"              # markdown lint                       ~1s
+sh tests/gcp-credentials-test.sh         # credential-helper behaviour         ~5s
+sh tests/precommit-hook-test.sh          # pre-commit hook matching            ~7s
+sh tests/bootstrap-failure-test.sh       # a half-installed bootstrap reports itself  ~160s
+sh tests/retired-paths.sh                # the prune list is safe and sectioned  <1s
+sh tests/retired-paths-test.sh           # ...and its validator still catches    ~1s
+python3 tests/compose-context.py         # composed profiles and skills match their fragments  <1s
+python3 tests/allowlist-covers-commands.py  # allow rules match documented invocations  <1s
+python3 tests/github-repo-standard.py       # the repo-settings spec holds its own invariants  ~1s
+sh tests/estate-report-test.sh           # estate flag thresholds and bucketing  <1s
 
 # shell — CI scans home/bin/, cloud/ and tests/. Select by shebang rather than
 # globbing: `shellcheck home/bin/*` errors on any non-shell file, and the
 # selection is what keeps that from being a tripwire the next time one lands.
 find home/bin cloud tests -type f \
   -exec sh -c 'head -1 "$1" | grep -q "^#!.*sh$"' _ {} \; -print0 \
-  | xargs -0 shellcheck
+  | xargs -0 shellcheck                  #                                      ~3s
 ```
+
+**One gate is the whole cost.** `bootstrap-failure-test.sh` runs a bootstrap,
+so it takes ~160s of a ~3-minute serial run; every other gate above finishes
+in single-digit seconds, ~20s for all of them combined. Timings measured
+2026-09-21 in a cloud sandbox and approximate — re-measure rather than trust
+them if one looks wrong.
+
+That matters because **an agent's foreground command typically times out at
+120s**, which `bootstrap-failure-test.sh` exceeds on its own. The run is not
+killed — it continues and passes — but the result is lost and has to be
+recovered, which costs more round-trips than the gates cost seconds. So run
+the full list **backgrounded** and collect the result when it exits, rather
+than in the foreground. Waiting with `sleep N && cat <file>` does not work:
+the harness refuses that shape, and wants an `until` loop or a backgrounded
+task.
+
+**Run only what the change touches** when the change is narrow — markdown-only
+edits need `markdownlint-cli2`; a `context/` edit needs `compose-context.py`;
+`home/settings.json` needs the allowlist check. Push-blocking is what the full
+list is for, and CI runs it regardless. The fast subset is everything except
+`bootstrap-failure-test.sh`, and it is ~20 seconds.
 
 **There is no chezmoi template check.** This repo contains no chezmoi
 templates: it is consumed as an **archive** external, so files deploy verbatim.
