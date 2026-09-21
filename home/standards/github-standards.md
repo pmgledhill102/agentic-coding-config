@@ -64,6 +64,15 @@ defined once and inherited. Two consequences:
 If the estate ever moves into an organisation, revisit this whole document:
 org rulesets change the arithmetic completely.
 
+**Two account-level settings are load-bearing for post-merge failure
+alerts, and no repo declares either.** GitHub's Actions notification
+setting must stay on *"Only notify for failed workflows"*, and the Gmail
+filter that labels those notifications `auto/github/ci-failure` must stay
+in place. If either changes, the Discord relay described under
+[Post-merge failure visibility](#post-merge-failure-visibility) goes silent
+with nothing to notice — it is the only part of that pipeline that lives
+in no repository.
+
 ## Merge methods
 
 The standard repository signature:
@@ -379,6 +388,94 @@ Deferred until after the migration, recorded so the discussion has a home:
   standardised.
 - Whether a uniform minimum (lint + secrets) should be required on every
   active repo, with language gates required only where the language exists.
+
+### Post-merge failure visibility
+
+**Pre-merge gates are not the whole story.** A workflow that runs on push
+to the default branch produces no PR check (the PR already merged, green),
+no comment (nothing is open to comment on) and no signal at all beyond the
+Actions tab, which nobody opens unless they already suspect something.
+`gcp-org-management#506` sat red for two days that way, and was found by
+accident.
+
+**The estate's backstop is a Discord `#github-main-failures` channel**, fed
+by GitHub's failed-workflow notification emails. It is global — every repo,
+including ones created later, with nothing to configure per repo — which is
+its whole value. Three things about it are worth knowing before leaning on
+it:
+
+- **It is a reviewed service, not a mail rule.** GitHub sends its
+  failed-workflow notification from `notifications@github.com`; a Gmail
+  filter applies the label
+  `auto/github/ci-failure`; `automate-inbox` (`internal/handlers/github`,
+  Go with tests) parses the subject and posts to a Discord webhook; the
+  service and the webhook secret are Terraform in `automate-inbox-infra`.
+  Relevance filtering sits in that Go code deliberately rather than in the
+  Gmail filter, so the label means "this is a CI failure" and not "one I
+  care about today" — which also means changing what is watched is a
+  reviewed commit in another repo, not a filter tweak.
+- **It covers `main` and `master` only, by design.** A failure on any other
+  branch is not forwarded, on the reasoning that it is the author's
+  business and already visible in the PR.
+- **It rests on two account-level settings that no repo declares** — see
+  [Account context](#account-context).
+
+So treat it as a safety net rather than as a repo's own signal, for a
+sharper reason than "it is unreviewed": it is `main`/`master`-only,
+account-dependent, and owned by a different repository than the one whose
+failure it reports.
+
+**A repo that applies infrastructure or deploys on merge should also
+announce its own failures.** The relay names the workflow and cannot name
+the job, and "Terraform Apply failed" sends someone to a page with
+seventeen jobs on it. The pattern, implemented in `gcp-org-management`
+(`.github/workflows/notify-failed-run.yaml` plus the `notify-discord`
+composite action):
+
+- **Trigger on `workflow_run`, not a `notify` job with `needs:`.**
+  `workflow_run` fires on the *workflow's* conclusion, so a job added later
+  is covered with no edit — a `needs:` list of sixteen layer jobs is a
+  second copy that falls behind.
+- **Filter on explicit conclusions** (`failure`, `cancelled`,
+  `timed_out`), never `!= 'success'`. A run whose jobs all skipped
+  concludes `skipped`, which is routine where jobs are path-filtered, and
+  paging on it trains everyone to ignore the channel.
+- **Name the failing job**, not just the workflow. This is the one thing
+  the relay structurally cannot do.
+- **`workflow_run` matches a workflow's `name:`, not its filename.**
+  Renaming a watched workflow silently unhooks it, and there is no
+  path-based form.
+
+The two are not interchangeable in the other direction either: an in-repo
+notifier fires on whatever ref its watched workflow ran on, so a
+`workflow_dispatch` against a test branch alerts, where the relay would
+correctly have ignored it.
+
+#### Three ways a failure notifier fails silently
+
+All three shipped broken in code written to end silence, which is the
+argument for recording them where they will be read before the code is
+written rather than after:
+
+- **An alert step gated on `failure()` after a step that captures its own
+  exit code never fires.** The capturing step succeeds, so the job is never
+  in a failure state.
+- **jq object values must be parenthesised.** `{content: "a" + "b"}` parses
+  on jq 1.8 and is a syntax error on the older jq GitHub runners carry
+  (`syntax error, unexpected '+', expecting '}'`). This shipped reviewed,
+  `actionlint`-clean and passing local tests; every call to the action
+  failed. It generalises: **local tool versions are not runner tool
+  versions**, and `actionlint` does not catch it.
+- **A parser that is lazy where it should be greedy discards what it fails
+  to match.** The relay splits its subject on the *last* `" - "`, because a
+  git ref cannot contain a space but a workflow name can; splitting on the
+  first yields a branch that matches no watched branch, and the failure is
+  dropped in silence. Guarded by a test there.
+
+And the matching rule for anything that retries: **retry what is transient,
+accept what is simply not yours.** Returning an error for a message the
+handler has nothing to say about retries it forever; swallowing the failure
+of a webhook that is down loses the alert.
 
 ## Verification: settings are not behaviour
 
