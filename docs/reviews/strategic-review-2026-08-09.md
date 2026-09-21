@@ -253,6 +253,21 @@ untouched; what shrinks is the *agent config* passing through it.
 
 ## 8. Decision on #48
 
+> **Superseded 2026-08-27 by [#312](https://github.com/pmgledhill102/agentic-coding-config/issues/312).**
+> This section's verdict no longer holds. The dual-manifest plugin was
+> published, never adopted, and withdrawn: `dotfiles` declined it
+> ([dotfiles#392](https://github.com/pmgledhill102/dotfiles/issues/392)) and
+> the marketplace listing was judged not worth maintaining for anyone else,
+> so [#48](https://github.com/pmgledhill102/agentic-coding-config/issues/48)
+> closed `not_planned` via
+> [#315](https://github.com/pmgledhill102/agentic-coding-config/pull/315).
+> [ADR-0014](../../adrs/0014-portable-agent-config-architecture.md)
+> decisions 3, 4, 5 and 7 no longer hold, and
+> [ADR-0016](../../adrs/0016-capability-delivery-principles.md) drops the
+> plugin as a delivery route. Distribution stays on chezmoi and the cloud
+> bootstrap. The reasoning below is left as written, as the record of what
+> was decided on 2026-08-09.
+
 **Reshape, then proceed.** #48 predates the Codex/skills findings; the
 plugin remains the right distribution vehicle for Claude surfaces, but
 its content should be skills-first (not a commands-directory port), its
@@ -264,7 +279,8 @@ vendor-neutral `.agents/skills/` convention. Details in ADR-0014.
 
 Filed as sub-issues of #136:
 
-- Reshape and implement plugin distribution (existing #48, re-scoped)
+- ~~Reshape and implement plugin distribution (existing #48, re-scoped)~~ —
+  **did not happen**; withdrawn, see §8's note
 - Convert the provider-neutral command library to SKILL.md skills
 - Split `home/CLAUDE.md` into portable core + adapter + local fragment
 - Surface-aware rework of session-lifecycle commands; retrospective trim
