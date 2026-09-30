@@ -84,11 +84,11 @@ the run's own exit status reachable.
 The profile selects the capabilities as well as the context, so most
 environments need no capability flags at all:
 
-| Profile | gcloud | pre-commit | hooks | gh |
-| --- | --- | --- | --- | --- |
-| `claude-cloud-sandbox` | yes | yes | yes | no |
-| `codex-cloud-sandbox` | yes | yes | no | no |
-| `*-workstation` | no | no | no | no |
+| Profile | gcloud | pre-commit | hooks | gh | devknowledge |
+| --- | --- | --- | --- | --- | --- |
+| `claude-cloud-sandbox` | yes | yes | yes | no | no |
+| `codex-cloud-sandbox` | yes | yes | no | no | no (Claude only) |
+| `*-workstation` | no | no | no | no | no |
 
 These are read off the profile name rather than held in a table the script
 would have to grow a row in per profile. A `claude-*` profile gets the harness
@@ -101,6 +101,9 @@ somebody's laptop, and there is no laptop here. #254 is what its absence cost.
 
 `gh` is off everywhere. It is documented below as counterproductive on
 Anthropic-hosted sandboxes, so it waits for a caller who knows their egress.
+`devknowledge` is off everywhere too, for a sharper reason: it only works where
+the environment holds the matching API credential, and nothing in the container
+can see whether it does.
 
 ### Overriding a profile
 
@@ -122,7 +125,7 @@ line no longer says what happened:
 
 ```text
 [bootstrap] profile -> claude-cloud-sandbox
-[bootstrap] caps    :  gcloud=yes precommit=yes hooks=yes gh=no terraform=yes
+[bootstrap] caps    :  gcloud=yes precommit=yes hooks=yes gh=no terraform=yes devknowledge=no
 ```
 
 The same set is written to `~/.agents/.bootstrap-manifest`, which is where to
@@ -156,6 +159,40 @@ surfaces whose egress genuinely reaches the GitHub API, e.g. self-hosted
 environments. On Anthropic-hosted sandboxes the GitHub MCP server remains the
 only repo-data route, and the sandbox bodies of the session skills call it
 directly rather than treating it as a fallback (#265).
+
+`--with-devknowledge` registers Google's Developer Knowledge MCP server as
+`google-developer-knowledge`, at **user scope** in `~/.claude.json`, with no
+auth header. Pass it **only** from an environment that also holds the
+Developer Knowledge API credential ([step 4](#4-api-credentials)). The agent
+proxy attaches the key outside the VM, so the key never enters the container.
+Without the credential, the server's tools appear but return 401 on every
+call, the worst failure shape, which is why the flag is off by default (#439).
+
+- **Why the environment, not the repo:** this couples the server to the
+  environment that can authenticate it, rather than requiring a `.mcp.json`
+  in every repo.
+- **A repo can still override it.** Claude Code loads a server named in
+  several scopes once, from the highest-precedence source: local, then
+  project (`.mcp.json`), then user. So a repo that declares the same name
+  wins, and one that declares nothing inherits this entry.
+- **It touches one key only.** The bootstrap edits
+  `mcpServers."google-developer-knowledge"` with `jq`, the same way
+  `--with-hooks` merges `settings.json`. Every other key in `~/.claude.json`,
+  including account state and other servers, is carried through, and the
+  file stays `0600`.
+- **A `~/.claude.json` that isn't a JSON object is left alone.** The
+  capability degrades instead of replacing it.
+
+```sh
+sh /tmp/bootstrap.sh "$REF" --profile "$PROFILE" --with-devknowledge
+```
+
+The tool names match the allowlist `home/settings.json` already carries
+(`mcp__google-developer-knowledge__*`). Verified end to end in
+pmgledhill102/cloud-playground#12 with the same keyless entry declared at
+project scope. At user scope, delivered by this flag, it is **unverified until
+a fresh session in an environment with the flag confirms the entry survives
+session start**.
 
 **The `Rev:` comment is load-bearing.** The environment snapshots the setup
 script's result and re-runs it only when the script text changes, the allowed
@@ -225,6 +262,39 @@ environment can read its variables, and the documentation says not to put
 credentials there. The request key is a deliberate exception: it only gates
 *opening* a request, the human approval is the real control, and rotation is
 documented. Treat that as a knowing decision rather than a default.
+
+### 4. API credentials
+
+Pro and Max environments have an **API credentials** section (edit the
+environment, below Environment variables). The agent proxy attaches a stored
+credential to requests for the listed hosts after they leave the VM. Per the
+[docs](https://code.claude.com/docs/en/cloud-environments#add-api-credentials),
+"the key never reaches Claude, the commands it runs, or the session's
+environment variables."
+
+For `--with-devknowledge`, add one:
+
+| Field | Value |
+| --- | --- |
+| Name | `Google Developer Knowledge` |
+| Credential type | Bearer (the default) |
+| Allowed websites | `developerknowledge.googleapis.com`, **exactly**. `*.googleapis.com` would send the key with every Google API call, gcloud's included |
+| Custom header name | `X-Goog-Api-Key` |
+| Prefix | **empty** (clear the default `Bearer`) |
+| Value | the key: `gcp-org-management` output `developer_knowledge_api_key`, restricted to the Developer Knowledge API |
+
+Check **See resolved curl example** before saving. It should show one
+`X-Goog-Api-Key:` header with no `Bearer` in front of the key. A credential has
+no edit: to rotate the key, delete it and add it again.
+
+Two things observed on 2026-09-30:
+
+- **A new credential applies to sessions already running.** No restart is
+  needed.
+- **A plain `curl` gets the key.** With the credential in place, `curl` to
+  `https://developerknowledge.googleapis.com/v1/documents:searchDocumentChunks?query=…`
+  returns 200 with no key in the command. That is also the fallback when the
+  MCP tools are absent.
 
 ## Codex
 
@@ -333,6 +403,7 @@ Revocation levels and what to do about a possibly-exposed token or request key:
 | `~/.claude/bin/*-claude-hook` | the three harness hook scripts, with `--with-hooks` |
 | `/usr/local/bin/pre-commit`, `/usr/bin/shellcheck`, `/usr/local/bin/actionlint`, `markdownlint-cli2` (npm global), `cspell` (npm global), `semgrep` (uv tool) | with `--with-precommit` |
 | `/usr/local/bin/gh` | the GitHub CLI, pinned release, with `--with-gh` |
+| `~/.claude.json` → `mcpServers."google-developer-knowledge"` | one user-scope MCP entry, no key, with `--with-devknowledge` (merged, not replaced) |
 | `/usr/local/bin/terraform`, `/usr/local/bin/tflint`, `checkov` | the Terraform toolchain, with `--with-terraform` |
 | `~/.tflint.d/plugins/…/tflint-ruleset-google/` | the tflint google ruleset, seeded because `tflint --init` is 403ed here, with `--with-terraform` |
 
