@@ -17,10 +17,10 @@
 #
 # What each profile resolves to today:
 #
-#                          gcloud  pre-commit  hooks  gh
-#   claude-cloud-sandbox     yes       yes      yes   no
-#   codex-cloud-sandbox      yes       yes      no    no
-#   *-workstation            no        no       no    no
+#                          gcloud  pre-commit  hooks  gh  devknowledge
+#   claude-cloud-sandbox     yes       yes      yes   no      no
+#   codex-cloud-sandbox      yes       yes      no    no      no
+#   *-workstation            no        no       no    no      no
 #
 # Every capability takes --with-X to force it on and --no-X to force it off,
 # and either beats the profile wherever it sits on the line. The capabilities:
@@ -61,6 +61,15 @@
 # as not checked rather than failed (#335). Installed inside --with-precommit,
 # since serving that config is the whole reason they are here:
 # --with-terraform --no-precommit installs nothing.
+#
+# --with-devknowledge registers Google's Developer Knowledge MCP server
+# (google-developer-knowledge) at user scope in ~/.claude.json, with NO auth
+# header. Off for every profile, because the key is not the bootstrap's to
+# supply: pass the flag only from an environment that holds the matching API
+# credential (host developerknowledge.googleapis.com, header X-Goog-Api-Key),
+# which the agent proxy attaches outside the VM. An environment without that
+# credential would get three tools that 401 on every call, so it gets no server
+# instead (#439). Claude profiles only -- Codex does not read ~/.claude.json.
 #
 # <REF> is what everything else is fetched from, and should match the ref this
 # script was itself fetched from, so a run cannot straddle two versions. Pin it
@@ -251,6 +260,7 @@ WITH_PRECOMMIT=
 WITH_HOOKS=
 WITH_GH=
 WITH_TERRAFORM=
+WITH_DEVKNOWLEDGE=
 PROFILE=claude-cloud-sandbox
 
 # The trap goes on before anything that can fail, which is why TMP is declared
@@ -288,6 +298,8 @@ while [ $# -gt 0 ]; do
         --no-gh) WITH_GH=0 ;;
         --with-terraform) WITH_TERRAFORM=1 ;;
         --no-terraform) WITH_TERRAFORM=0 ;;
+        --with-devknowledge) WITH_DEVKNOWLEDGE=1 ;;
+        --no-devknowledge) WITH_DEVKNOWLEDGE=0 ;;
         --profile)
             shift
             [ $# -gt 0 ] || die "--profile needs a value"
@@ -360,6 +372,22 @@ WITH_GH=$(resolve "$WITH_GH" 0)
 # Before that fix "off" meant every push needed --no-verify, which made
 # installing them look mandatory for the wrong reason.
 WITH_TERRAFORM=$(resolve "$WITH_TERRAFORM" "$def_terraform")
+
+# Developer Knowledge has no default for the same reason gh has none, and a
+# stronger one: whether it works is a property of the environment's API
+# credentials, which nothing in the container can see. Only the caller knows,
+# so only the caller turns it on. On a non-Claude profile the flag is refused
+# rather than honoured, because the file it edits is Claude Code's.
+WITH_DEVKNOWLEDGE=$(resolve "$WITH_DEVKNOWLEDGE" 0)
+case "$PROFILE" in
+    claude-*) ;;
+    *)
+        if [ "$WITH_DEVKNOWLEDGE" -eq 1 ]; then
+            log "WARN    : --with-devknowledge ignored: $PROFILE is not a Claude profile"
+            WITH_DEVKNOWLEDGE=0
+        fi
+        ;;
+esac
 
 RAW="https://raw.githubusercontent.com/pmgledhill102/agentic-coding-config/${REF}"
 
@@ -477,7 +505,7 @@ log "installing from ${REF}"
 # often than the setup script that built it.
 on_off() { [ "$1" -eq 1 ] && echo "yes" || echo "no"; }
 log "profile -> $PROFILE"
-log "caps    :  gcloud=$(on_off "$WITH_GCLOUD") precommit=$(on_off "$WITH_PRECOMMIT") hooks=$(on_off "$WITH_HOOKS") gh=$(on_off "$WITH_GH") terraform=$(on_off "$WITH_TERRAFORM")"
+log "caps    :  gcloud=$(on_off "$WITH_GCLOUD") precommit=$(on_off "$WITH_PRECOMMIT") hooks=$(on_off "$WITH_HOOKS") gh=$(on_off "$WITH_GH") terraform=$(on_off "$WITH_TERRAFORM") devknowledge=$(on_off "$WITH_DEVKNOWLEDGE")"
 
 # There is deliberately no apt step here.
 #
@@ -1466,6 +1494,53 @@ cap_gh() {
     log "gh      -> $(gh --version 2> /dev/null | head -1 || echo 'installed')"
 }
 
+# --- Developer Knowledge MCP, on request ---------------------------------------
+#
+# Registers one MCP server at user scope. The server needs an API key, and this
+# function deliberately writes none: the environment that passes the flag holds
+# an API credential (host developerknowledge.googleapis.com, header
+# X-Goog-Api-Key) that the agent proxy attaches after the request leaves the VM,
+# so the key never reaches the container. That works because Claude Code's own
+# MCP connections go through the agent proxy too, not just the commands it runs
+# -- which is what makes a keyless entry correct rather than broken.
+#
+# User scope, not a .mcp.json per repo, so the server travels with the
+# environment that holds the credential rather than being an opt-in in every
+# repo (#439). It cannot clobber repo config: .mcp.json is project scope, a
+# different file, and outranks user scope when both name the same server --
+# Claude Code loads the entry from the highest-precedence source whole.
+#
+# jq rather than `claude mcp add`, for the same reason --with-hooks merges
+# settings.json with jq: the claude binary is not guaranteed to be on PATH at
+# setup-script time, and jq edits exactly one key. Everything else in
+# ~/.claude.json -- account state, other servers -- is carried through
+# unchanged, and the file stays 0600. A file that is not a JSON object is left
+# alone and the capability degrades, rather than being replaced.
+cap_devknowledge() {
+    command -v jq > /dev/null 2>&1 || die "needs jq to edit ~/.claude.json"
+    _dk_cfg="$HOME/.claude.json"
+    _dk_src="$_dk_cfg"
+    if [ -f "$_dk_cfg" ]; then
+        jq -e 'type == "object"' "$_dk_cfg" > /dev/null 2>&1 ||
+            die "$_dk_cfg is not a JSON object; left it untouched"
+    else
+        _dk_src="$TMP/claude-json-empty"
+        echo '{}' > "$_dk_src"
+    fi
+    jq --arg name google-developer-knowledge \
+        --arg url https://developerknowledge.googleapis.com/mcp \
+        '.mcpServers[$name] = {type: "http", url: $url}' \
+        "$_dk_src" > "$TMP/claude-json-merged" ||
+        die "could not add google-developer-knowledge to $_dk_cfg"
+    # Written beside the target and renamed, so a failure cannot leave a
+    # half-written ~/.claude.json, and created 0600 because the file holds
+    # account state.
+    (umask 077 && cat "$TMP/claude-json-merged" > "$_dk_cfg.bootstrap-tmp") ||
+        die "could not write $_dk_cfg"
+    mv "$_dk_cfg.bootstrap-tmp" "$_dk_cfg" || die "could not replace $_dk_cfg"
+    log "mcp     -> google-developer-knowledge in $_dk_cfg (user scope; no key -- the environment's API credential supplies it)"
+}
+
 DEGRADED=
 
 capability() {
@@ -1505,6 +1580,7 @@ capability "$WITH_PRECOMMIT" precommit cap_precommit
 # `timings` carries its duration rather than burying it in the install's (#441).
 capability "$WITH_PRECOMMIT" precommit-warm cap_precommit_warm
 capability "$WITH_GH" gh cap_gh
+capability "$WITH_DEVKNOWLEDGE" devknowledge cap_devknowledge
 
 # --- the manifest -------------------------------------------------------------
 #
@@ -1577,6 +1653,7 @@ fi
     echo "terraform=$WITH_TERRAFORM"
     echo "hooks=$WITH_HOOKS"
     echo "gh=$WITH_GH"
+    echo "devknowledge=$WITH_DEVKNOWLEDGE"
     # Machine-readable timing, so a regression is a diff between two runs rather
     # than someone's memory of how long it used to take. `timings` is
     # space-separated name=Ns pairs; absent names did not run.

@@ -562,5 +562,117 @@ check "  and no longer calls it a warning" "0" \
     "$(count 'will warn that it is being overridden' "$ROOT/cloud/README.md")"
 rm -rf "$H"
 
+# --- 9. --with-devknowledge: one key in ~/.claude.json, nothing else ---------
+#
+# The invariant: registering the Developer Knowledge MCP server edits exactly
+# mcpServers."google-developer-knowledge" and carries everything else in
+# ~/.claude.json through untouched -- that file holds account state, and a
+# sandbox's other user-scope servers are not this flag's business (#439). It
+# writes no key and no header: the environment's API credential supplies it.
+echo
+echo "cloud/bootstrap.sh — --with-devknowledge"
+
+command -v jq > /dev/null 2>&1 || no "jq is not on PATH — the devknowledge assertions cannot run"
+
+H=$(mktemp -d)
+{
+    for fn in cap_devknowledge now_s record_timing capability; do
+        sed -n "/^$fn() {/,/^}\$/p" "$BOOTSTRAP"
+    done
+} > "$H/fn.sh"
+check "cap_devknowledge was extractable from the script" "1" \
+    "$(count '^cap_devknowledge() {' "$H/fn.sh")"
+
+cat > "$H/harness.sh" << 'HARNESS'
+set -eu
+log() { echo "[bootstrap] $*"; }
+die() {
+    if [ -n "${FAIL_FILE:-}" ]; then echo "$*" > "$FAIL_FILE" 2> /dev/null || true; fi
+    echo "[bootstrap] error: $*" >&2
+    exit 1
+}
+DEGRADED=
+TIMINGS=
+. "$FNS"
+FAIL_FILE="$TMP/fail-reason"
+capability 1 devknowledge cap_devknowledge
+echo "SURVIVED"
+echo "degraded=$DEGRADED"
+HARNESS
+
+run_dk() { # run_dk <home> -- runs the capability through capability(), as the bootstrap does
+    mkdir -p "$1/tmp"
+    HOME="$1" TMP="$1/tmp" FNS="$H/fn.sh" sh "$H/harness.sh" 2>&1
+}
+dk_entry='.mcpServers["google-developer-knowledge"]'
+file_mode() { stat -c '%a' "$1" 2> /dev/null || stat -f '%Lp' "$1"; }
+
+# 9a. No ~/.claude.json yet: created, holding only the one server, 0600.
+mkdir -p "$H/a"
+out=$(run_dk "$H/a")
+check "no ~/.claude.json: the capability succeeds" "degraded=" \
+    "$(printf '%s\n' "$out" | grep '^degraded=')"
+check "  the entry is type http at the MCP URL" \
+    '{"type":"http","url":"https://developerknowledge.googleapis.com/mcp"}' \
+    "$(jq -c "$dk_entry" "$H/a/.claude.json" 2> /dev/null)"
+check "  and carries no headers, so no key" "null" \
+    "$(jq -c "$dk_entry.headers" "$H/a/.claude.json" 2> /dev/null)"
+check "  the file is created 0600" "600" "$(file_mode "$H/a/.claude.json")"
+
+# 9b. An existing file: every other key and server survives.
+mkdir -p "$H/b"
+cat > "$H/b/.claude.json" << 'JSON'
+{"userID": "u-123", "oauthAccount": {"emailAddress": "x@example.com"},
+ "mcpServers": {"other-server": {"type": "stdio", "command": "other"}},
+ "projects": {"/repo": {"mcpServers": {"local-one": {"type": "http", "url": "https://l"}}}}}
+JSON
+chmod 600 "$H/b/.claude.json"
+before=$(jq -S -c "del($dk_entry)" "$H/b/.claude.json")
+run_dk "$H/b" > /dev/null
+check "existing file: everything but the new entry is unchanged" "$before" \
+    "$(jq -S -c "del($dk_entry)" "$H/b/.claude.json" 2> /dev/null)"
+check "  the other user-scope server is still there" "other" \
+    "$(jq -r '.mcpServers["other-server"].command' "$H/b/.claude.json" 2> /dev/null)"
+check "  and the new one was added" "http" \
+    "$(jq -r "$dk_entry.type" "$H/b/.claude.json" 2> /dev/null)"
+check "  the file stays 0600" "600" "$(file_mode "$H/b/.claude.json")"
+
+# 9c. Idempotent: a second run changes nothing.
+once=$(jq -S -c . "$H/b/.claude.json")
+run_dk "$H/b" > /dev/null
+check "a re-run leaves the file equivalent" "$once" \
+    "$(jq -S -c . "$H/b/.claude.json" 2> /dev/null)"
+check "  still exactly two user-scope servers" "2" \
+    "$(jq '.mcpServers | length' "$H/b/.claude.json" 2> /dev/null)"
+
+# 9d. A file that is not a JSON object is left alone, and the run degrades
+# rather than dying. Replacing it would throw away whatever it held.
+for bad in 'not json at all' '["an", "array"]'; do
+    mkdir -p "$H/d"
+    printf '%s\n' "$bad" > "$H/d/.claude.json"
+    out=$(run_dk "$H/d")
+    check "unusable ~/.claude.json ($bad): the run survives" "1" \
+        "$(printf '%s\n' "$out" | grep -c '^SURVIVED$')"
+    check "  it names itself in degraded=" "degraded=devknowledge" \
+        "$(printf '%s\n' "$out" | grep '^degraded=')"
+    check "  and the file is untouched" "$bad" "$(cat "$H/d/.claude.json")"
+    check "  with no temp file left beside it" "0" \
+        "$(find "$H/d" -maxdepth 1 -name '.claude.json.bootstrap-tmp' | wc -l | tr -d ' ')"
+    rm -rf "$H/d"
+done
+
+# 9e. The flag parses. A trailing unknown argument makes the run die in the
+# argument loop -- the earliest failure there is -- so the reason it records
+# says which argument was rejected. Were --with-devknowledge unknown, it would
+# be the one named.
+mkdir -p "$H/e"
+HOME="$H/e" sh "$BOOTSTRAP" "$BOOTSTRAP_TEST_REF" --with-devknowledge --no-devknowledge \
+    --a-flag-that-does-not-exist > /dev/null 2>&1
+check "--with-devknowledge and --no-devknowledge are accepted arguments" \
+    "failed_step=unknown argument: --a-flag-that-does-not-exist" \
+    "$(grep '^failed_step=' "$H/e/.agents/.bootstrap-manifest" 2> /dev/null)"
+
+rm -rf "$H"
+
 printf '\n%s passed, %s failed\n' "$PASS" "$FAIL"
 [ "$FAIL" -eq 0 ]
