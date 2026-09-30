@@ -286,6 +286,23 @@ check "  and an empty degraded list" "" \
     "$(sed -n 's/^degraded=//p' "$H/.agents/.bootstrap-manifest")"
 check "  and leaves no failure banner" "0" \
     "$(count 'acc:bootstrap-failed' "$H/.claude/CLAUDE.md")"
+# devknowledge is on by default for claude-cloud-sandbox, the profile this run
+# took by default, so the same run registered the server with no flag.
+check "  devknowledge is on by profile default" "1" \
+    "$(sed -n 's/^devknowledge=//p' "$H/.agents/.bootstrap-manifest")"
+check "  and google-developer-knowledge is registered" "http" \
+    "$(jq -r '.mcpServers["google-developer-knowledge"].type' "$H/.claude.json" 2> /dev/null)"
+rm -rf "$H"
+
+# The default is claude-cloud-sandbox's alone. Codex does not read
+# ~/.claude.json, so its profile must not write one.
+H=$(mktemp -d)
+HOME="$H" sh "$BOOTSTRAP" "$BOOTSTRAP_TEST_REF" --profile codex-cloud-sandbox \
+    --no-gcloud --no-precommit --no-hooks --no-terraform > "$H/run.log" 2>&1
+check "codex-cloud-sandbox leaves devknowledge off" "0" \
+    "$(sed -n 's/^devknowledge=//p' "$H/.agents/.bootstrap-manifest")"
+check "  and writes no ~/.claude.json" "0" \
+    "$([ -f "$H/.claude.json" ] && echo 1 || echo 0)"
 rm -rf "$H"
 
 # --- 7. a capability that cannot install degrades, it does not abort -------

@@ -86,7 +86,7 @@ environments need no capability flags at all:
 
 | Profile | gcloud | pre-commit | hooks | gh | devknowledge |
 | --- | --- | --- | --- | --- | --- |
-| `claude-cloud-sandbox` | yes | yes | yes | no | no |
+| `claude-cloud-sandbox` | yes | yes | yes | no | yes |
 | `codex-cloud-sandbox` | yes | yes | no | no | no (Claude only) |
 | `*-workstation` | no | no | no | no | no |
 
@@ -101,9 +101,13 @@ somebody's laptop, and there is no laptop here. #254 is what its absence cost.
 
 `gh` is off everywhere. It is documented below as counterproductive on
 Anthropic-hosted sandboxes, so it waits for a caller who knows their egress.
-`devknowledge` is off everywhere too, for a sharper reason: it only works where
-the environment holds the matching API credential, and nothing in the container
-can see whether it does.
+`devknowledge` is **on for `claude-cloud-sandbox`**. That makes the
+Developer Knowledge API credential ([step 4](#4-api-credentials)) part of what
+this profile expects. An environment on this profile **without** it gets three
+tools that 401 on every call, so either add the credential or pass
+`--no-devknowledge`. Nothing in the bootstrap can check this for you, because
+setup-script requests never get a credential attached, so a probe at setup
+time would fail even where the credential exists.
 
 ### Overriding a profile
 
@@ -125,7 +129,7 @@ line no longer says what happened:
 
 ```text
 [bootstrap] profile -> claude-cloud-sandbox
-[bootstrap] caps    :  gcloud=yes precommit=yes hooks=yes gh=no terraform=yes devknowledge=no
+[bootstrap] caps    :  gcloud=yes precommit=yes hooks=yes gh=no terraform=yes devknowledge=yes
 ```
 
 The same set is written to `~/.agents/.bootstrap-manifest`, which is where to
@@ -162,11 +166,14 @@ directly rather than treating it as a fallback (#265).
 
 `--with-devknowledge` registers Google's Developer Knowledge MCP server as
 `google-developer-knowledge`, at **user scope** in `~/.claude.json`, with no
-auth header. Pass it **only** from an environment that also holds the
-Developer Knowledge API credential ([step 4](#4-api-credentials)). The agent
-proxy attaches the key outside the VM, so the key never enters the container.
-Without the credential, the server's tools appear but return 401 on every
-call, the worst failure shape, which is why the flag is off by default (#439).
+auth header. It depends on the Developer Knowledge API credential
+([step 4](#4-api-credentials)): the agent proxy attaches the key outside the
+VM, so the key never enters the container. **On by default for
+`claude-cloud-sandbox`**, so every Claude environment on that profile should
+carry the credential. Without it, the server's tools appear but return 401 on
+every call, the worst failure shape. Pass `--no-devknowledge` from any such
+environment that can't hold the credential, e.g. on a plan without API
+credentials (#439).
 
 - **Why the environment, not the repo:** this couples the server to the
   environment that can authenticate it, rather than requiring a `.mcp.json`
@@ -184,15 +191,16 @@ call, the worst failure shape, which is why the flag is off by default (#439).
   capability degrades instead of replacing it.
 
 ```sh
-sh /tmp/bootstrap.sh "$REF" --profile "$PROFILE" --with-devknowledge
+# claude-cloud-sandbox gets it with no flag; opting out:
+sh /tmp/bootstrap.sh "$REF" --profile "$PROFILE" --no-devknowledge
 ```
 
 The tool names match the allowlist `home/settings.json` already carries
 (`mcp__google-developer-knowledge__*`). Verified end to end in
 pmgledhill102/cloud-playground#12 with the same keyless entry declared at
-project scope. At user scope, delivered by this flag, it is **unverified until
-a fresh session in an environment with the flag confirms the entry survives
-session start**.
+project scope. At user scope, delivered by the bootstrap, it is **unverified
+until a fresh session on this profile confirms the entry survives session
+start**.
 
 **The `Rev:` comment is load-bearing.** The environment snapshots the setup
 script's result and re-runs it only when the script text changes, the allowed

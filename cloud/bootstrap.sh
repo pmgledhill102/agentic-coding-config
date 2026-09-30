@@ -18,7 +18,7 @@
 # What each profile resolves to today:
 #
 #                          gcloud  pre-commit  hooks  gh  devknowledge
-#   claude-cloud-sandbox     yes       yes      yes   no      no
+#   claude-cloud-sandbox     yes       yes      yes   no      yes
 #   codex-cloud-sandbox      yes       yes      no    no      no
 #   *-workstation            no        no       no    no      no
 #
@@ -64,12 +64,13 @@
 #
 # --with-devknowledge registers Google's Developer Knowledge MCP server
 # (google-developer-knowledge) at user scope in ~/.claude.json, with NO auth
-# header. Off for every profile, because the key is not the bootstrap's to
-# supply: pass the flag only from an environment that holds the matching API
-# credential (host developerknowledge.googleapis.com, header X-Goog-Api-Key),
-# which the agent proxy attaches outside the VM. An environment without that
-# credential would get three tools that 401 on every call, so it gets no server
-# instead (#439). Claude profiles only -- Codex does not read ~/.claude.json.
+# header. The key is not the bootstrap's to supply: it comes from the
+# environment's API credential (host developerknowledge.googleapis.com, header
+# X-Goog-Api-Key), which the agent proxy attaches outside the VM. On by default
+# for claude-cloud-sandbox, which makes that credential part of what the
+# profile expects: an environment on this profile without it gets three tools
+# that 401 on every call, and should pass --no-devknowledge (#439). Claude
+# profiles only -- Codex does not read ~/.claude.json.
 #
 # <REF> is what everything else is fetched from, and should match the ref this
 # script was itself fetched from, so a run cannot straddle two versions. Pin it
@@ -373,12 +374,19 @@ WITH_GH=$(resolve "$WITH_GH" 0)
 # installing them look mandatory for the wrong reason.
 WITH_TERRAFORM=$(resolve "$WITH_TERRAFORM" "$def_terraform")
 
-# Developer Knowledge has no default for the same reason gh has none, and a
-# stronger one: whether it works is a property of the environment's API
-# credentials, which nothing in the container can see. Only the caller knows,
-# so only the caller turns it on. On a non-Claude profile the flag is refused
-# rather than honoured, because the file it edits is Claude Code's.
-WITH_DEVKNOWLEDGE=$(resolve "$WITH_DEVKNOWLEDGE" 0)
+# Developer Knowledge is on for claude-cloud-sandbox. Whether it works is a
+# property of the environment's API credentials, which nothing here can check:
+# setup-script requests never get a credential attached, so a probe at this
+# point would fail even where the credential exists. The default is therefore
+# a statement about what an environment on this profile is expected to hold,
+# and --no-devknowledge is the refund for one that holds no credential. On a
+# non-Claude profile the flag is refused rather than honoured, because the
+# file it edits is Claude Code's.
+case "$PROFILE" in
+    claude-cloud-sandbox) def_devknowledge=1 ;;
+    *) def_devknowledge=0 ;;
+esac
+WITH_DEVKNOWLEDGE=$(resolve "$WITH_DEVKNOWLEDGE" "$def_devknowledge")
 case "$PROFILE" in
     claude-*) ;;
     *)
