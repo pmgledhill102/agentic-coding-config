@@ -25,6 +25,16 @@ the broker 400s a teardown that names a project, deliberately, so that a client
 cannot believe it targeted a sandbox it did not -- and an absence is only
 testable against the bytes that actually went out.
 
+Each calls.log line also says whether the call carried an X-Request-Key header
+(key=header) or not (key=absent) -- never its value.
+
+If $STUB_DIR/key-mode contains "proxy", the stub plays a broker behind a
+platform proxy that supplies the key itself: any request carrying X-Request-Key
+or a request_key body field is refused with 401. A helper in proxy-supplied
+mode must send neither, and this is what makes a leak of either one a test
+failure rather than a silent pass. Like everything else here it is re-read per
+request, so a test can switch it on and off.
+
 The chosen port is printed to stdout as "PORT <n>" and then the process
 serves until killed. Port 0 lets the OS pick, so concurrent runs do not
 collide.
@@ -65,28 +75,46 @@ def endpoint_for(method, path):
     return None
 
 
+def proxy_mode():
+    path = os.path.join(STUB_DIR, "key-mode")
+    if not os.path.exists(path):
+        return False
+    with open(path) as fh:
+        return fh.read().strip() == "proxy"
+
+
+def client_sent_key(headers, body_sent):
+    """True if the client presented a key in either carrier."""
+    if headers.get("X-Request-Key") is not None:
+        return True
+    if not body_sent:
+        return False
+    try:
+        return "request_key" in json.loads(body_sent)
+    except (ValueError, TypeError):
+        return False
+
+
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, *_args):
         pass  # the access log would drown the test output
 
     def _record(self):
         with open(os.path.join(STUB_DIR, "calls.log"), "a") as fh:
-            fh.write("%s %s client=%s\n" % (
+            fh.write("%s %s client=%s key=%s\n" % (
                 self.command,
                 self.path,
                 self.headers.get("X-Client-Version", "absent"),
+                "header" if self.headers.get("X-Request-Key") is not None else "absent",
             ))
 
     def _respond(self):
         self._record()
         endpoint = endpoint_for(self.command, self.path)
-        if endpoint is None:
-            status, body = 404, json.dumps({"error": "no such endpoint"}).encode()
-        else:
-            status, body = canned(endpoint)
         # Drain the request body, or curl sees a broken pipe rather than the
         # status we are trying to test. Kept rather than discarded, so a test
         # can assert on what was sent as well as on what came back.
+        body_sent = b""
         length = int(self.headers.get("Content-Length") or 0)
         if length:
             body_sent = self.rfile.read(length)
@@ -94,6 +122,15 @@ class Handler(BaseHTTPRequestHandler):
                 path = os.path.join(STUB_DIR, endpoint + "-body.json")
                 with open(path, "wb") as fh:
                     fh.write(body_sent)
+
+        if endpoint is None:
+            status, body = 404, json.dumps({"error": "no such endpoint"}).encode()
+        elif proxy_mode() and client_sent_key(self.headers, body_sent):
+            status = 401
+            body = json.dumps({"error": "unauthorized",
+                               "stub": "a key was sent by the client in proxy mode"}).encode()
+        else:
+            status, body = canned(endpoint)
         self.send_response(status)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(body)))

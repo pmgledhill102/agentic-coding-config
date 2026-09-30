@@ -574,6 +574,108 @@ canned request 426 '{"error":"client too old","hint":"chezmoi apply --refresh-ex
 run_in "$TD_REPO" teardown
 expect_rc "stale client" 8
 
+# --- proxy-supplied request key ------------------------------------------------
+#
+# With CREDENTIAL_BROKER_REQUEST_KEY=proxy-injected the environment's API
+# credential attaches X-Request-Key outside the VM, so the helper must send no
+# key in any carrier. The stub's proxy key-mode 401s any request carrying one,
+# which turns a leak into a failure here rather than a duplicated header in
+# production.
+
+echo "proxy-supplied request key"
+
+# run_proxy <args...> / run_proxy_in <dir> <args...> -- run with the sentinel and
+# no key file, as a Claude cloud environment holding the key as a credential.
+run_proxy() {
+    OUT=$(CREDENTIAL_BROKER_REQUEST_KEY=proxy-injected "$HELPER" "$@" 2>&1) && RC=0 || RC=$?
+    printf '%s\n' "$OUT" >> "$ALL_OUTPUT"
+}
+run_proxy_in() {
+    rp_dir=$1
+    shift
+    OUT=$(cd "$rp_dir" && CREDENTIAL_BROKER_REQUEST_KEY=proxy-injected "$HELPER" "$@" 2>&1) && RC=0 || RC=$?
+    printf '%s\n' "$OUT" >> "$ALL_OUTPUT"
+}
+key_absent_on() { # label "METHOD PATH-prefix"
+    if grep "^$2" "$STUB_DIR/calls.log" | grep -q 'key=header'; then
+        no "$1 — sent an X-Request-Key header"
+    elif grep -q "^$2" "$STUB_DIR/calls.log"; then
+        ok "$1"
+    else
+        no "$1 — the call was never made"
+    fi
+}
+
+rm -f "$CB_DIR/request-key"
+
+# Control: the strict stub must refuse an ordinary client that sends its key,
+# or every pass below proves nothing.
+reset_state
+printf 'proxy' > "$STUB_DIR/key-mode"
+canned request 200 "$REQ_OK"
+run request --purpose "test" --project p --no-gcloud --no-refresh
+expect_rc "control: the proxy-mode stub refuses a client that sends a key" 1
+
+# (a) request -> wait -> revoke, end to end, with no key anywhere in the client.
+reset_state
+printf 'proxy' > "$STUB_DIR/key-mode"
+canned request 200 "$REQ_OK"
+run_proxy request --purpose "test" --project p --no-gcloud --no-refresh
+expect_rc "request opens with the key supplied by the proxy" 0
+if jq -e 'has("request_key")' < "$STUB_DIR/request-body.json" > /dev/null 2>&1; then
+    no "request body carries no request_key field"
+else
+    ok "request body carries no request_key field"
+fi
+key_absent_on "request sends no X-Request-Key header" "POST /request"
+canned poll 200 "$APPROVED"
+canned exchange 200 "$EXCHANGE_OK"
+run_proxy wait
+expect_rc "wait installs the grant" 0
+key_absent_on "poll sends no X-Request-Key header" "GET /requests/"
+run_proxy status
+expect_out "status names the key source" "key     : proxy-supplied"
+canned revoke 200
+run_proxy revoke
+expect_rc "revoke" 0
+key_absent_on "revoke sends no X-Request-Key header" "POST /requests/"
+
+# (b) teardown shares /request, so it shares the rule.
+reset_state
+printf 'proxy' > "$STUB_DIR/key-mode"
+canned request 200 "$REQ_OK"
+canned poll 200 '{"state":"denied"}'
+run_proxy_in "$TD_REPO" teardown
+expect_rc "teardown reaches a decision with the key supplied by the proxy" 3
+if jq -e 'has("request_key")' < "$STUB_DIR/request-body.json" > /dev/null 2>&1; then
+    no "teardown body carries no request_key field"
+else
+    ok "teardown body carries no request_key field"
+fi
+
+# (c) The broker rejects the proxy's key: the advice points at the environment's
+# credential, not at a variable or file this machine does not use.
+reset_state
+rm -f "$STUB_DIR/key-mode"
+canned request 401 '{"error":"unauthorized"}'
+run_proxy request --purpose "test" --project p --no-gcloud --no-refresh
+expect_rc "a rejected proxy-supplied key" 1
+expect_out "points at the environment's API credential" "API credential"
+expect_out "names the header it must carry" "X-Request-Key"
+
+# (d) The sentinel is a mode switch, never a value: it must not appear in
+# anything sent. Header absence is covered by key_absent_on above.
+if grep -q 'proxy-injected' "$STUB_DIR"/*-body.json 2> /dev/null; then
+    no "the sentinel was never sent in a request body"
+else
+    ok "the sentinel was never sent in a request body"
+fi
+
+# (e) Unset still means not configured, distinct from proxy-supplied.
+run status
+expect_out "status names an environment key as such" "key     : \$CREDENTIAL_BROKER_REQUEST_KEY"
+rm -f "$STUB_DIR/key-mode"
+
 # --- the invariant -----------------------------------------------------------
 
 echo "transcript hygiene"
