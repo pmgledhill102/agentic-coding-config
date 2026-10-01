@@ -259,17 +259,41 @@ bootstrap itself needs nothing added.
 | Variable | Value |
 | -------- | ----- |
 | `CREDENTIAL_BROKER_URL` | the broker hostname above, with scheme |
-| `CREDENTIAL_BROKER_REQUEST_KEY` | the **`cloud`** key, from the password manager |
+| `CREDENTIAL_BROKER_REQUEST_KEY` | `proxy-injected`, with the key held as an API credential (below). Or, where that isn't available, the **`cloud`** key itself |
 
 Use the `cloud` key, not the `local` one. The approval card names which key was
 used, and "key cloud while I am at my laptop" is information worth keeping
 truthful.
 
-Cloud environments have **no secrets store** — anyone who can use the
-environment can read its variables, and the documentation says not to put
-credentials there. The request key is a deliberate exception: it only gates
-*opening* a request, the human approval is the real control, and rotation is
-documented. Treat that as a knowing decision rather than a default.
+**Preferred: hold the key as an API credential.** Environment variables are
+readable by anything running in the session. On Pro and Max, add the key in
+[step 4](#4-api-credentials) instead, and set the variable to the literal
+`proxy-injected`:
+
+| Field | Value |
+| --- | --- |
+| Name | `Credential broker` |
+| Allowed websites | the broker's host, **exactly** (the same `credential-broker-<hash>-nw.a.run.app` as step 2). Not `*.run.app`: two credentials whose hosts overlap without matching exactly get no marker, and only one is sent |
+| Custom header name | `X-Request-Key` |
+| Prefix | **empty** |
+| Value | the `cloud` key |
+
+The helper then sends no key of its own, and `gcp-credentials status` reports
+`key : proxy-supplied`. The key can no longer be *copied out* of a sandbox by
+`env`, a log or a prompt-injected `cat`. A process inside can still *use* it,
+by calling the broker through the proxy, so this protects against
+exfiltration, not against use.
+
+- **Needs a broker that reads the header on `POST /request`.** That's
+  pmgledhill102/gcp-org-management#670. An older broker reads the key only
+  from the request body, so `request` returns 401 in this mode.
+- **Only for Claude cloud environments on Pro and Max.** Team and Enterprise,
+  and Codex, keep the key in the variable.
+
+Where the variable does hold the key itself, that's a deliberate exception to
+"no credentials in environment variables". It only gates *opening* a request,
+the human approval is the real control, and rotation is documented. Treat it
+as a knowing decision rather than a default.
 
 ### 4. API credentials
 

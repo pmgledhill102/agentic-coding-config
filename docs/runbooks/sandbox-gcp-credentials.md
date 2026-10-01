@@ -161,13 +161,18 @@ owner did not expect and should deny.
 Still worth rotating, because the key is what stops approval spam:
 
 1. Rotate the key at the broker (private runbook).
-2. Update it everywhere it is configured: `CREDENTIAL_BROKER_REQUEST_KEY` in each
-   cloud environment, and `~/.config/claude/credential-broker/request-key` (mode
-   0600) on each machine.
-3. Cloud environments have no secrets store, so the key sits in environment
-   variables readable by anyone who can use the environment. That is a knowing
-   exception, documented in `cloud/README.md` — rotation is the compensating
-   control, so actually do it.
+2. Update it everywhere it is configured:
+   - **Cloud environments holding it as an API credential**
+     (`CREDENTIAL_BROKER_REQUEST_KEY=proxy-injected`): delete and re-add the
+     credential, since there is no edit.
+   - **Cloud environments holding it in the variable:** update
+     `CREDENTIAL_BROKER_REQUEST_KEY`.
+   - **Each machine:** update `~/.config/claude/credential-broker/request-key`
+     (mode 0600).
+3. Where a cloud environment still holds the key in the variable, it's
+   readable by anyone who can use the environment. That's a knowing exception,
+   documented in `cloud/README.md`: rotation is the compensating control, so
+   actually do it. Moving the key to an API credential removes the exception.
 
 ### An approval card arrived that nobody expected
 

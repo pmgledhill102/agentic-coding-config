@@ -558,8 +558,16 @@ into a session:
 
 | What | Cloud sandbox | Local macOS |
 | --- | --- | --- |
-| Request key | `$CREDENTIAL_BROKER_REQUEST_KEY` | `~/.config/claude/credential-broker/request-key`, mode 0600 |
+| Request key | an environment **API credential**, with `$CREDENTIAL_BROKER_REQUEST_KEY=proxy-injected`; or the key itself in that variable | `~/.config/claude/credential-broker/request-key`, mode 0600 |
 | Broker URL | `$CREDENTIAL_BROKER_URL` | `~/.config/claude/credential-broker/url` |
+
+**`proxy-injected` is a mode switch, not a key.** It means the environment's
+agent proxy attaches `X-Request-Key` to broker requests after they leave the
+VM, so the key is never in the container. The helper then sends no key of its
+own, and `status` shows `key : proxy-supplied`. In this mode, a 401 on
+`request` means the environment's credential is wrong or missing. That's a
+setup task for the human, like exit 6: report it, and never go looking for the
+key.
 
 Exit 6 names both locations. If a machine is missing them, that is a setup task
 for the human — say so and stop; do not attempt to work around it.
