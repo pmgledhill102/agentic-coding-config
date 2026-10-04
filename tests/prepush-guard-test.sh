@@ -136,6 +136,20 @@ expect "control: ( cd live ) && git push blocks" \
 expect "control: pushd live && popd && push blocks" \
     "$WORK/merged" "pushd $WORK/live && popd && git push" 2
 
+echo "--- globs, cd options, groups and pipelines (found working #558) ---"
+expect "{ cd merged; git push; } blocks" \
+    "$WORK/live" "{ cd $WORK/merged; git push; }" 2
+expect "cd merged | cat; git push from live allows" \
+    "$WORK/live" "cd $WORK/merged | cat; git push" 0
+expect "cd -P merged && git push blocks" \
+    "$WORK/live" "cd -P $WORK/merged && git push" 2
+expect "cd <glob> && git push stands down" \
+    "$WORK/live" "cd $WORK/merg* && git push" 0
+expect "{ cd live; } | cat; git push stands down" \
+    "$WORK/merged" "{ cd $WORK/live; true; } | cat; git push" 0
+expect "control: cd merged || exit; git push blocks" \
+    "$WORK/live" "cd $WORK/merged || exit 1; git push" 2
+
 echo "--- existing escape hatches are untouched ---"
 expect "--no-verify" \
     "$WORK/merged" "git push --no-verify" 0
@@ -188,6 +202,8 @@ expect_err() {
 echo "--- each stand-down names its reason (#557) ---"
 expect_err "unresolvable path" \
     "$HOOK" "$PATH" "" "$WORK/merged" 'cd "$SCRATCH" && git push' 0 'not checked -- unresolvable path'
+expect_err "cd - is unresolvable, not \$dir/-" \
+    "$HOOK" "$PATH" "" "$WORK/merged" 'cd - && git push' 0 'not checked -- unresolvable path'
 expect_err "lib missing" \
     "$WORK/nolib/prepush-guard-claude-hook" "$PATH" "" "$WORK/merged" 'git push' 0 'not checked -- lib missing'
 expect_err "gh unavailable" \
