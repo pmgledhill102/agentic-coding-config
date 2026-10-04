@@ -322,6 +322,113 @@ expect_out "reports the project" "example-project-sbx"
 expect_out "reports a token is present" "token   : present"
 expect_out "reports the client version" "client  : v4"
 
+# --- status is wrapper-aware (#377) -------------------------------------------
+#
+# CLOUDSDK_AUTH_ACCESS_TOKEN outranks the broker token for the SDK's gcloud,
+# but cloud/bootstrap.sh installs a gcloud wrapper that drops it whenever a
+# broker token is on disk. "calls will fail" is only true when the gcloud on
+# PATH is not that wrapper, or its guard does not hold. Two stub gclouds on
+# PATH: one carrying the wrapper's working line, one plain.
+GC_WRAP="$WORK/gcloud-wrapper"
+GC_PLAIN="$WORK/gcloud-plain"
+mkdir -p "$GC_WRAP" "$GC_PLAIN"
+cat > "$GC_WRAP/gcloud" << 'STUB'
+#!/bin/sh
+# stand-in for cloud/bootstrap.sh's wrapper; status only lists configurations.
+if [ -n "${CLOUDSDK_AUTH_ACCESS_TOKEN:-}" ] && [ -f "$CB_TOKEN" ]; then
+    exec env -u CLOUDSDK_AUTH_ACCESS_TOKEN /bin/true "$@"
+fi
+exit 0
+STUB
+printf '#!/bin/sh\nexit 0\n' > "$GC_PLAIN/gcloud"
+chmod 0755 "$GC_WRAP/gcloud" "$GC_PLAIN/gcloud"
+
+# run_status_env <gcloud-dir> [VAR=value...] -- status with only the named
+# overriding variables set, whatever the surrounding sandbox presets.
+run_status_env() {
+    rse_dir=$1
+    shift
+    OUT=$(env -u CLOUDSDK_AUTH_ACCESS_TOKEN -u CLOUDSDK_AUTH_ACCESS_TOKEN_FILE \
+        -u CLOUDSDK_CORE_PROJECT -u GOOGLE_APPLICATION_CREDENTIALS \
+        -u GOOGLE_OAUTH_ACCESS_TOKEN PATH="$rse_dir:$PATH" "$@" \
+        "$HELPER" status 2>&1) && RC=0 || RC=$?
+    printf '%s\n' "$OUT" >> "$ALL_OUTPUT"
+}
+
+echo "status is wrapper-aware (#377)"
+run_status_env "$GC_WRAP" CLOUDSDK_AUTH_ACCESS_TOKEN=proxy-injected
+expect_out "wrapper + token: says the wrapper strips the variable" "strips it while a broker token is installed"
+expect_out "wrapper + token: names the path that still bypasses it" "SDK's own gcloud"
+expect_no_out "wrapper + token: does not claim calls will fail" "calls will fail"
+
+run_status_env "$GC_PLAIN" CLOUDSDK_AUTH_ACCESS_TOKEN=proxy-injected
+expect_out "plain gcloud: still OVERRIDDEN, calls will fail" "OVERRIDDEN by CLOUDSDK_AUTH_ACCESS_TOKEN — .*calls will fail"
+expect_no_out "plain gcloud: no wrapper wording" "strips it"
+
+run_status_env "$GC_WRAP" CLOUDSDK_AUTH_ACCESS_TOKEN=proxy-injected CLOUDSDK_CORE_PROJECT=elsewhere
+expect_out "wrapper: a variable it does not strip stays OVERRIDDEN" "OVERRIDDEN by CLOUDSDK_CORE_PROJECT — .*calls will fail"
+expect_no_out "wrapper: ...without re-listing the stripped one" "OVERRIDDEN by CLOUDSDK_AUTH_ACCESS_TOKEN"
+
+run_status_env "$GC_WRAP" CLOUDSDK_AUTH_ACCESS_TOKEN=proxy-injected GOOGLE_OAUTH_ACCESS_TOKEN=x
+expect_out "wrapper: client-library override still reported" "clients : OVERRIDDEN by GOOGLE_OAUTH_ACCESS_TOKEN"
+
+# The wrapper's guard needs a broker token on disk; without one it strips
+# nothing, so the full warning must come back.
+mv "$CB_DIR/access_token" "$WORK/access_token.aside"
+run_status_env "$GC_WRAP" CLOUDSDK_AUTH_ACCESS_TOKEN=proxy-injected
+mv "$WORK/access_token.aside" "$CB_DIR/access_token"
+expect_out "wrapper, no token on disk: calls will fail" "OVERRIDDEN by CLOUDSDK_AUTH_ACCESS_TOKEN — .*calls will fail"
+expect_no_out "wrapper, no token on disk: no wrapper wording" "strips it"
+
+run_status_env "$GC_WRAP"
+expect_no_out "nothing set: no gcloud override line at all" "CLOUDSDK_AUTH_ACCESS_TOKEN"
+
+# --- the install warning is wrapper-aware too (#556) --------------------------
+#
+# The same verdict, on the path that installs a token. Each case starts from
+# reset_state, so no token is on disk until this very `wait` exchanges one:
+# the warning runs after the exchange, and that ordering is the case asserted.
+
+# run_wait_env <gcloud-dir> [VAR=value...] -- request, approve, then `wait`
+# with only the named overriding variables set.
+run_wait_env() {
+    rwe_dir=$1
+    shift
+    reset_state
+    request_then_poll 200 "$APPROVED"
+    canned exchange 200 "$EXCHANGE_OK"
+    OUT=$(env -u CLOUDSDK_AUTH_ACCESS_TOKEN -u CLOUDSDK_AUTH_ACCESS_TOKEN_FILE \
+        -u CLOUDSDK_CORE_PROJECT -u GOOGLE_APPLICATION_CREDENTIALS \
+        -u GOOGLE_OAUTH_ACCESS_TOKEN PATH="$rwe_dir:$PATH" "$@" \
+        "$HELPER" wait 2>&1) && RC=0 || RC=$?
+    printf '%s\n' "$OUT" >> "$ALL_OUTPUT"
+}
+
+echo "install warning is wrapper-aware (#556)"
+run_wait_env "$GC_WRAP" CLOUDSDK_AUTH_ACCESS_TOKEN=proxy-injected
+expect_rc "wrapper + token: install still succeeds" 0
+expect_out "wrapper + token: says the wrapper strips the variable" "strips it while a broker token is installed"
+expect_out "wrapper + token: names the path that still bypasses it" "SDK's own gcloud"
+expect_no_out "wrapper + token: no 'calls fail' symptom" "calls fail"
+expect_no_out "wrapper + token: no override WARNING" "WARNING: the environment overrides"
+
+run_wait_env "$GC_PLAIN" CLOUDSDK_AUTH_ACCESS_TOKEN=proxy-injected
+expect_out "plain gcloud: full WARNING" "WARNING: the environment overrides"
+expect_out "plain gcloud: names the variable" "configuration: CLOUDSDK_AUTH_ACCESS_TOKEN"
+expect_out "plain gcloud: 'calls fail' symptom kept" "calls fail ACCESS_TOKEN_TYPE_UNSUPPORTED"
+expect_no_out "plain gcloud: no wrapper wording" "strips it"
+
+run_wait_env "$GC_WRAP" CLOUDSDK_AUTH_ACCESS_TOKEN=proxy-injected CLOUDSDK_CORE_PROJECT=elsewhere
+expect_out "wrapper: a variable it does not strip keeps the WARNING" "configuration: CLOUDSDK_CORE_PROJECT$"
+expect_out "wrapper: ...with its 'calls fail' symptom" "calls fail"
+expect_no_out "wrapper: ...without re-listing the stripped one" "configuration: CLOUDSDK_AUTH_ACCESS_TOKEN"
+
+run_wait_env "$GC_WRAP" CLOUDSDK_AUTH_ACCESS_TOKEN=proxy-injected GOOGLE_OAUTH_ACCESS_TOKEN=x
+expect_out "wrapper: client-library warning unchanged" "Client libraries and Terraform read these first: GOOGLE_OAUTH_ACCESS_TOKEN"
+
+run_wait_env "$GC_WRAP"
+expect_no_out "nothing set: no warning or note" "CLOUDSDK_AUTH_ACCESS_TOKEN"
+
 # --- renew / release / revoke ------------------------------------------------
 
 echo "renew"
