@@ -79,7 +79,12 @@ git_subcommand() {
 
 # Split on shell separators, so `cd x && git commit -m ...` still matches while
 # `echo "git commit"` does not.
+#
+# Globbing is off while the command is split into words: `git -C docs/* commit`
+# would otherwise expand against this hook's cwd, and the extra words would
+# shift a filename into the subcommand position.
 stage=""
+set -f
 cls_ifs=$IFS
 IFS='
 '
@@ -95,6 +100,7 @@ for seg in "$@"; do
         push) [ -n "$stage" ] || stage="pre-push" ;;
     esac
 done
+set +f
 [ -n "$stage" ] || exit 0
 
 # Honour --no-verify / -n against the whole command, as before.

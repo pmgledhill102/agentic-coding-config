@@ -256,6 +256,33 @@ expect_where "pushd \"\$VAR\" && commit -> not checked" "$HOOK" "$LINTED" 'pushd
 expect_where "control: ( cd <bare> ) && commit"         "$HOOK" "$LINTED" "( cd $BARE ) && git commit -m x"   "$LINTED" 0 ''
 expect_where "control: pushd <bare> && popd && commit"  "$HOOK" "$LINTED" "pushd $BARE && popd && git commit -m x" "$LINTED" 0 ''
 
+echo "--- globs, cd options, groups and pipelines (found working #558) ---"
+# shellcheck disable=SC2016
+expect_where "cd <glob> && commit -> not checked"       "$HOOK" "$BARE"   "cd $WORK/lint* && git commit -m x" none     0 'not checked'
+expect_where "cd -P <configured> && commit"             "$HOOK" "$BARE"   "cd -P $LINTED && git commit -m x" "$LINTED" 0 ''
+expect_where "cd - && commit -> not checked"            "$HOOK" "$LINTED" 'cd - && git commit -m x'          none      0 'not checked'
+expect_where "cd -e <path> && commit -> not checked"    "$HOOK" "$LINTED" "cd -e $BARE && git commit -m x"   none      0 'not checked'
+expect_where "{ cd <configured>; commit; }, from bare"  "$HOOK" "$BARE"   "{ cd $LINTED; git commit -m x; }" "$LINTED" 0 ''
+expect_where "cd <bare> | cat; commit: stage is scoped" "$HOOK" "$LINTED" "cd $BARE | cat; git commit -m x"  "$LINTED" 0 ''
+expect_where "{ cd <bare>; make; } | tee; commit"       "$HOOK" "$LINTED" "{ cd $BARE; make; } | tee log; git commit -m x" none 0 'not checked'
+expect_where "control: cd <configured> >/dev/null"      "$HOOK" "$BARE"   "cd $LINTED >/dev/null && git commit -m x" "$LINTED" 0 ''
+expect_where "control: cd <configured> || exit; commit" "$HOOK" "$BARE"   "cd $LINTED || exit 1; git commit -m x" "$LINTED" 0 ''
+
+echo "--- classification does not glob against the hook's cwd ---"
+# Run from the repo root, where docs/* expands to several files: with
+# globbing on, the second file landed in the subcommand position. The glob
+# also makes the path unresolvable, so the hook stops before the toplevel
+# lookup classify() keys on; the stage assignment in the trace is the signal.
+got=$(cd "$ROOT" && printf '{"tool_input":{"command":"git -C docs/* commit -m x"},"cwd":"%s"}\n' "$ROOT" |
+    sh -x "$HOOK" 2>&1 | sed -n 's/^+* *stage=\(pre-[a-z]*\)$/\1/p' | tail -1)
+if [ "$got" = "pre-commit" ]; then
+    PASS=$((PASS + 1))
+    printf 'ok    %-52s -> %s\n' "git -C <glob> commit classifies" "$got"
+else
+    FAIL=$((FAIL + 1))
+    printf 'FAIL  %-52s -> %s (want pre-commit)\n' "git -C <glob> commit classifies" "${got:-none}"
+fi
+
 echo "--- a missing shared lib fails open, aloud, never exit 2 ---"
 mkdir -p "$WORK/nolib"
 cp "$HOOK" "$WORK/nolib/precommit-claude-hook"
