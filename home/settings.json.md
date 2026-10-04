@@ -131,10 +131,12 @@ found across all four session-lifecycle rules.
 
 Approved unattended because the script is read-only in the strongest sense:
 every call it makes is a `GET`, it writes nothing outside a `mktemp -d` it
-removes on exit, and it has no flag that changes anything. The flags it does
-take only narrow what it reads (`--owner`, `--repos`) or change the rendering
-(`--json`), so `estate-report *` cannot reach a destructive mode — there
-isn't one.
+removes on exit, and it has no flag that changes anything. Every flag it
+takes only narrows what it reads or changes how the result is rendered, so
+`estate-report *` cannot reach a destructive mode — there isn't one. That
+property is what this rule relies on, and it is the thing to re-check when a
+flag is added; the flags themselves are listed in the script's `# Usage:`
+header and the `estate` skill, not here.
 
 Note what this does *not* approve: the report's **output** is estate evidence,
 naming private repos and what is wrong in them. Running it freely is fine;
@@ -853,6 +855,31 @@ point at went away with the plugin in #312.
    and the trade is deliberately the other way here — telling an echo from an
    invocation needs real parsing, and the costs are asymmetric: a blocked echo
    is rephrased, a leaked token is rotated.
+
+   **Considered and rejected: `terraform output`.** The broker skill names it
+   as a third way a token can reach the transcript, and the guard deliberately
+   does not match it (#520). Do not re-file it without one of the triggers
+   below.
+
+   - **The guard sees the command, not the value.** The `gcloud` forms are
+     caught because the command *is* the tell. `terraform output` is an
+     ordinary command whose danger depends on which output it names and what
+     that output holds, and neither is in the Bash string.
+   - **A broad match blocks a normal workflow.** `terraform output` and
+     `terraform output -json` are how Terraform state is read — the allow rule
+     under Terraform above exists for that reason — and a guard that stops
+     them is one people switch off.
+   - **A narrow match needs a naming convention that does not exist.** A
+     pattern on `token|secret|key|password` in the output name catches
+     `db_password`, misses `sa_credential` and blocks `token_bucket_name`.
+   - **`sensitive = true` already redacts.** Terraform will not print a
+     sensitive output in plain form, so the correctly declared case never
+     reaches a hook. The uncovered case is an output that should be sensitive
+     and is not — a Terraform defect, better caught where it is written
+     (`tflint`/`checkov`) than by string-matching a command line.
+
+   Revisit only if an output-naming convention lands and is checked, or a
+   session actually prints a credential this way.
 
    Fail-open when `jq` is missing or the payload carries no command.
 
