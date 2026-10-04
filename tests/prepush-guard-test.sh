@@ -108,6 +108,21 @@ expect "unresolvable -C target (substitution)" \
 expect "cd into a path that is not a repo" \
     "$WORK/merged" "cd $WORK/bin && git push" 0
 
+echo "--- subshell scope and pushd/popd are followed (#558) ---"
+expect "( cd merged && git push ) blocks" \
+    "$WORK/live" "( cd $WORK/merged && git push )" 2
+expect "(cd live && git push) from merged allows" \
+    "$WORK/merged" "(cd $WORK/live && git push)" 0
+expect "pushd merged && git push blocks" \
+    "$WORK/live" "pushd $WORK/merged && git push" 2
+expect "pushd live && git push from merged allows" \
+    "$WORK/merged" "pushd $WORK/live >/dev/null && git push" 0
+# Controls: the subshell's cd does not leak, and popd returns.
+expect "control: ( cd live ) && git push blocks" \
+    "$WORK/merged" "( cd $WORK/live ) && git push" 2
+expect "control: pushd live && popd && push blocks" \
+    "$WORK/merged" "pushd $WORK/live && popd && git push" 2
+
 echo "--- existing escape hatches are untouched ---"
 expect "--no-verify" \
     "$WORK/merged" "git push --no-verify" 0
