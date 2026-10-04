@@ -235,24 +235,79 @@ Select **Custom**, tick *also include default list*, and add:
 ```text
 credential-broker-<hash>-nw.a.run.app
 dl.google.com
+registry.terraform.io
+developer.hashicorp.com
+semgrep.dev
+production.cloudfront.docker.com
+docs.github.com
+docs.cloud.google.com
+support.google.com
+knowledge.workspace.google.com
+developers.google.com
+*.googleblog.com
 ```
 
 Obtain the broker hostname with `gcloud run services describe credential-broker`
 against the project it is deployed to — named, with the region, in the
 `sandbox-gcp-credentials` runbook in `gcp-org-management`. It is deliberately
 not written here: this repo is public, and while the URL is not a credential,
-publishing it hands a stranger the rate limit.
+publishing it hands a stranger the rate limit. The other eleven are ordinary
+public hosts and carry no such exposure.
 
-Both are needed because neither is on the Trusted default list, and each fails
-in a way that reads as something else:
+The first two are what the bootstrap and the broker flow need; the rest are
+what agent work in the sandbox needs. None is on the Trusted default list, and
+each fails in a way that reads as something else:
 
 | Missing | Symptom | Actually |
 | ------- | ------- | -------- |
 | broker host | `could not resolve host` | the environment was never allowed to call it |
 | `dl.google.com` | gcloud install fails | `cloud.google.com` and `gcloud.google.com` are on the default list and neither serves the tarball |
+| `registry.terraform.io` | `terraform init` fails, so `validate` and `plan` cannot run | providers come from the registry; without it every Terraform check silently defers to CI |
+| `developer.hashicorp.com` | Terraform and provider documentation will not load | HashiCorp's docs live here now; `terraform.io` documentation links redirect to it |
+| `semgrep.dev` | `semgrep --config auto` fails before scanning anything | the rulesets are fetched from the registry at scan time, so it reads as a broken install, not a network block |
+| `production.cloudfront.docker.com` | `docker pull` resolves the image and then fails on its layers | Docker Hub redirects layer downloads to a CDN host; the registry host answering proves nothing about it |
+| `docs.github.com` | GitHub documentation will not load | a separate host from `github.com` and the API |
+| `docs.cloud.google.com` | GCP documentation returns `EGRESS_BLOCKED` | `cloud.google.com` docs pages redirect here, so the default-list entry no longer reaches the content |
+| `support.google.com` | Google help-centre articles will not load | a separate host from the documentation sites |
+| `knowledge.workspace.google.com` | Workspace knowledge articles will not load | a separate host from `support.google.com`, though the two cross-link |
+| `developers.google.com` | Google API and library reference will not load | a separate host from `docs.cloud.google.com` |
+| `*.googleblog.com` | release and deprecation announcements will not load | each Google blog is its own subdomain, hence the wildcard |
 
 `raw.githubusercontent.com` is already on the default list, so fetching the
 bootstrap itself needs nothing added.
+
+**This list is a snapshot of a platform setting, not of anything committed**,
+and the setting changes without a commit. Re-run this before trusting it:
+
+```sh
+# verified 2026-10-04 in a Claude sandbox; re-run before trusting this list
+for d in dl.google.com registry.terraform.io developer.hashicorp.com \
+  semgrep.dev production.cloudfront.docker.com docs.github.com \
+  docs.cloud.google.com support.google.com knowledge.workspace.google.com \
+  developers.google.com developers.googleblog.com \
+  tunnel.cloudproxy.app endoflife.date agents.md; do
+  printf '%-34s %s\n' "$d" "$(curl -s -o /dev/null -w '%{http_code}' -m 12 -I "https://$d/")"
+done
+```
+
+How to read it:
+
+- **Any HTTP status means allowed; `000` means blocked.** An egress denial
+  returns no HTTP status at all. The last three hosts are the negative
+  control — not allowed, and expected to print `000`. If they print anything
+  else, the check has stopped being able to tell the difference and an
+  all-statuses result means nothing.
+- **Two allowed hosts answer a bare root request with an error, and that is
+  the origin, not the proxy.** `production.cloudfront.docker.com` returns
+  `403`; `support.google.com` returns `404` to `HEAD` (and `200` to `GET`).
+  Read either as "blocked" and the list looks wrong when it is not.
+- **The broker host is not in the loop**, because it is not written here.
+  Probe it with `"$CREDENTIAL_BROKER_URL/"` instead; any status (its root is a
+  `404`) means it is reachable. `developers.googleblog.com` stands in for the
+  wildcard.
+
+On 2026-10-04 every listed host returned a status (`200`, `301`, `302`, or the
+two origin errors above) and all three negative controls returned `000`.
 
 ### 3. Environment variables
 
@@ -369,8 +424,13 @@ refusing to run the target script when the mint failed.
 
 ### 2. Allowed domains
 
-The same two entries as the Claude section — the broker host and
-`dl.google.com` — obtained the same way, and for the same reasons.
+The same list as the Claude section, obtained the same way and for the same
+reasons. Two of its entries are what the setup and the broker flow need — the
+broker host and `dl.google.com`; the other ten serve agent work. The re-test
+command, the `000` negative control and the two hosts that answer `/` with an
+error all carry over unchanged. The 2026-10-04 sweep ran in a Claude sandbox
+only: whether a Codex environment carries all twelve is its own setting, so
+run the same loop there rather than inferring it from this one.
 
 **Two Codex-specific network settings matter more than the list does, because
 neither fails in a way that points at itself:**
@@ -690,8 +750,13 @@ this script does not have to check.
 Claude profiles ship two files, because Claude Code reads `CLAUDE.md` and not
 `AGENTS.md`. Codex profiles ship `AGENTS.md` only, and it lands in
 `~/.agents/`. **Where Codex actually reads user-level `AGENTS.md` is not yet
-established (#176)** — `~/.agents/` is the vendor-neutral location its skills
-are already read from, not a verified instruction path.
+established (#495)** — `~/.agents/` is the vendor-neutral location its skills
+are already read from, not a verified instruction path. If it is the wrong
+place the failure is silent: the file is present, its content is correct, and
+no agent ever sees it. What would settle it is one run, to the same standard
+the Codex section's skill finding used: put a uniquely identifiable
+instruction in the user-level `AGENTS.md`, start a Codex session whose prompt
+does not mention it, and see whether the behaviour shows up.
 
 ## Updating a running session
 

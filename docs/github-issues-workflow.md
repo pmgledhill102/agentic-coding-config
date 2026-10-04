@@ -62,6 +62,39 @@ commands above are the fallback and the cloud-sandbox option.
   (~2 s apart). Secondary rate limits allow at most 80 content-creating
   requests/min, and bursts trigger 403s.
 
+## Security-control defects
+
+This repo is public, and so is its tracker. One class of finding does not
+belong in it.
+
+- **Security-control defects go to `paul-context`.** A finding that a
+  credential guard, `PreToolUse` hook, allowlist/deny rule or secret-handling
+  path does not do what it claims is filed as an issue on
+  `pmgledhill102/paul-context`, not here. Filed here it is a precise, indexed,
+  public description of a control that does not fire, with no embargo and no
+  fix date.
+- **This repo still gets the fix**, with a title describing the change rather
+  than the hole. The rule covers the *report*, not the code: the fix, its test
+  and its rationale are public as usual. What stays private is the window
+  between knowing and fixing.
+- **It is the same line the estate already draws for settings** —
+  *standard public, evidence private*, from
+  [`home/standards/github-standards.md`](../home/standards/github-standards.md):
+  the standard is published here, the audit evidence lives in `paul-context`.
+  A vulnerability report is evidence.
+- **Scope: controls that are supposed to stop something.** An ordinary bug in
+  a security-adjacent tool — a wrong exit code or a misleading message from
+  `gcp-credentials`, say — is not in scope and is filed here as usual.
+  Over-applying this moves half the tracker into a private repo and loses the
+  public record that makes this one useful.
+- **Refer to private work by description, not by `repo#number`.** A
+  `paul-context#N` reference in a public body pins public context onto a
+  specific private issue, and is a link no public reader can follow anyway.
+  Describe what the private work covers instead.
+
+This rule governs new findings. It does not migrate issues already filed here;
+those are triaged separately.
+
 ## Label bootstrap
 
 New repos need the label set once (idempotent):

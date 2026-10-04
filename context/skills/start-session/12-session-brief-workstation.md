@@ -13,6 +13,9 @@ Recent merges:                                      (omit when count=0)
   <short-sha>  <commit subject>
   …                                                 (cap at gather's 10)
 
+Parallel work (pushed <48h, unmerged):              (omit when count=0)
+  <branch>  <age>  <n> files: <path>, <path>, …     (from unmerged_branches)
+
 Ready bundles:                                      (omit when none)
   #<n>  <concern>                  (pre-triaged by /bundle-issues)
 
@@ -28,6 +31,8 @@ Needs attention:
     issues, no comments.                     (omit unless state=true; first when present)
   • gcloud credentials expired — run `! gcloud auth login` if this session needs
     live GCP state                           (omit unless gcloud_auth state=expired)
+  • <branch> (pushed <age>, unmerged) touches <path>, which this session
+    is about to edit           (one per overlap; omit when none — step 5c)
   • <pending journal drafts: N>    (omit when 0 / not paul-context)
   • <feature branch behind main by N>          (omit when on default, even, or auto-switched)
   • <branch upstream gone but tree dirty>      (omit unless that case fires)
@@ -47,6 +52,7 @@ Rules:
 - "Ready to pick up next" is sourced from gather section `gh_ready`. Each row is already pipe-separated `#<n>|P<pri>|<title>` — split on `|`, sort by priority label (P0 first, `-` last), and emit the top 5. Ready = open and not directly blocked; the filter is direct-blocks-only, so eyeball the blocked icon before claiming work.
 - "In progress" is sourced from gather section `gh_assigned`. Same `#<n>|P<pri>|<title>` row shape; no cap (usually 0–3 items).
 - "Recent merges" is sourced from gather section `recent_main_commits`. Omit the entire section when `count=0`.
+- "Parallel work" is sourced from gather section `unmerged_branches` (step 5c). Omit it when `count=0`. Where a branch touches more paths than fit on its line, name the ones in this session's working set first, then `+<k> more`. An overlap with the working set is never only a row here — it also gets its own "Needs attention" line, because that is the line that stops a duplicate edit.
 - If the repo has no GitHub origin (`gh_ready` / `gh_assigned` report `not-github` or are skipped), drop both issue sections silently (the brief still shows git lines).
 - A section the gather could not answer says `n/a (gh absent)` rather than `none`. An unchecked list must never read as "all clear".
 - Truncate any title to ~78 columns to keep rows on one line.

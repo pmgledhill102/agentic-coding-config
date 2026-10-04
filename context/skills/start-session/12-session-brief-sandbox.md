@@ -18,6 +18,9 @@ Recent merges:                                      (omit when count=0)
   <short-sha>  <commit subject>
   …                                                 (cap at gather's 10)
 
+Parallel work (pushed <48h, unmerged):              (omit when count=0)
+  <branch>  <age>  <n> files: <path>, <path>, …     (from unmerged_branches)
+
 Ready bundles:                                      (omit when none)
   #<n>  <concern>                  (pre-triaged by /bundle-issues)
 
@@ -33,6 +36,8 @@ Needs attention:
     issues, no comments.                     (omit unless state=true; first when present)
   • gcloud credentials expired — run `! gcloud auth login` if this session needs
     live GCP state                           (omit unless gcloud_auth state=expired)
+  • <branch> (pushed <age>, unmerged) touches <path>, which this session
+    is about to edit           (one per overlap; omit when none — step 5c)
   • <pending journal drafts: N>    (omit when 0 / not paul-context)
   • <feature branch behind main by N>          (omit when on default, even, or auto-switched)
   • <branch upstream gone but tree dirty>      (omit unless that case fires)
@@ -55,6 +60,7 @@ Rules:
 - **"Ready bundles" comes first among the work sections**, above "In progress" and "Open issues". That ordering is the point of the section: a bundle is triaged and verified work, where the open-issue list below it is neither. Sourced from the `Bundle:`-titled rows of step 1(b)'s response, and omitted entirely when there are none.
 - "In progress" is the same response filtered client-side to the authenticated login. Report the real answer — including `none` when the filter genuinely returned nothing. It reads `n/a (no GitHub route)` **only** when the MCP call itself failed.
 - "Recent merges" is sourced from gather section `recent_main_commits`. Omit the entire section when `count=0`.
+- "Parallel work" is sourced from gather section `unmerged_branches` (step 5c). Omit it when `count=0`. Where a branch touches more paths than fit on its line, name the ones in this session's working set first, then `+<k> more`. An overlap with the working set is never only a row here — it also gets its own "Needs attention" line, because that is the line that stops a duplicate edit.
 - If the repo has no GitHub origin, drop both issue sections silently (the brief still shows git lines).
 - Unpushed commits earn a line here that they would not earn on a durable machine: the container is reclaimed after a period of inactivity, and unpushed work goes with it.
 - Truncate any title to ~78 columns to keep rows on one line.
