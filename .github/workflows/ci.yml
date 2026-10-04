@@ -61,6 +61,17 @@ jobs:
       # classify as a commit/push is the whole of its cost.
       - name: Run the pre-commit hook classification tests
         run: sh tests/precommit-hook-test.sh
+      # Fires on every Bash call too: the forbidden forms must block and the
+      # neighbouring commands must not, or the guard gets switched off.
+      - name: Run the credential-printing guard tests
+        run: sh tests/credguard-test.sh
+      # gh is stubbed on PATH and the fixtures are local repos, so this needs
+      # no remote and no token.
+      - name: Run the push-guard repo-resolution tests
+        run: sh tests/prepush-guard-test.sh
+      # A SessionStart hook: a non-zero exit is a session that will not start.
+      - name: Run the session-cache verdict tests
+        run: sh tests/session-cache-verdict-test.sh
       # The warm assertions in that suite build a real hook environment and
       # read the cache back, which needs the framework here. Without it the
       # suite would report the warm as untested rather than passing — but a
@@ -193,6 +204,18 @@ jobs:
       - name: The validator itself must catch a bad entry
         run: sh tests/retired-paths-test.sh
 
+  gates-wired:
+    name: every test is wired
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # A test nothing runs asserts coverage nobody is checking. CLAUDE.md and
+      # this file can agree with each other while both omit the same test, so
+      # this checks each tests/*.sh against both.
+      - name: Every tests/*.sh is run here and listed in CLAUDE.md
+        run: sh tests/gates-wired.sh
+
   settings-sync:
     name: settings.json ↔ settings.json.md sync
     if: github.event_name == 'pull_request'
@@ -201,24 +224,9 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
-      - name: Verify both files change together
-        run: |
-          set -eu
-          base="${{ github.event.pull_request.base.sha }}"
-          changed=$(git diff --name-only "$base"..HEAD || true)
-          json_changed=$(printf '%s\n' "$changed" | grep -c '^home/settings\.json$' || true)
-          md_changed=$(printf '%s\n' "$changed" | grep -c '^home/settings\.json\.md$' || true)
-          if [ "$json_changed" -ne "$md_changed" ]; then
-            echo "::error::home/settings.json and home/settings.json.md must change together."
-            echo "  home/settings.json changed:    $json_changed"
-            echo "  home/settings.json.md changed: $md_changed"
-            echo ""
-            echo "JSON does not allow comments, so settings.json.md is the annotated companion."
-            echo "Any rule added/removed/edited in one must be reflected in the other."
-            exit 1
-          fi
-          if [ "$json_changed" -eq 0 ]; then
-            echo "Neither file changed in this PR — sync trivially holds."
-          else
-            echo "Both files changed — sync OK."
-          fi
+      # The base is passed in rather than defaulted to origin/main: the PR's
+      # base SHA is exactly what this PR is diffed against.
+      - name: settings.json never changes without settings.json.md
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: sh tests/settings-sync.sh "$BASE_SHA"
