@@ -1549,6 +1549,54 @@ cap_devknowledge() {
     log "mcp     -> google-developer-knowledge in $_dk_cfg (user scope; no key -- the environment's API credential supplies it)"
 }
 
+# --- golangci-lint, always ----------------------------------------------------
+#
+# Unconditional, unlike every other capability, because it replaces a binary
+# rather than adding one: the sandbox image ships a golangci-lint built with an
+# older Go, and golangci-lint refuses to lint a module whose go.mod targets a
+# newer Go than the one it was built with. A flag would leave every Go session
+# that did not know to pass it unable to lint at all (#280). Still a Tier 2
+# capability -- a failed download degrades the container rather than aborting
+# the run, the same as any other toolchain.
+#
+# The image's copy is overwritten in place, so there is one golangci-lint on
+# PATH. A copy at or above the pin is left alone, so a resume downloads nothing
+# and this never walks a container backwards.
+#
+# The pin is not a floor, it is CI's version. Two releases can disagree on
+# formatting (their embedded gofmt differs), so a locally clean tree only stays
+# clean in CI when both run the same release. The CI pin lives in
+# pmgledhill102/gcp-org-management's Go workflows (set there by
+# gcp-org-management#688); move the two together. The same 403-vs-redirect note as actionlint applies to the download.
+GCL_VER=2.14.0
+
+golangci_ver() {
+    # Prints the version of the golangci-lint on PATH, empty when there is none.
+    # `--version` rather than `version --short`, which older releases lack.
+    golangci-lint --version 2> /dev/null |
+        sed -n '1s/^golangci-lint has version v\{0,1\}\([0-9][0-9.]*\).*/\1/p'
+}
+
+cap_golangci() {
+    _gcl_have=$(golangci_ver)
+    if [ -n "$_gcl_have" ] &&
+        [ "$(printf '%s\n%s\n' "$GCL_VER" "$_gcl_have" | sort -V | head -1)" = "$GCL_VER" ]; then
+        log "golangci: $_gcl_have already present, left alone"
+        return 0
+    fi
+    fetch "https://github.com/golangci/golangci-lint/releases/download/v${GCL_VER}/golangci-lint-${GCL_VER}-linux-amd64.tar.gz" \
+        "$TMP/golangci-lint.tar.gz" ||
+        die "could not download golangci-lint ${GCL_VER}"
+    tar -xzf "$TMP/golangci-lint.tar.gz" -C "$TMP" "golangci-lint-${GCL_VER}-linux-amd64/golangci-lint" ||
+        die "could not unpack golangci-lint"
+    install -m 0755 "$TMP/golangci-lint-${GCL_VER}-linux-amd64/golangci-lint" /usr/local/bin/golangci-lint ||
+        die "could not install golangci-lint"
+    # A copy earlier on PATH would still be the one a session runs.
+    [ "$(golangci_ver)" = "$GCL_VER" ] ||
+        die "installed golangci-lint ${GCL_VER}, but PATH resolves $(command -v golangci-lint) at $(golangci_ver)"
+    log "golangci-> $(command -v golangci-lint) ${GCL_VER} (was ${_gcl_have:-absent})"
+}
+
 DEGRADED=
 
 capability() {
@@ -1589,6 +1637,7 @@ capability "$WITH_PRECOMMIT" precommit cap_precommit
 capability "$WITH_PRECOMMIT" precommit-warm cap_precommit_warm
 capability "$WITH_GH" gh cap_gh
 capability "$WITH_DEVKNOWLEDGE" devknowledge cap_devknowledge
+capability 1 golangci cap_golangci
 
 # --- the manifest -------------------------------------------------------------
 #
@@ -1662,6 +1711,9 @@ fi
     echo "hooks=$WITH_HOOKS"
     echo "gh=$WITH_GH"
     echo "devknowledge=$WITH_DEVKNOWLEDGE"
+    # The version a session will actually run, not the pin: a degraded install
+    # leaves the image's own copy, and `none` means there is none on PATH.
+    echo "golangci=$(golangci_ver | grep . || echo none)"
     # Machine-readable timing, so a regression is a diff between two runs rather
     # than someone's memory of how long it used to take. `timings` is
     # space-separated name=Ns pairs; absent names did not run.

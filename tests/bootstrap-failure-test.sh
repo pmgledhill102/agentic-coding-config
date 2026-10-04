@@ -46,6 +46,16 @@ if [ -z "$BOOTSTRAP_TEST_REF" ]; then
     fi
 fi
 
+# The full runs below take this copy, which skips the golangci-lint capability.
+# It is unconditional and installs into /usr/local/bin, which a CI runner's
+# user cannot write -- so on CI every full run would come back degraded for a
+# reason none of those cases is about, and in a sandbox each run would download
+# it. Section 10 tests the capability itself.
+BOOTSTRAP_FULL=$(mktemp)
+sed 's/^capability 1 golangci cap_golangci$/capability 0 golangci cap_golangci/' \
+    "$BOOTSTRAP" > "$BOOTSTRAP_FULL"
+trap 'rm -f "$BOOTSTRAP_FULL"' EXIT
+
 PASS=0
 FAIL=0
 
@@ -257,7 +267,7 @@ rm -rf "$H"
 # Asserted on the log's own ordering rather than on line numbers, which drift.
 H=$(mktemp -d)
 LOG="$H/run.log"
-HOME="$H" sh "$BOOTSTRAP" "$BOOTSTRAP_TEST_REF" --no-gcloud --no-precommit --no-hooks --no-terraform \
+HOME="$H" sh "$BOOTSTRAP_FULL" "$BOOTSTRAP_TEST_REF" --no-gcloud --no-precommit --no-hooks --no-terraform \
     > "$LOG" 2>&1
 check "a toolkit-only run succeeds" "0" "$?"
 
@@ -297,7 +307,7 @@ rm -rf "$H"
 # The default is claude-cloud-sandbox's alone. Codex does not read
 # ~/.claude.json, so its profile must not write one.
 H=$(mktemp -d)
-HOME="$H" sh "$BOOTSTRAP" "$BOOTSTRAP_TEST_REF" --profile codex-cloud-sandbox \
+HOME="$H" sh "$BOOTSTRAP_FULL" "$BOOTSTRAP_TEST_REF" --profile codex-cloud-sandbox \
     --no-gcloud --no-precommit --no-hooks --no-terraform > "$H/run.log" 2>&1
 check "codex-cloud-sandbox leaves devknowledge off" "0" \
     "$(sed -n 's/^devknowledge=//p' "$H/.agents/.bootstrap-manifest")"
@@ -322,7 +332,7 @@ H=$(mktemp -d)
 LOG="$H/run.log"
 sed -e 's#https://github.com/cli/cli/releases#https://bootstrap-test.invalid/cli#' \
     -e 's#if command -v gh > /dev/null 2>&1; then#if false; then#' \
-    "$BOOTSTRAP" > "$H/bootstrap.sh"
+    "$BOOTSTRAP_FULL" > "$H/bootstrap.sh"
 check "the gh fixture neutered the already-present guard" "0" \
     "$(count 'command -v gh > /dev/null 2>&1; then' "$H/bootstrap.sh")"
 HOME="$H" sh "$H/bootstrap.sh" "$BOOTSTRAP_TEST_REF" --with-gh --no-gcloud --no-precommit --no-hooks \
@@ -689,6 +699,74 @@ check "--with-devknowledge and --no-devknowledge are accepted arguments" \
     "failed_step=unknown argument: --a-flag-that-does-not-exist" \
     "$(grep '^failed_step=' "$H/e/.agents/.bootstrap-manifest" 2> /dev/null)"
 
+rm -rf "$H"
+
+# --- 10. golangci-lint: unconditional, replaces an old copy, keeps a current one
+echo
+echo "cloud/bootstrap.sh — golangci-lint"
+
+check "golangci-lint is installed unconditionally" "1" \
+    "$(count '^capability 1 golangci cap_golangci$' "$BOOTSTRAP")"
+check "  and the full runs above really did skip it" "1" \
+    "$(count '^capability 0 golangci cap_golangci$' "$BOOTSTRAP_FULL")"
+check "  the manifest records its version" "1" \
+    "$(count 'echo "golangci=' "$BOOTSTRAP")"
+
+# Extracted and run against stubs, so no case downloads anything or writes
+# /usr/local/bin. fetch always fails: reaching it at all is the signal that an
+# install was attempted, and its failure has to come back as a die.
+H=$(mktemp -d)
+mkdir -p "$H/stub"
+{
+    sed -n '/^GCL_VER=/p' "$BOOTSTRAP"
+    for fn in golangci_ver cap_golangci; do
+        sed -n "/^$fn() {/,/^}\$/p" "$BOOTSTRAP"
+    done
+    cat << 'FNS'
+log() { :; }
+die() { echo "$*" > "$DIEF"; exit 1; }
+fetch() { echo "$1" >> "$LOGF"; return 1; }
+FNS
+} > "$H/fn.sh"
+check "cap_golangci was extractable from the script" "1" \
+    "$(grep -c '^cap_golangci() {' "$H/fn.sh")"
+GCL_PIN=$(sed -n 's/^GCL_VER=//p' "$H/fn.sh")
+
+gcl_run() {
+    # gcl_run <stubbed --version line, or "" for no golangci-lint on PATH>
+    rm -f "$H/stub/golangci-lint" "$H/calls.log" "$H/die"
+    if [ -n "$1" ]; then
+        printf '#!/bin/sh\necho "%s"\n' "$1" > "$H/stub/golangci-lint"
+        chmod +x "$H/stub/golangci-lint"
+    fi
+    # PATH leaves out /usr/local/bin, where a real copy may live.
+    PATH="$H/stub:/usr/bin:/bin" LOGF="$H/calls.log" DIEF="$H/die" TMP="$H" \
+        sh -c '. "$0/fn.sh"; cap_golangci' "$H" > /dev/null 2>&1
+}
+
+printf '#!/bin/sh\necho "golangci-lint has version 2.5.0 built with go1.25.1 from ff63786c on 2025-09-21T19:04:05Z"\n' \
+    > "$H/stub/golangci-lint"
+chmod +x "$H/stub/golangci-lint"
+check "golangci_ver reads the image's version line" "2.5.0" \
+    "$(PATH="$H/stub:/usr/bin:/bin" sh -c '. "$0/fn.sh"; golangci_ver' "$H")"
+
+gcl_run "golangci-lint has version 2.5.0 built with go1.25.1 from ff63786c on 2025-09-21T19:04:05Z"
+check "an older copy is replaced: the install fails as a die" "1" "$?"
+check "  having fetched the pinned release" "1" \
+    "$(count "/download/v${GCL_PIN}/golangci-lint-${GCL_PIN}-linux-amd64.tar.gz\$" "$H/calls.log")"
+check "  and the reason names the version" "could not download golangci-lint ${GCL_PIN}" \
+    "$(cat "$H/die" 2> /dev/null)"
+
+gcl_run ""
+check "a missing copy is installed" "1" "$(count 'golangci-lint' "$H/calls.log")"
+
+gcl_run "golangci-lint has version ${GCL_PIN} built with go1.27.0 from 114493f9 on 2026-09-24T11:07:15Z"
+check "a copy at the pin is left alone" "0" "$?"
+check "  without a download" "0" "$(count 'golangci-lint' "$H/calls.log")"
+
+gcl_run "golangci-lint has version v99.0.0 built with go1.30.0"
+check "a newer copy is left alone, not walked backwards" "0" "$?"
+check "  without a download" "0" "$(count 'golangci-lint' "$H/calls.log")"
 rm -rf "$H"
 
 printf '\n%s passed, %s failed\n' "$PASS" "$FAIL"

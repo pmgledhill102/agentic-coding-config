@@ -435,6 +435,7 @@ Revocation levels and what to do about a possibly-exposed token or request key:
 | `~/.claude/bin/*-claude-hook` | the three harness hook scripts, with `--with-hooks` |
 | `/usr/local/bin/pre-commit`, `/usr/bin/shellcheck`, `/usr/local/bin/actionlint`, `markdownlint-cli2` (npm global), `cspell` (npm global), `semgrep` (uv tool) | with `--with-precommit` |
 | `/usr/local/bin/gh` | the GitHub CLI, pinned release, with `--with-gh` |
+| `/usr/local/bin/golangci-lint` | always: pinned to the estate's CI version, overwriting the image's older copy (`golangci=` in the manifest) |
 | `~/.claude.json` → `mcpServers."google-developer-knowledge"` | one user-scope MCP entry, no key, with `--with-devknowledge` (merged, not replaced) |
 | `/usr/local/bin/terraform`, `/usr/local/bin/tflint`, `checkov` | the Terraform toolchain, with `--with-terraform` |
 | `~/.tflint.d/plugins/…/tflint-ruleset-google/` | the tflint google ruleset, seeded because `tflint --init` is 403ed here, with `--with-terraform` |
