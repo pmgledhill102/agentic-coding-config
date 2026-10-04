@@ -176,6 +176,77 @@ expect_push "genuine finding -> still blocked"      "$WORK/real.txt"   1 2 'bloc
 expect_push "mixed -> blocked, absence reported"    "$WORK/mixed.txt"  1 2 'Not checked'
 expect_push "everything passes -> silent allow"     "$WORK/clean.txt"  0 0 ''
 
+# --- Stage 3: lint the repo the command targets, not the payload cwd (#519) -
+#
+# Two fixture repos, the shape of tests/prepush-guard-test.sh: LINTED has a
+# .pre-commit-config.yaml, BARE has none. The stubbed pre-commit records the
+# directory it ran in, so each case asserts WHERE the lint ran (or that it did
+# not), plus the exit code and stderr.
+
+git init -q "$WORK/linted" || exit 1
+: > "$WORK/linted/.pre-commit-config.yaml"
+git init -q "$WORK/bare" || exit 1
+LINTED=$(cd "$WORK/linted" && pwd -P)
+BARE=$(cd "$WORK/bare" && pwd -P)
+mkdir -p "$WORK/where-bin"
+cat > "$WORK/where-bin/pre-commit" <<STUB
+#!/bin/sh
+pwd -P > "$WORK/ran-in"
+exit 0
+STUB
+chmod 0755 "$WORK/where-bin/pre-commit"
+
+# expect_where <label> <hook> <cwd> <command> <want-ran-in|none> <want-exit> <stderr-grep>
+# An empty stderr pattern asserts silence.
+expect_where() {
+    rm -f "$WORK/ran-in"
+    _err=$(printf '{"tool_input":{"command":%s},"cwd":"%s"}\n' \
+        "$(printf '%s' "$4" | jq -Rs .)" "$3" |
+        PATH="$WORK/where-bin:$PATH" sh "$2" 2>&1 >/dev/null)
+    _code=$?
+    _ran=none
+    [ -f "$WORK/ran-in" ] && _ran=$(cat "$WORK/ran-in")
+    if [ -z "$7" ]; then
+        _match=$([ -z "$_err" ] && echo yes)
+    else
+        _match=$(printf '%s' "$_err" | grep -q "$7" && echo yes)
+    fi
+    if [ "$_ran" = "$5" ] && [ "$_code" = "$6" ] && [ "$_match" = yes ]; then
+        PASS=$((PASS + 1))
+        printf 'ok    %-52s -> ran in %s, exit %s\n' "$1" "${_ran##*/}" "$_code"
+    else
+        FAIL=$((FAIL + 1))
+        printf 'FAIL  %-52s -> ran in %s, exit %s (want %s, exit %s, stderr matching "%s")\n' \
+            "$1" "$_ran" "$_code" "$5" "$6" "$7"
+        printf '      stderr: %s\n' "$_err"
+    fi
+}
+
+echo ""
+echo "--- lint the repo the command targets, not the payload cwd (#519) ---"
+expect_where "control: plain commit lints cwd"         "$HOOK" "$LINTED" 'git commit -m x'               "$LINTED" 0 ''
+expect_where "cd <configured> && commit, from bare"    "$HOOK" "$BARE"   "cd $LINTED && git commit -m x" "$LINTED" 0 ''
+expect_where "git -C <configured> commit, from bare"   "$HOOK" "$BARE"   "git -C $LINTED commit -m x"    "$LINTED" 0 ''
+expect_where "relative cd is joined onto cwd"          "$HOOK" "$WORK"   'cd linted && git commit -m x'  "$LINTED" 0 ''
+expect_where "git -C <configured> push, from bare"     "$HOOK" "$BARE"   "git -C $LINTED push"           "$LINTED" 0 ''
+expect_where "cd <bare> && commit does not lint cwd"   "$HOOK" "$LINTED" "cd $BARE && git commit -m x"   none      0 ''
+expect_where "git -C <bare> commit does not lint cwd"  "$HOOK" "$LINTED" "git -C $BARE commit -m x"      none      0 ''
+
+echo "--- unresolvable path: not checked, and said so (#519 decision) ---"
+# shellcheck disable=SC2016  # literal $: the hook must see an unexpanded variable.
+expect_where "cd \"\$VAR\" && commit"                  "$HOOK" "$LINTED" 'cd "$REPO" && git commit -m x' none      0 'not checked'
+# shellcheck disable=SC2016
+expect_where "git -C \$VAR commit"                     "$HOOK" "$LINTED" 'git -C $REPO commit -m x'      none      0 'not checked'
+# shellcheck disable=SC2016
+expect_where "cd \$(subst) && push"                    "$HOOK" "$LINTED" 'cd $(mktemp -d) && git push'   none      0 'not checked'
+# shellcheck disable=SC2016
+expect_where "unresolvable cd AFTER the commit is moot" "$HOOK" "$LINTED" 'git commit -m x && cd "$X"'   "$LINTED" 0 ''
+
+echo "--- a missing shared lib fails open, aloud, never exit 2 ---"
+mkdir -p "$WORK/nolib"
+cp "$HOOK" "$WORK/nolib/precommit-claude-hook"
+expect_where "lib absent -> not checked, exit 0"       "$WORK/nolib/precommit-claude-hook" "$LINTED" 'git commit -m x' none 0 'missing'
+
 echo ""
 echo "passed: $PASS   failed: $FAIL"
 [ "$FAIL" -eq 0 ] || exit 1

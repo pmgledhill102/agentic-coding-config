@@ -893,6 +893,16 @@ if [ "$WITH_HOOKS" -eq 1 ]; then
         install -m 0755 "$TMP/$script" "$HOME/.claude/bin/$script"
     done
 
+    # Sourced (not run) by prepush-guard and precommit, from lib/ next to
+    # themselves. Without it both hooks stand down, so any new home/bin/lib/
+    # file a hook above sources needs fetching here too.
+    mkdir -p "$HOME/.claude/bin/lib"
+    fetch "$RAW/home/bin/lib/resolve-command-dir" "$TMP/resolve-command-dir" ||
+        die "could not fetch hook library lib/resolve-command-dir from $REF"
+    head -1 "$TMP/resolve-command-dir" | grep -q '^#!' ||
+        die "fetched lib/resolve-command-dir is not a script"
+    install -m 0644 "$TMP/resolve-command-dir" "$HOME/.claude/bin/lib/resolve-command-dir"
+
     fetch "$RAW/home/settings.json" "$TMP/settings.json" ||
         die "could not fetch home/settings.json from $REF"
     jq -e '.hooks' "$TMP/settings.json" > "$TMP/hooks.json" ||

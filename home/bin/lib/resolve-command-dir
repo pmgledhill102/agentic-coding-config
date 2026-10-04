@@ -1,0 +1,109 @@
+#!/bin/sh
+# resolve-command-dir — sourced, not executed. Shared by precommit-claude-hook
+# and prepush-guard-claude-hook, which load it from lib/ next to themselves.
+# cloud/bootstrap.sh's hook fetch list installs it there in a sandbox.
+#
+# A PreToolUse hook fires BEFORE the command runs, so the payload's cwd is
+# where the shell already is -- not where `cd /other/clone && git commit` or
+# `git -C /other/clone push` is about to operate. Reading cwd blindly makes a
+# hook evaluate the wrong repository. This walks the command's segments in
+# order, following `cd` and `git -C`, to the directory the git subcommand will
+# actually run in.
+#
+# What an unresolvable path means is the CALLER's decision, not this file's:
+# resolve_command_dir only reports it (status 2), because the right response
+# differs by hook -- see each caller where it handles that status.
+#
+# Not followed: subshells `( cd x && ... )`, pushd/popd, and anything a
+# function or alias does. Those resolve as if the `cd` were absent.
+
+# unsafe_path is true for a path that cannot be known before the command
+# runs: a variable, a command substitution, a glob, a quoted or ~-relative
+# path. Guessing at one is how a hook evaluates the wrong repository.
+unsafe_path() {
+    case "$1" in
+        '' | *'$'* | *'`'* | *'*'* | *'?'* | *'"'* | *"'"* | '~'*) return 0 ;;
+    esac
+    return 1
+}
+
+join_path() {
+    case "$2" in
+        /*) printf '%s' "$2" ;;
+        *) printf '%s/%s' "$1" "$2" ;;
+    esac
+}
+
+# segment_scan <segment> <dir> <subcommand> classifies one command segment,
+# given the directory the shell is in when it runs. Prints "cd:<dir>" for a
+# directory change, "hit:<dir>" for a git invocation of <subcommand> and the
+# directory it would run in, or nothing. Returns non-zero when the segment
+# names a path that cannot be resolved statically.
+#
+# Runs in a subshell so `set --` and IFS stay local.
+segment_scan() (
+    dir=$2
+    want=$3
+    IFS=' 	'
+    # shellcheck disable=SC2086  # deliberate: split the segment into words.
+    set -- $1
+    [ $# -gt 0 ] || return 0
+    case "$1" in
+        cd)
+            # A bare `cd` goes to $HOME, which is not a target worth guessing
+            # at, so treat it as unresolvable.
+            [ $# -ge 2 ] || return 1
+            unsafe_path "$2" && return 1
+            printf 'cd:%s' "$(join_path "$dir" "$2")"
+            ;;
+        git)
+            shift
+            while [ $# -gt 0 ]; do
+                case "$1" in
+                    -C)
+                        [ $# -ge 2 ] || return 1
+                        unsafe_path "$2" && return 1
+                        dir=$(join_path "$dir" "$2")
+                        shift 2
+                        ;;
+                    -c | --git-dir | --work-tree | --namespace)
+                        [ $# -ge 2 ] || return 1
+                        shift 2
+                        ;;
+                    -*) shift ;;
+                    *) break ;;
+                esac
+            done
+            [ "${1:-}" = "$want" ] && printf 'hit:%s' "$dir"
+            ;;
+    esac
+    return 0
+)
+
+# resolve_command_dir <command> <start-dir> <subcommand> prints the directory
+# the first `git <subcommand>` in <command> runs in.
+#
+# Status: 0 resolved; 1 no segment invokes <subcommand>; 2 a segment before it
+# names a path that cannot be resolved statically. Only segments up to the
+# first hit are examined, so an unresolvable `cd` AFTER the git call does not
+# produce a 2.
+resolve_command_dir() (
+    rcd_cmd=$1
+    dir=$2
+    want=$3
+    IFS='
+'
+    # shellcheck disable=SC2046,SC2086  # deliberate: split on the separators.
+    set -- $(printf '%s' "$rcd_cmd" | tr ';&|' '\n')
+    for seg in "$@"; do
+        out=$(segment_scan "$seg" "$dir" "$want") || return 2
+        case "$out" in
+            hit:*)
+                printf '%s' "${out#hit:}"
+                return 0
+                ;;
+            cd:*) dir=${out#cd:} ;;
+        esac
+    done
+    return 1
+)
