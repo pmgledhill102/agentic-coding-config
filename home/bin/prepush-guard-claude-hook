@@ -19,6 +19,14 @@
 # silent mistake, not to make pushing fragile. Honours --no-verify as the
 # escape hatch, same as precommit-claude-hook.
 #
+# Fail-open is not fail-silent. Every stand-down that leaves a real push
+# unexamined prints one `prepush-guard: not checked -- <reason>` line on
+# stderr, with a reason distinct enough to grep, because the fixes differ:
+# an unresolvable path is the command's wording (rewrite it with a literal
+# path), while a missing or unauthenticated gh is a fact about the machine.
+# Pushes the guard has no business with -- not a git push, an escape hatch,
+# the default branch, no PR for the branch -- stay silent.
+#
 # Limitation: checks the CURRENT branch. A push that names a different
 # refspec than the checked-out branch is waved through unexamined.
 
@@ -46,14 +54,18 @@ case "$cmd" in
   *" --tags"*) exit 0 ;;                            # tag pushes have no PR
 esac
 
-command -v gh >/dev/null 2>&1 || exit 0
+# not_checked <reason> -- the one stand-down message shape (see header).
+not_checked() {
+  printf 'prepush-guard: not checked -- %s\n' "$1" >&2
+  exit 0
+}
 
 # --- Resolve the repo the push targets, then its branch (see limitation). -
 # The walk over `cd` / `git -C` lives in lib/resolve-command-dir, shared with
 # precommit-claude-hook. A missing lib fails open like everything else here:
 # dash exits 2 on a failed `.`, and 2 is the one exit code that blocks.
 rcd_lib="$(dirname -- "$0")/lib/resolve-command-dir"
-[ -r "$rcd_lib" ] || exit 0
+[ -r "$rcd_lib" ] || not_checked "lib missing: $rcd_lib is not installed."
 # shellcheck source=/dev/null  # lib/resolve-command-dir, resolved at run time
 . "$rcd_lib"
 
@@ -62,7 +74,13 @@ rcd_lib="$(dirname -- "$0")/lib/resolve-command-dir"
 # destroys any heredoc or file write earlier in the same command -- that cost
 # a rewritten script three times in one session (#404). An unguarded push
 # costs one orphan branch; a false positive costs the whole tool call.
-target=$(resolve_command_dir "$cmd" "${cwd:-$PWD}" push) || exit 0
+# Status 1 (no `git push` segment: "push" was only mentioned) stays silent.
+target=$(resolve_command_dir "$cmd" "${cwd:-$PWD}" push)
+case $? in
+  0) ;;
+  2) not_checked "unresolvable path: the push runs in a directory that cannot be resolved before the command runs (variable, substitution, glob, quoted or ~ path, or subshell/pushd nesting). Use a literal path to have it checked." ;;
+  *) exit 0 ;;
+esac
 [ -n "$target" ] || exit 0
 root=$(git -C "$target" rev-parse --show-toplevel 2>/dev/null) || exit 0
 
@@ -70,8 +88,28 @@ branch=$(git -C "$root" symbolic-ref --short -q HEAD) || exit 0   # detached HEA
 default=$(git -C "$root" symbolic-ref --short -q refs/remotes/origin/HEAD | sed 's|^origin/||')
 [ -n "$default" ] && [ "$branch" = "$default" ] && exit 0
 
+# Checked after resolution, so a command that merely mentions "push" never
+# reports a missing gh.
+command -v gh >/dev/null 2>&1 || not_checked "gh unavailable: gh is not installed, so the PR state cannot be looked up."
+
 # --- Ask GitHub. Any failure (no PR, offline, auth) -> allow. -------------
-pr=$(cd "$root" && gh pr view "$branch" --json state,number,url 2>/dev/null) || exit 0
+# gh exits 4 when authentication is required; its "no pull requests found"
+# is the ordinary no-PR-yet case and stays silent.
+gh_err_file=$(mktemp 2>/dev/null) || gh_err_file=/dev/null
+pr=$(cd "$root" && gh pr view "$branch" --json state,number,url 2>"$gh_err_file")
+gh_rc=$?
+gh_err=$(cat "$gh_err_file" 2>/dev/null)
+[ "$gh_err_file" = /dev/null ] || rm -f "$gh_err_file"
+if [ "$gh_rc" -ne 0 ]; then
+  case "$gh_err" in
+    *"no pull requests found"*) exit 0 ;;
+  esac
+  case "$gh_rc:$gh_err" in
+    4:* | *"gh auth login"* | *"HTTP 401"* | *"Bad credentials"*)
+      not_checked "gh unauthorised: gh is not authenticated, so the PR state cannot be looked up." ;;
+  esac
+  not_checked "gh lookup failed: $(printf '%s' "$gh_err" | head -1)"
+fi
 state=$(printf '%s' "$pr" | jq -r '.state // empty')
 case "$state" in
   MERGED|CLOSED) ;;
