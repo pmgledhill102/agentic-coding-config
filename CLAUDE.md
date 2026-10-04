@@ -46,6 +46,11 @@ python3 tests/compose-context.py         # composed profiles and skills match th
 python3 tests/allowlist-covers-commands.py  # allow rules match documented invocations  <1s
 python3 tests/github-repo-standard.py       # the repo-settings spec holds its own invariants  ~1s
 sh tests/estate-report-test.sh           # estate flag thresholds and bucketing  <1s
+sh tests/credguard-test.sh               # credential-printing guard classification  <1s
+sh tests/prepush-guard-test.sh           # push guard judges the repo the push targets  ~1s
+sh tests/session-cache-verdict-test.sh   # rebuild-vs-cache verdict, and it never fails a session  <1s
+sh tests/settings-sync.sh                # settings.json never changes without its .md (base: origin/main)  <1s
+sh tests/gates-wired.sh                  # every tests/*.sh is in this list and in CI  <1s
 
 # shell — CI scans home/bin/, cloud/ and tests/. Select by shebang rather than
 # globbing: `shellcheck home/bin/*` errors on any non-shell file, and the
@@ -72,7 +77,8 @@ task.
 
 **Run only what the change touches** when the change is narrow — markdown-only
 edits need `markdownlint-cli2`; a `context/` edit needs `compose-context.py`;
-`home/settings.json` needs the allowlist check. Push-blocking is what the full
+`home/settings.json` needs the allowlist check and `settings-sync.sh`; a new
+`tests/*.sh` needs `gates-wired.sh`. Push-blocking is what the full
 list is for, and CI runs it regardless. The fast subset is everything except
 `bootstrap-failure-test.sh`, and it is ~20 seconds.
 
@@ -90,8 +96,11 @@ is repo-meta and never deploys.
 
 ## Conventions & Patterns
 
-- `home/settings.json` and `home/settings.json.md` must change together
-  (CI enforces the sync; the `.md` carries the rationale)
+- `home/settings.json` never changes without `home/settings.json.md` changing
+  too (`tests/settings-sync.sh` enforces it; the `.md` carries the rationale).
+  A `.md`-only edit that improves the rationale is fine on its own
+- A new `tests/*.sh` goes into `ci.yml` and the gate list above, or its header
+  carries `# gate: not-wired — <reason>`; `tests/gates-wired.sh` enforces it
 - ADRs in `adrs/` record decisions; `docs/` holds workflow docs and runbooks
 - **Comments carry mechanism, not incident history.** A comment earns its place
   if it changes what a future editor does. How the code came to be this way is
