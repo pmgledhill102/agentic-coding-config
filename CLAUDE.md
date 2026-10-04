@@ -49,6 +49,7 @@ sh tests/estate-report-test.sh           # estate flag thresholds and bucketing 
 sh tests/credguard-test.sh               # credential-printing guard classification  <1s
 sh tests/prepush-guard-test.sh           # push guard judges the repo the push targets  ~1s
 sh tests/session-cache-verdict-test.sh   # rebuild-vs-cache verdict, and it never fails a session  <1s
+sh tests/start-session-gather-test.sh    # a gh failure never reaches the brief as exit=0 data  ~3s
 sh tests/settings-sync.sh                # settings.json never changes without its .md (base: origin/main)  <1s
 sh tests/gates-wired.sh                  # every tests/*.sh is in this list and in CI  <1s
 

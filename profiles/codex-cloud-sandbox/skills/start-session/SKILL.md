@@ -44,9 +44,10 @@ blocks for every Claude Code session. Repo-scoped REST paths are a separate
 lane, and the proxy has both 403ed them
 ([#273](https://github.com/pmgledhill102/agentic-coding-config/issues/273),
 [#276](https://github.com/pmgledhill102/agentic-coding-config/issues/276)) and
-allowed them, so the script's REST probe may pass. Either way the issue
-sections never return usable data — a `gh-unavailable` / `gh-unauthorized`
-sentinel, or a raw GraphQL 403 — and the GitHub MCP server is the only route.
+allowed them, so the script's REST probe may pass. The script probes GraphQL
+separately before the issue sections run, so here they return a
+`gh-unavailable` / `gh-unauthorized` sentinel and never usable data — the
+GitHub MCP server is the only route.
 
 That is a settled property of the container, not a failure to detect. Step 1
 therefore issues the MCP queries as ordinary work of its own, rather than
@@ -123,7 +124,7 @@ Output is a sectioned stream. Each section starts with `===<name> (exit=<N>)===`
 | `repo_archived` | 3b, 7 | Always present, never absent. `state=true` / `false` / `unknown`. The flag rides a repo-scoped REST probe, which this surface's proxy has both allowed and 403ed: where it passes the answer is real, and where it is blocked it reads `unknown` — report that as unchecked, never as "not archived". |
 | `local_state` | 3, 7 | Includes branch, dirty/clean, ahead/behind upstream, ahead/behind `origin/<default>`, and, under `---origin---`, the remote URL that gives you `<owner>/<repo>` for part (b). |
 | `recent_main_commits` | 5 | First line is `count=<N>` (commits that merged into `origin/<default>` since the previous local tip). When non-zero, subsequent lines are `<short-sha> <subject>`, capped at 10. Empty when caught up. |
-| `gh_ready`, `gh_assigned`, `gh_bundles` | — | Never usable on this surface (see §Surface); ignore all three whatever they contain. Where `gh` is absent or the REST probe is blocked they read `gh-unavailable` / `gh-unauthorized`; where `gh` is present and the probe passes, they carry a raw GraphQL `403` body under **`exit=0`**, which the exit-code rules below would otherwise take for data. Part (b) is where the issue and bundle data comes from. They are still emitted because the script is one file shared with the workstation composition. |
+| `gh_ready`, `gh_assigned`, `gh_bundles` | — | Never usable on this surface (see §Surface); ignore all three whatever they contain. They read `gh-unavailable` / `gh-unauthorized` with a non-zero exit: the script probes the GraphQL lane `gh issue list` needs, which the proxy blocks, separately from the REST probe, which may pass. A container bootstrapped before that probe existed can still show a raw GraphQL `403` body under **`exit=0`** here, which the exit-code rules below would otherwise take for data — another reason to ignore these sections rather than parse them. Part (b) is where the issue and bundle data comes from. They are still emitted because the script is one file shared with the workstation composition. |
 | `unmerged_branches` | 5c, 7 | Remote branches pushed in the last 48h and not merged into `origin/<default>`, excluding this session's own branch — i.e. what a sibling session is working on now. First line `count=<N>`; then per branch, newest first, `<branch>\|<age>\|<n> files` followed by its changed paths indented two spaces (capped at 20, then `+<k> more`). Up to 10 branches, then `more=<k>`. `count=0` = none. Pure git, so it works here. |
 | `gcloud_auth` | 7 | `state=absent` (gcloud not on PATH) = reported as n/a, no noise. `state=live` = silent. `state=expired` = a "Needs attention" line with the `! gcloud auth login` remedy, because an agent has no tty to reauth on. Never prompts. |
 | `claude_drift` | — | `state=absent` on this surface: nothing here is chezmoi-managed, so there is no deployed tree to be behind. Silent skip. |
