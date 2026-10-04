@@ -492,7 +492,8 @@ Revocation levels and what to do about a possibly-exposed token or request key:
 | `~/.config/git/hooks/pre-commit` | global git hook, with `--with-precommit` |
 | `~/.cache/pre-commit/` | the warmed hook environments, with `--with-precommit` (~222 MB) |
 | `~/.claude/settings.json` | harness hook wiring, with `--with-hooks` (merged, not replaced) |
-| `~/.claude/bin/*-claude-hook` | the three harness hook scripts, with `--with-hooks` |
+| `~/.claude/bin/*-claude-hook` | the harness hook scripts (`credguard`, `prchecks-wait`, `prepush-guard`, `precommit`), with `--with-hooks` |
+| `~/.claude/bin/lib/resolve-command-dir` | the `cd` / `pushd` / `git -C` resolution the commit and push hooks source to find the repo a command targets; a hook that cannot source it reports "not checked" and stands down. With `--with-hooks` |
 | `/usr/local/bin/pre-commit`, `/usr/bin/shellcheck`, `/usr/local/bin/actionlint`, `markdownlint-cli2` (npm global), `cspell` (npm global), `semgrep` (uv tool) | with `--with-precommit` |
 | `/usr/local/bin/gh` | the GitHub CLI, pinned release, with `--with-gh` |
 | `~/.claude.json` → `mcpServers."google-developer-knowledge"` | one user-scope MCP entry, no key, with `--with-devknowledge` (merged, not replaced) |
