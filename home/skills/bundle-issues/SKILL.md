@@ -312,6 +312,19 @@ were live at the SHA above and says nothing about now — and any version, URL,
 tag or SHA quoted below is as old as the issue it came from, so look the
 current value up rather than reusing it.
 
+**Read each issue's comments before its body, newest first.** A body can be
+reversed by its own newest comment while the tree it describes is unchanged,
+so tree re-verification passes and the premise is still false. Where a comment
+retracts or narrows the body, the comment wins — and if that falsifies the
+item, stop per the stop rule rather than implementing the body.
+
+**When you stop, say whether the blocker is removable.** A stop that names
+what it needs — a repo attached, a value looked up, a decision made — is one
+the next session or the user can clear in a call. A stop that names only its
+own scope reads as terminal and gets re-derived from scratch. Where the
+blocker is a repo you cannot read, say which repo and what you would check
+in it.
+
 ## Stop rule
 
 If a fix turns out to need a judgment call, stop and report. Eligibility checked
