@@ -5,7 +5,10 @@
 - **Amended**: 2026-08-23 — principle 8 added (#291), after #265 applied the
   framework to skill bodies and #289 showed how easily a surface difference
   is asserted without being verified; its step 0 added the same day (#293),
-  because the cheapest split is the one a script makes unnecessary
+  because the cheapest split is the one a script makes unnecessary;
+  2026-10-04 — principle 2 gains the earns-its-place test (#309), because
+  principle 6 catches text that is false on a surface and nothing caught
+  text that is true but inert
 - **Tags**: architecture, portability, context, skills, claude-code, codex
 - **Scope**: user (applies to all personal repos and agent surfaces)
 
@@ -94,6 +97,18 @@ There are three tiers, and they differ by an order of magnitude in cost:
 **A statement's tier is chosen deliberately.** Policy is for what must
 hold every turn regardless of task. Anything procedural belongs in a
 skill body, where it costs nothing until needed.
+
+**Before choosing a tier, establish that the statement earns one.** The
+test is behavioural: *would removing this change what an agent does on
+this surface?* If not, it belongs at no tier — inert text costs what
+useful text costs, at whatever budget. Two shapes recur. A statement of an
+**absence** ("rule X does not apply here") is never needed: an agent that
+does not read the rule needs no exemption from it, and silence carries
+that for free. A statement that is **true but buys nothing here** is the
+subtler one — principle 6 catches text that is false on a surface, and
+this catches text that is merely useless on it. The test is semantic, so
+no deterministic check can apply it; it is a question for the author and
+the reviewer.
 
 This reframes the usual question. "Which file does this go in" is
 downstream of "how often must this be true", and getting the second right
