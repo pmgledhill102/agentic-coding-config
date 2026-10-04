@@ -19,9 +19,10 @@ blocks for every Claude Code session. Repo-scoped REST paths are a separate
 lane, and the proxy has both 403ed them
 ([#273](https://github.com/pmgledhill102/agentic-coding-config/issues/273),
 [#276](https://github.com/pmgledhill102/agentic-coding-config/issues/276)) and
-allowed them, so the script's REST probe may pass. Either way the issue
-sections never return usable data — a `gh-unavailable` / `gh-unauthorized`
-sentinel, or a raw GraphQL 403 — and the GitHub MCP server is the only route.
+allowed them, so the script's REST probe may pass. The script probes GraphQL
+separately before the issue sections run, so here they return a
+`gh-unavailable` / `gh-unauthorized` sentinel and never usable data — the
+GitHub MCP server is the only route.
 
 That is a settled property of the container, not a failure to detect. Step 1
 therefore issues the MCP queries as ordinary work of its own, rather than

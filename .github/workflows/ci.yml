@@ -69,6 +69,10 @@ jobs:
       # no remote and no token.
       - name: Run the push-guard repo-resolution tests
         run: sh tests/prepush-guard-test.sh
+      # gh is stubbed per lane (REST, GraphQL, issue list); the fixture's
+      # origin is never reached, so this needs no remote and no token.
+      - name: Run the start-session gather GitHub-lane tests
+        run: sh tests/start-session-gather-test.sh
       # A SessionStart hook: a non-zero exit is a session that will not start.
       - name: Run the session-cache verdict tests
         run: sh tests/session-cache-verdict-test.sh

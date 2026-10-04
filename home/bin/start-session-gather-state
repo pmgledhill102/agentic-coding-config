@@ -120,7 +120,15 @@ export REPO_SLUG
 # probe as .id was. Three states, never two: "unknown" whenever the probe could
 # not run at all (no gh, no slug, 403 behind the sandbox proxy), so an
 # unanswered question can never render as "not archived" (#415).
+#
+# The REST probe does not license the issue sections. `gh issue list` runs
+# over GraphQL, a separate lane: the Claude Code proxy blocks GraphQL for every
+# session while repo-scoped REST can pass, so a green REST probe alone sent the
+# sections into a 403. GH_ISSUES_API therefore probes GraphQL itself, once, and
+# only after REST passed — the archived answer stays on REST because it is real
+# wherever REST is.
 GH_REPO_API=unavailable
+GH_ISSUES_API=unavailable
 REPO_ARCHIVED=unknown
 if command -v gh >/dev/null 2>&1 && [ -n "$REPO_SLUG" ]; then
     if probe=$(gh api "repos/$REPO_SLUG" --jq '.archived' 2>/dev/null); then
@@ -129,9 +137,12 @@ if command -v gh >/dev/null 2>&1 && [ -n "$REPO_SLUG" ]; then
             true) REPO_ARCHIVED=true ;;
             false) REPO_ARCHIVED=false ;;
         esac
+        if gh api graphql -f query='{viewer{login}}' >/dev/null 2>&1; then
+            GH_ISSUES_API=ok
+        fi
     fi
 fi
-export GH_REPO_API REPO_ARCHIVED
+export GH_REPO_API GH_ISSUES_API REPO_ARCHIVED
 
 # --- Phase 2: parallel fan-out of independent reads ---
 
@@ -152,6 +163,37 @@ run_sh() {
         echo $? >"$TMP/$name.exit"
     ) &
 }
+
+# Shared preamble for the three gh issue sections, prepended to each script.
+# Each sentinel exits 1, so the skill's rule "exit=0 with content is data" can
+# never meet one. The issue-list call itself is captured before jq rather than
+# piped into it: in a pipe without pipefail gh's failure exit is masked by jq's
+# 0, and gh's error text then arrives as section content under exit=0. gh's
+# stderr goes to a temp file, not into $out, so a warning on a successful call
+# cannot corrupt the JSON. A failure after the probes passed is a real error,
+# so it prints gh's own message and exits non-zero instead of claiming a
+# sentinel.
+# shellcheck disable=SC2016
+GH_ISSUES_PREAMBLE='
+    if ! git remote get-url origin 2>/dev/null | grep -q "github.com"; then
+        echo "not-github"
+        exit 1
+    fi
+    if ! command -v gh >/dev/null 2>&1; then
+        echo "gh-unavailable"
+        exit 1
+    fi
+    if [ "$GH_ISSUES_API" != "ok" ]; then
+        echo "gh-unauthorized"
+        exit 1
+    fi
+    if ! command -v jq >/dev/null 2>&1; then
+        echo "jq-unavailable"
+        exit 1
+    fi
+    errf=$(mktemp) || exit 1
+    trap '\''rm -f "$errf"'\'' EXIT
+'
 
 # shellcheck disable=SC2016  # Intentional single quotes: expansion happens inside `sh -c`.
 run_sh local_state '
@@ -201,30 +243,15 @@ run_sh local_state '
 # step 4 and docs/end-session-design.md.
 
 # shellcheck disable=SC2016
-run_sh gh_ready '
+run_sh gh_ready "$GH_ISSUES_PREAMBLE"'
     # Ready work: open issues with no direct blocked-by relationship, per
     # docs/github-issues-workflow.md. Note -is:blocked filters direct blocks
     # only (no transitive query). Output: pipe-separated rows,
     #   #<number>|P<n>|<title>
     # (priority "-" when no P0-P4 label). Empty output = no ready work.
-    if ! git remote get-url origin 2>/dev/null | grep -q "github.com"; then
-        echo "not-github"
-        exit 1
-    fi
-    if ! command -v gh >/dev/null 2>&1; then
-        echo "gh-unavailable"
-        exit 1
-    fi
-    if [ "$GH_REPO_API" != "ok" ]; then
-        echo "gh-unauthorized"
-        exit 1
-    fi
-    if ! command -v jq >/dev/null 2>&1; then
-        echo "jq-unavailable"
-        exit 1
-    fi
-    gh issue list ${REPO_SLUG:+-R "$REPO_SLUG"} --search "is:open -is:blocked" --limit 10 \
-        --json number,title,labels \
+    out=$(gh issue list ${REPO_SLUG:+-R "$REPO_SLUG"} --search "is:open -is:blocked" --limit 10 \
+        --json number,title,labels 2>"$errf") || { cat "$errf"; exit 1; }
+    printf "%s\n" "$out" \
       | jq -r '\''
           .[] | "#\(.number)|\([(.labels // [])[].name]
                   | map(select(test("^P[0-4]$"))) | first // "-")|\(.title)"
@@ -232,28 +259,13 @@ run_sh gh_ready '
 '
 
 # shellcheck disable=SC2016
-run_sh gh_assigned '
+run_sh gh_assigned "$GH_ISSUES_PREAMBLE"'
     # My active work: open issues assigned to me. Same row shape as gh_ready:
     #   #<number>|P<n>|<title>
     # Empty output = nothing in flight.
-    if ! git remote get-url origin 2>/dev/null | grep -q "github.com"; then
-        echo "not-github"
-        exit 1
-    fi
-    if ! command -v gh >/dev/null 2>&1; then
-        echo "gh-unavailable"
-        exit 1
-    fi
-    if [ "$GH_REPO_API" != "ok" ]; then
-        echo "gh-unauthorized"
-        exit 1
-    fi
-    if ! command -v jq >/dev/null 2>&1; then
-        echo "jq-unavailable"
-        exit 1
-    fi
-    gh issue list ${REPO_SLUG:+-R "$REPO_SLUG"} --assignee @me --state open --limit 20 \
-        --json number,title,labels \
+    out=$(gh issue list ${REPO_SLUG:+-R "$REPO_SLUG"} --assignee @me --state open --limit 20 \
+        --json number,title,labels 2>"$errf") || { cat "$errf"; exit 1; }
+    printf "%s\n" "$out" \
       | jq -r '\''
           .[] | "#\(.number)|\([(.labels // [])[].name]
                   | map(select(test("^P[0-4]$"))) | first // "-")|\(.title)"
@@ -261,7 +273,7 @@ run_sh gh_assigned '
 '
 
 # shellcheck disable=SC2016
-run_sh gh_bundles '
+run_sh gh_bundles "$GH_ISSUES_PREAMBLE"'
     # Ready bundles: open issues that /bundle-issues wrote, identified by a
     # "Bundle:" title prefix. Output: pipe-separated rows,
     #   #<number>|<concern>
@@ -276,24 +288,9 @@ run_sh gh_bundles '
     # just ran /bundle-issues and is told there are no bundles would be the
     # one failure this section exists to prevent. Listing is consistent; the
     # prefix filter happens here in jq.
-    if ! git remote get-url origin 2>/dev/null | grep -q "github.com"; then
-        echo "not-github"
-        exit 1
-    fi
-    if ! command -v gh >/dev/null 2>&1; then
-        echo "gh-unavailable"
-        exit 1
-    fi
-    if [ "$GH_REPO_API" != "ok" ]; then
-        echo "gh-unauthorized"
-        exit 1
-    fi
-    if ! command -v jq >/dev/null 2>&1; then
-        echo "jq-unavailable"
-        exit 1
-    fi
-    gh issue list ${REPO_SLUG:+-R "$REPO_SLUG"} --state open --limit 100 \
-        --json number,title \
+    out=$(gh issue list ${REPO_SLUG:+-R "$REPO_SLUG"} --state open --limit 100 \
+        --json number,title 2>"$errf") || { cat "$errf"; exit 1; }
+    printf "%s\n" "$out" \
       | jq -r '\''
           .[] | select(.title | startswith("Bundle:"))
               | "#\(.number)|\(.title | sub("^Bundle:\\s*"; ""))"
