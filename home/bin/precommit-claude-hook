@@ -45,11 +45,20 @@ cwd=$(printf '%s' "$payload" | jq -r '.cwd // empty')
 
 # git_subcommand prints the git subcommand a segment invokes, or nothing.
 # Skips git's own global options so `git -C path commit` still classifies.
+# Subshell parens are not part of a word: `(git commit -m x)` and the
+# `git push)` that ends `(cd x && git push)` classify as commit and push.
 git_subcommand() {
+    gs_seg=$1
+    while :; do
+        case "$gs_seg" in
+            ' '* | '	'* | '('*) gs_seg=${gs_seg#?} ;;
+            *) break ;;
+        esac
+    done
     gs_ifs=$IFS
-    IFS=' 	'
+    IFS=' 	)'
     # shellcheck disable=SC2086  # deliberate: split the segment into words.
-    set -- $1
+    set -- $gs_seg
     IFS=$gs_ifs
     [ "${1:-}" = "git" ] || return 0
     shift
@@ -108,10 +117,11 @@ esac
 # and `git -C` lives in lib/resolve-command-dir, shared with
 # prepush-guard-claude-hook.
 #
-# UNRESOLVABLE PATH -> NOT CHECKED, SAID ALOUD. When a `cd` or `git -C` before
-# the commit/push names a path that cannot be known statically (a variable,
-# substitution, glob, quoted or ~ path), the hook lints nothing, says so on
-# stderr, and exits 0. The alternatives are worse for a lint gate:
+# UNRESOLVABLE PATH -> NOT CHECKED, SAID ALOUD. When a `cd`, `pushd` or `git -C`
+# in scope at the commit/push names a path that cannot be known statically (a
+# variable, substitution, glob, quoted or ~ path), or nesting the lib cannot
+# follow, the hook lints nothing, says so on stderr, and exits 0. The
+# alternatives are worse for a lint gate:
 #   - falling back to the payload cwd (--all-files or not) lints the wrong
 #     tree, which is the defect itself: a pass that checked nothing relevant,
 #     or a block on findings in a repo nobody is committing to;
@@ -141,7 +151,7 @@ target=$(resolve_command_dir "$cmd" "$start" "$want")
 case $? in
   0) ;;
   2)
-    printf 'pre-commit (%s): not checked -- the command changes directory to a path that cannot be resolved before it runs (variable, substitution, glob, quoted or ~ path). Use a literal path to have it linted.\n' "$stage" >&2
+    printf 'pre-commit (%s): not checked -- the command changes directory to a path that cannot be resolved before it runs (variable, substitution, glob, quoted or ~ path, or subshell/pushd nesting it cannot follow). Use a literal path to have it linted.\n' "$stage" >&2
     exit 0
     ;;
   *) target=$start ;;  # unreachable: classification above found the segment

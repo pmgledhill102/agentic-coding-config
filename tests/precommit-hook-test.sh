@@ -58,6 +58,8 @@ expect "plain push"              'git push -u origin main'                 pre-p
 expect "push after &&"           'git add -A && git push'                  pre-push
 expect "commit wins over push"   'git commit -m "x" && git push'           pre-commit
 expect "semicolon separated"     'echo hi; git commit -m "x"'              pre-commit
+expect "commit in a subshell"    '(git commit -m "x")'                     pre-commit
+expect "push ending a subshell"  '(cd /tmp && git push)'                   pre-push
 
 echo "--- the #191 false trigger: a mention, not an invocation ---"
 expect "phrase in echo"          'echo "run git commit later" >> notes.md' none
@@ -241,6 +243,18 @@ expect_where "git -C \$VAR commit"                     "$HOOK" "$LINTED" 'git -C
 expect_where "cd \$(subst) && push"                    "$HOOK" "$LINTED" 'cd $(mktemp -d) && git push'   none      0 'not checked'
 # shellcheck disable=SC2016
 expect_where "unresolvable cd AFTER the commit is moot" "$HOOK" "$LINTED" 'git commit -m x && cd "$X"'   "$LINTED" 0 ''
+
+echo "--- subshell scope and pushd/popd are followed (#558) ---"
+expect_where "( cd <configured> && commit ), from bare" "$HOOK" "$BARE"   "( cd $LINTED && git commit -m x )" "$LINTED" 0 ''
+expect_where "(cd <configured> && push), from bare"     "$HOOK" "$BARE"   "(cd $LINTED && git push)"          "$LINTED" 0 ''
+expect_where "pushd <configured> && push, from bare"    "$HOOK" "$BARE"   "pushd $LINTED && git push"         "$LINTED" 0 ''
+expect_where "pushd <bare> && commit does not lint cwd" "$HOOK" "$LINTED" "pushd $BARE && git commit -m x"    none      0 ''
+# shellcheck disable=SC2016
+expect_where "pushd \"\$VAR\" && commit -> not checked" "$HOOK" "$LINTED" 'pushd "$R" && git commit -m x'     none      0 'not checked'
+# Controls: the scope ends at `)` and popd returns, so these resolve to the
+# start dir -- a fix that merely stripped the parens would fail them.
+expect_where "control: ( cd <bare> ) && commit"         "$HOOK" "$LINTED" "( cd $BARE ) && git commit -m x"   "$LINTED" 0 ''
+expect_where "control: pushd <bare> && popd && commit"  "$HOOK" "$LINTED" "pushd $BARE && popd && git commit -m x" "$LINTED" 0 ''
 
 echo "--- a missing shared lib fails open, aloud, never exit 2 ---"
 mkdir -p "$WORK/nolib"
