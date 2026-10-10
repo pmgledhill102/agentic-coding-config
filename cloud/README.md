@@ -228,6 +228,42 @@ choice the environment makes, which is why the snippet still records the real
 one in its `[setup] bootstrap exit=` line and keeps `/tmp/bootstrap.log` — a
 session that came up half-installed can be diagnosed from inside itself.
 
+### Where the binaries go: `--prefix`
+
+The bootstrap decides once where every command it installs goes, and the
+helper and every toolchain follow that decision:
+
+| Run | Commands | gcloud SDK |
+| --- | --- | --- |
+| `--prefix DIR` | `DIR/bin` | `DIR/opt/google-cloud-sdk` |
+| `/usr/local/bin` and `/opt` writable (a root sandbox) | `/usr/local/bin` | `/opt/google-cloud-sdk` |
+| otherwise (unprivileged) | `~/.local/bin` | `~/.local/opt/google-cloud-sdk` |
+
+A root run with no `--prefix` lands exactly where it always did, so a Claude
+environment needs no change. Off the root layout, each install route is
+steered into the prefix rather than skipped: release binaries are installed
+into its `bin`, `shellcheck` comes from its pinned release because `apt`
+needs root, `npm` gets `--prefix`, and the Python tools (`pre-commit`,
+`checkov`, `semgrep`) go through `uv tool install` with uv's tool, bin and
+Python directories under the prefix. Without uv, the `~/.local` default falls
+back to `pip --user`; any other prefix needs uv.
+
+```sh
+sh /tmp/bootstrap.sh "$REF" --profile "$PROFILE" --prefix /workspace/.tools
+```
+
+`--prefix` moves **commands only**. The policy, the skills and the
+`~/.claude/bin` session scripts stay under `$HOME`, because the harness and
+the skills find them by that path. The pre-commit cache, the git hook and the
+tflint ruleset stay there for the same reason.
+
+**The bootstrap cannot put the bin dir on `PATH` for you.** A setup script's
+exports do not reach the agent phase on every surface, so the run logs a
+`WARN … is NOT on PATH` line, both early and at the end, and the manifest
+records `bin_dir=` and `bin_dir_on_path=`. `start-session` reports
+`bin_dir_off_path=` when the session it runs in still cannot reach them. The
+fix is in the environment's settings, not in a re-run.
+
 ### 2. Allowed domains
 
 Select **Custom**, tick *also include default list*, and add:
@@ -400,18 +436,38 @@ curl -sSL --retry 3 --retry-delay 2 \
   "https://raw.githubusercontent.com/pmgledhill102/agentic-coding-config/$REF/cloud/bootstrap.sh" \
   -o /tmp/bootstrap.sh || echo "[setup] could not fetch bootstrap.sh"
 
-{ sh /tmp/bootstrap.sh "$REF" --profile "$PROFILE"; echo $? > /tmp/bootstrap.rc; } 2>&1 \
+{ sh /tmp/bootstrap.sh "$REF" --profile "$PROFILE" --prefix /workspace/.tools; echo $? > /tmp/bootstrap.rc; } 2>&1 \
   | tee /tmp/bootstrap.log
 
 echo "[setup] bootstrap exit=$(cat /tmp/bootstrap.rc 2>/dev/null) at $(date -u +%FT%TZ)"
 exit 0
 ```
 
-**One word differs from the Claude block above — the profile.** Everything
-said there about `REF`, the absent shebang, keeping the field POSIX, the
-`Rev:` comment and the trailing `exit 0` applies here unchanged, and the
-profile table under *What a profile includes* says what `codex-cloud-sandbox`
-turns on: gcloud and pre-commit yes, harness hooks no.
+**Two things differ from the Claude block above: the profile, and
+`--prefix /workspace/.tools`.** Everything said there about `REF`, the absent
+shebang, keeping the field POSIX, the `Rev:` comment and the trailing `exit 0`
+applies here unchanged, and the profile table under *What a profile includes*
+says what `codex-cloud-sandbox` turns on: gcloud and pre-commit yes, harness
+hooks no.
+
+**The Codex runner is unprivileged**: it cannot write `/opt` or
+`/usr/local/bin`. Without a prefix the bootstrap would fall back to
+`~/.local` on its own (see *Where the binaries go* above). The block names
+`/workspace/.tools` instead because that is where Codex's own working install
+script put its tools, so it survives from setup into the task. Whether `$HOME`
+does is still unverified. The agent
+phase then needs that `bin` on its `PATH`, which the bootstrap cannot set,
+because Codex runs setup in a separate shell. Add it in the environment's
+start instructions:
+
+```sh
+export PATH="/workspace/.tools/bin:$PATH"
+```
+
+The prefix does not move `~/.agents` (policy and skills) or `~/.claude/bin`,
+which the harness and skills find by their `$HOME` paths. If `$HOME` turns
+out not to persist, those need a different answer. One task settles it:
+`ls ~/.agents/skills; command -v gcp-credentials`.
 
 The setup phase has network access and reached `raw.githubusercontent.com` to
 fetch the bootstrap with nothing added to the allowlist. The helper runs
@@ -476,6 +532,11 @@ Revocation levels and what to do about a possibly-exposed token or request key:
 
 ## What lands where
 
+The `/usr/local/bin` and `/opt` paths below are the root layout. On an
+unprivileged run, or with `--prefix`, read them as `<prefix>/bin` and
+`<prefix>/opt`. That includes `shellcheck` and the npm and uv tools, which
+then also land in `<prefix>/bin`. The manifest's `bin_dir=` names which.
+
 | Path | What |
 | ---- | ---- |
 | `~/.agents/skills/gcp-credentials/SKILL.md` | the skill, canonical, vendor-neutral |
@@ -488,7 +549,7 @@ Revocation levels and what to do about a possibly-exposed token or request key:
 | `~/.agents/AGENTS.md` | the composed policy profile |
 | `~/.claude/CLAUDE.md` | the Claude adapter profile (Claude profiles only) |
 | `~/.claude/bin/<script>` | the five session helper scripts |
-| `~/.agents/.bootstrap-manifest` | what this run installed: ref, SHA, profile, skills, helpers |
+| `~/.agents/.bootstrap-manifest` | what this run installed: ref, SHA, profile, skills, helpers, and `bin_dir=` (where the commands went) |
 | `~/.config/git/hooks/pre-commit` | global git hook, with `--with-precommit` |
 | `~/.cache/pre-commit/` | the warmed hook environments, with `--with-precommit` (~222 MB) |
 | `~/.claude/settings.json` | harness hook wiring, with `--with-hooks` (merged, not replaced) |

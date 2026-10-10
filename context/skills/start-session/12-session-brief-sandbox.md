@@ -47,6 +47,8 @@ Needs attention:
                                                (omit unless state=behind)
   • capabilities missing: <degraded> — lint/scan gates that need them cannot run
                                                (omit unless a degraded= line is present)
+  • installed tools are off PATH: <bin_dir_off_path> — add it to the environment
+                                               (omit unless a bin_dir_off_path= line is present)
 ───────────────────────────────────────────────
 ```
 

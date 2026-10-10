@@ -31,6 +31,12 @@ skills, policy and helper scripts with nothing saying so.
   toolkit is present, one toolchain is not. What it changes is what you may
   conclude from a later absence — a lint or scan that cannot run here is
   unverified work to report, never a gate that passed.
+- **`bin_dir_off_path=<dir>`**: another extra line. The bootstrap installed its
+  commands into `<dir>` (an unprivileged runner, or an explicit `--prefix`),
+  and this session's `PATH` does not include it, so `gcloud`, `terraform`,
+  `pre-commit` and the rest are present but unreachable by name. Surface it
+  under "Needs attention"; the fix is the environment's `PATH`, not a re-run.
+  Until then, call a tool as `<dir>/<tool>` rather than concluding it is absent.
 - **`state=behind`**: say so plainly at the top of the brief and give **both**
   lines verbatim — `remedy=` and `recurrence=`. Everything the container
   delivers — skills, policy, helpers — is as old as that SHA, which is why
