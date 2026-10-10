@@ -45,10 +45,10 @@ exit 0
 ```
 
 **The first three lines are the whole per-environment configuration.** Below
-them the script is byte-identical on every surface, which is the point: a
-Codex environment differs from a Claude one by one word, and a pinned
-environment from a tracking one by one word, in a place obvious enough that
-nobody has to read the rest to find it.
+them the script is byte-identical on every Claude environment, which is the
+point: a pinned environment differs from a tracking one by one word, in a
+place obvious enough that nobody has to read the rest to find it. Codex is
+the exception for now; see its section.
 
 `REF` is a variable rather than typed twice because it appears in two places —
 the ref this script is fetched from, and the ref it installs everything else
@@ -350,11 +350,14 @@ two origin errors above) and all three negative controls returned `000`.
 | Variable | Value |
 | -------- | ----- |
 | `CREDENTIAL_BROKER_URL` | the broker hostname above, with scheme |
-| `CREDENTIAL_BROKER_REQUEST_KEY` | `proxy-injected`, with the key held as an API credential (below). Or, where that isn't available, the **`cloud`** key itself |
+| `CREDENTIAL_BROKER_REQUEST_KEY` | `proxy-injected`, with the key held as an API credential (below). Or, where that isn't available, this environment's own key itself |
 
-Use the `cloud` key, not the `local` one. The approval card names which key was
-used, and "key cloud while I am at my laptop" is information worth keeping
-truthful.
+Each cloud environment has its **own** request key, named after it
+(`claude-cloud-sandbox-access` here); the shared `cloud` key is retired. The
+approval card names which key was used, so a per-environment key tells you
+which environment asked, and "a cloud key while I am at my laptop" stays
+information worth having. Creating and distributing keys is in the
+`sandbox-gcp-credentials` runbook in `gcp-org-management`.
 
 **Preferred: hold the key as an API credential.** Environment variables are
 readable by anything running in the session. On Pro and Max, add the key in
@@ -367,7 +370,7 @@ readable by anything running in the session. On Pro and Max, add the key in
 | Allowed websites | the broker's host, **exactly** (the same `credential-broker-<hash>-nw.a.run.app` as step 2). Not `*.run.app`: two credentials whose hosts overlap without matching exactly get no marker, and only one is sent |
 | Custom header name | `X-Request-Key` |
 | Prefix | **empty** |
-| Value | the `cloud` key |
+| Value | this environment's key |
 
 The helper then sends no key of its own, and `gcp-credentials status` reports
 `key : proxy-supplied`. The key can no longer be *copied out* of a sandbox by
@@ -378,8 +381,9 @@ exfiltration, not against use.
 - **Needs a broker that reads the header on `POST /request`.** That's
   pmgledhill102/gcp-org-management#670. An older broker reads the key only
   from the request body, so `request` returns 401 in this mode.
-- **Only for Claude cloud environments on Pro and Max.** Team and Enterprise,
-  and Codex, keep the key in the variable.
+- **Only for Claude cloud environments on Pro and Max.** Team and Enterprise
+  keep the key in the variable. Codex has its own equivalent, a network
+  secret: see the Codex section.
 
 Where the variable does hold the key itself, that's a deliberate exception to
 "no credentials in environment variables". It only gates *opening* a request,
@@ -421,104 +425,80 @@ Two things observed on 2026-09-30:
 
 ## Codex
 
-Set the same three things once per environment, in the Codex environment's
-settings. This section states what a run on 2026-08-13 established, not what
-the documentation implies.
+**Status: blocked.** Codex Cloud can use the credential broker, but it can't
+yet be given a usable environment, because its provisioning script doesn't
+take effect. Tracked in #575. This section records what testing on
+2026-10-10 established, not what the documentation implies. Some of it
+reverses the 2026-08-13 findings it replaces.
 
-### 1. Setup script
+### What works
 
-```sh
-PROFILE=codex-cloud-sandbox
-REF=main
-# Rev: 1
+- **The broker, end to end.** `gcp-credentials request` from a Codex task
+  produced a phrase. After approval it provisioned the sandbox project,
+  installed a token and started refresh, and gcloud picked the token up.
+- **Holding the key without exposing it.** In the personal vault, add a
+  **Network secret** with key `CREDENTIAL_BROKER_REQUEST_KEY`, the
+  environment's own key as the value (`codex-cloud`), and scope it to that
+  environment. The task sees a placeholder: the variable's length is 83
+  characters, against the key's 44. Codex's proxy swaps in the real key on
+  requests to allowed domains. The broker accepted it, and the approval card
+  read "Requested by key `codex-cloud`".
+  - This is Codex's equivalent of Claude's `proxy-injected`, by a different
+    route. `gcp-credentials status` reports `key : $CREDENTIAL_BROKER_REQUEST_KEY`
+    here, not `proxy-supplied`, because the helper does read the variable.
+    The length check above is how to confirm it holds a placeholder.
+  - As on Claude, this protects against the key being copied out, not
+    against it being used.
+- **`CREDENTIAL_BROKER_URL`** is an ordinary environment variable: the broker
+  host with scheme.
 
-curl -sSL --retry 3 --retry-delay 2 \
-  "https://raw.githubusercontent.com/pmgledhill102/agentic-coding-config/$REF/cloud/bootstrap.sh" \
-  -o /tmp/bootstrap.sh || echo "[setup] could not fetch bootstrap.sh"
+### What a Codex task can and can't touch
 
-{ sh /tmp/bootstrap.sh "$REF" --profile "$PROFILE" --prefix /workspace/.tools; echo $? > /tmp/bootstrap.rc; } 2>&1 \
-  | tee /tmp/bootstrap.log
+- **Only `/workspace` is writable and persists.** `$HOME` (`/home/agent`,
+  uid 1000) and the root filesystem are read-only. `/tmp` is writable but
+  fresh in each task. The sandbox also mounts `.agents`, `.codex`, `.git` and
+  `.aws` read-only under both `/workspace` and `/tmp`.
+- **`CODEX_HOME` is managed** (`/run/codex-environment/codex-home`). Codex
+  doesn't read `~/.agents/AGENTS.md`, so this profile's policy file, as the
+  bootstrap installs it, reaches nothing (#495). Each repo's own `AGENTS.md`
+  is read when working in that repo.
+- **There's no per-task shell hook.** The environment's "start skill" is
+  instructions to the agent, not a script, so an `export PATH=…` in it
+  affects nothing. Each command runs in a fresh shell.
+- **The provisioning (install) script doesn't take effect.** Neither the
+  standard bootstrap block nor a trivial probe writing to `/workspace` left
+  anything behind for the task to find. Until that changes, everything above
+  depended on installing by hand inside a task:
+  `cloud/bootstrap.sh … --prefix /workspace/.tools`, which itself stops at
+  `mkdir ~/.claude` (#575), with `CREDENTIAL_BROKER_HOME` and
+  `CLOUDSDK_CONFIG` pointed under `/workspace/.tools` for that shell.
+- **Commands run without network until the agent asks.** The first broker
+  request failed with a proxy-connect error and worked once re-run with
+  network permission. That's Codex's per-command sandbox, not a broker fault.
 
-echo "[setup] bootstrap exit=$(cat /tmp/bootstrap.rc 2>/dev/null) at $(date -u +%FT%TZ)"
-exit 0
-```
+### Allowed domains
 
-**Two things differ from the Claude block above: the profile, and
-`--prefix /workspace/.tools`.** Everything said there about `REF`, the absent
-shebang, keeping the field POSIX, the `Rev:` comment and the trailing `exit 0`
-applies here unchanged, and the profile table under *What a profile includes*
-says what `codex-cloud-sandbox` turns on: gcloud and pre-commit yes, harness
-hooks no.
+The Claude section's list, plus **`googleapis.com` and `*.googleapis.com`**.
+Codex's common-domains preset doesn't cover Google's API hosts, which Claude's
+trusted defaults do, and gcloud calls returned `403` without them. Keep the
+common-domains preset on as well: `releases.hashicorp.com`, `pypi.org` and
+`raw.githubusercontent.com` come from it.
 
-**The Codex runner is unprivileged**: it cannot write `/opt` or
-`/usr/local/bin`. Without a prefix the bootstrap would fall back to
-`~/.local` on its own (see *Where the binaries go* above). The block names
-`/workspace/.tools` instead because that is where Codex's own working install
-script put its tools, so it survives from setup into the task. Whether `$HOME`
-does is still unverified. The agent
-phase then needs that `bin` on its `PATH`, which the bootstrap cannot set,
-because Codex runs setup in a separate shell. Add it in the environment's
-start instructions:
+Two settings matter more than the list, because neither fails in a way that
+points at itself:
 
-```sh
-export PATH="/workspace/.tools/bin:$PATH"
-```
+- **Agent-phase internet must be on.** The whole broker flow (request, wait,
+  renew) happens in the agent phase.
+- **Don't restrict methods to `GET`/`HEAD`/`OPTIONS`.** The broker's endpoints
+  are all `POST`.
 
-The prefix does not move `~/.agents` (policy and skills) or `~/.claude/bin`,
-which the harness and skills find by their `$HOME` paths. If `$HOME` turns
-out not to persist, those need a different answer. One task settles it:
-`ls ~/.agents/skills; command -v gcp-credentials`.
+### What #575 has to solve before this is usable
 
-The setup phase has network access and reached `raw.githubusercontent.com` to
-fetch the bootstrap with nothing added to the allowlist. The helper runs
-unchanged on `codex-universal` — POSIX `sh`, `curl` and `jq` are all present,
-and nothing in it is Claude-specific. The skill is discovered from
-`~/.agents/skills`, which Codex scans natively: it listed `gcp-credentials`
-among its custom skills and invoked it **unprompted** from a prompt that never
-mentioned credentials. The two-step phrase flow works end to end, including
-refusing to run the target script when the mint failed.
-
-### 2. Allowed domains
-
-The same list as the Claude section, obtained the same way and for the same
-reasons. Two of its entries are what the setup and the broker flow need — the
-broker host and `dl.google.com`; the other ten serve agent work. The re-test
-command, the `000` negative control and the two hosts that answer `/` with an
-error all carry over unchanged. The 2026-10-04 sweep ran in a Claude sandbox
-only: whether a Codex environment carries all twelve is its own setting, so
-run the same loop there rather than inferring it from this one.
-
-**Two Codex-specific network settings matter more than the list does, because
-neither fails in a way that points at itself:**
-
-- **Agent-phase internet is off by default and must be enabled.** The entire
-  broker flow — request, wait, renew — happens in the *agent* phase, not in
-  setup. With it off the bootstrap installs cleanly during setup and then
-  nothing works, which reads as a broken helper rather than as a network
-  policy.
-- **The optional restriction to `GET`/`HEAD`/`OPTIONS` blocks the broker
-  outright.** Its endpoints are all `POST`, so an environment with the network
-  on and the host allowlisted still fails every request while that filter is
-  set — and the failure arrives as an HTTP status from a host that plainly
-  resolved.
-
-*An observation, not a guarantee:* the run reached the broker through Codex's
-proxy with no `HTTP_PROXY`/`HTTPS_PROXY` tuning and no custom CA certificates.
-The documentation does not say whether either is set, and at least one
-third-party write-up reports `curl` needing proxy-aware configuration, so
-treat this as what one run saw rather than as something the surface promises.
-
-### 3. Environment variables
-
-The same two variables as the Claude section, with the same values and the
-same reason to use the **`cloud`** key rather than the `local` one. The
-no-secrets-store caveat there applies here too.
-
-**Set them in the environment's own settings, not from the setup script.**
-Codex runs setup in a separate Bash session, so an `export` there does not
-survive into the agent phase — which is the only phase where the helper runs.
-The symptom is a helper that reports missing configuration at the moment of
-use, having installed without complaint.
+- The provisioning script taking effect at all.
+- The bootstrap not dying when `$HOME` is read-only.
+- Commands on `PATH` without per-command exports. The preferred route is
+  `~/.local/bin`, already first on Codex's PATH, if setup can write there.
+- Policy and skills through a channel Codex actually reads.
 
 ## Local machines
 
@@ -811,14 +791,12 @@ this script does not have to check.
 
 Claude profiles ship two files, because Claude Code reads `CLAUDE.md` and not
 `AGENTS.md`. Codex profiles ship `AGENTS.md` only, and it lands in
-`~/.agents/`. **Where Codex actually reads user-level `AGENTS.md` is not yet
-established (#495)** — `~/.agents/` is the vendor-neutral location its skills
-are already read from, not a verified instruction path. If it is the wrong
-place the failure is silent: the file is present, its content is correct, and
-no agent ever sees it. What would settle it is one run, to the same standard
-the Codex section's skill finding used: put a uniquely identifiable
-instruction in the user-level `AGENTS.md`, start a Codex session whose prompt
-does not mention it, and see whether the behaviour shows up.
+`~/.agents/`. **On Codex Cloud nothing reads it there (#495).** Codex's home is
+a managed `CODEX_HOME`, `$HOME` is read-only inside a task, and Codex reported
+loading no user-level `AGENTS.md` at all. The failure is the silent kind: the
+file could be present and correct and still never be seen. Which channel
+replaces it (`CODEX_HOME` written during setup, Codex's own instructions
+setting, or repo `AGENTS.md` files) is open in #575.
 
 ## Updating a running session
 
