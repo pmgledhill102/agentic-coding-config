@@ -384,6 +384,18 @@ run_sh bootstrap_currency '
         echo "degraded_remedy=re-run the bootstrap to retry the missing capabilities"
     fi
 
+    # Where the bootstrap put its commands, checked against THIS session PATH
+    # rather than the one the setup phase saw: an unprivileged runner installs
+    # under a prefix the bootstrap cannot add to PATH, and a tool that is
+    # installed but unreachable otherwise reads as one that never arrived.
+    bin_dir=$(sed -n "s/^bin_dir=//p" "$manifest")
+    if [ -n "$bin_dir" ]; then
+        case ":$PATH:" in
+            *":$bin_dir:"*) ;;
+            *) echo "bin_dir_off_path=$bin_dir" ;;
+        esac
+    fi
+
     # How long the bootstrap took, and whether this session paid for it. Both
     # come from files written before this script existed in any session, so an
     # older container reports neither rather than lying about either (#430).

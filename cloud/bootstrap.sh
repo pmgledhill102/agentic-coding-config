@@ -72,6 +72,18 @@
 # that 401 on every call, and should pass --no-devknowledge (#439). Claude
 # profiles only -- Codex does not read ~/.claude.json.
 #
+# --prefix DIR puts every binary this script installs under DIR: commands in
+# DIR/bin, the gcloud SDK in DIR/opt. Without it the choice is made once, by
+# the install-location block below the argument loop: /usr/local/bin and /opt
+# where both are writable (a root sandbox, so a root run lands where it always
+# did), otherwise $HOME/.local. An unprivileged runner whose $HOME may not
+# survive into the agent phase -- Codex Cloud's, see cloud/README.md -- passes
+# a directory that does. Policy, skills and the ~/.claude/bin session scripts
+# stay under $HOME whatever the prefix: the harness and the skills address
+# them by that path, so moving them would make them invisible rather than
+# durable. Nothing here edits PATH for the caller; a bin dir that is not on it
+# is logged loudly and recorded in the manifest.
+#
 # <REF> is what everything else is fetched from, and should match the ref this
 # script was itself fetched from, so a run cannot straddle two versions. Pin it
 # to a tag or commit in anything durable — a branch means
@@ -263,6 +275,7 @@ WITH_GH=
 WITH_TERRAFORM=
 WITH_DEVKNOWLEDGE=
 PROFILE=claude-cloud-sandbox
+PREFIX=
 
 # The trap goes on before anything that can fail, which is why TMP is declared
 # empty here and filled in much further down: an exit trap installed after the
@@ -307,6 +320,12 @@ while [ $# -gt 0 ]; do
             PROFILE="$1"
             ;;
         --profile=*) PROFILE="${1#--profile=}" ;;
+        --prefix)
+            shift
+            [ $# -gt 0 ] || die "--prefix needs a value"
+            PREFIX="$1"
+            ;;
+        --prefix=*) PREFIX="${1#--prefix=}" ;;
         *) die "unknown argument: $1" ;;
     esac
     shift
@@ -394,6 +413,65 @@ case "$PROFILE" in
             log "WARN    : --with-devknowledge ignored: $PROFILE is not a Claude profile"
             WITH_DEVKNOWLEDGE=0
         fi
+        ;;
+esac
+
+# --- where binaries go: decided once, used by both tiers ------------------
+#
+# Three outcomes, and every install below reads BIN_DIR and OPT_DIR rather
+# than naming a path, so the toolkit helper and the Tier 2 toolchains cannot
+# disagree about where they went:
+#
+#   --prefix DIR        DIR/bin and DIR/opt, as root or not. Explicit wins.
+#   system (writable)   /usr/local/bin and /opt -- a root sandbox, unchanged.
+#   user (otherwise)    $HOME/.local/bin and $HOME/.local/opt.
+#
+# Both system paths must be writable for the system layout, because gcloud
+# needs the one and its wrapper the other; half of each would leave the SDK
+# and its wrapper in different trees. `opt` under the prefix mirrors /opt, so
+# the SDK path is the same shape either way and stays out of the XDG data dir
+# that uv and pip use.
+#
+# INSTALL_MODE distinguishes system from the other two because the system
+# layout keeps each tool's own default install route (apt, a global npm and
+# pip, uv's default bin) exactly as before, where a prefix has to steer every
+# one of them explicitly.
+SYSTEM_BIN=/usr/local/bin
+SYSTEM_OPT=/opt
+if [ -n "$PREFIX" ]; then
+    case "$PREFIX" in
+        /*) ;;
+        *) die "--prefix needs an absolute path, got: $PREFIX" ;;
+    esac
+    PREFIX="${PREFIX%/}"
+    INSTALL_MODE=prefix
+elif [ -w "$SYSTEM_BIN" ] && [ -w "$SYSTEM_OPT" ]; then
+    INSTALL_MODE=system
+else
+    INSTALL_MODE=user
+    PREFIX="$HOME/.local"
+fi
+if [ "$INSTALL_MODE" = system ]; then
+    BIN_DIR="$SYSTEM_BIN"
+    OPT_DIR="$SYSTEM_OPT"
+else
+    BIN_DIR="$PREFIX/bin"
+    OPT_DIR="$PREFIX/opt"
+fi
+mkdir -p "$BIN_DIR" || die "could not create $BIN_DIR"
+
+# The caller's PATH is read before this script touches it: whether the bin dir
+# is on it is a fact about the environment a session will inherit, and it is
+# the one thing here that cannot fix it -- a setup script's exports do not
+# reach the agent phase on every surface. So the gap is logged and recorded,
+# and this process alone gets the bin dir prepended, which is what lets every
+# `command -v` check below see what the run itself installed.
+case ":$PATH:" in
+    *":$BIN_DIR:"*) BIN_ON_PATH=yes ;;
+    *)
+        BIN_ON_PATH=no
+        PATH="$BIN_DIR:$PATH"
+        export PATH
         ;;
 esac
 
@@ -490,20 +568,75 @@ apt_update() {
 # whole transaction, so a run that reaches it re-downloads more than it needs.
 # checkov against the sandbox image's apt-managed `packaging` is the case that
 # found this, and it took the whole bootstrap down with it (#344).
+#
+# The optional second argument is extra flags for every attempt, word-split:
+# py_tool_install passes `--user` through it.
 pip_install() {
     _pkg="$1"
+    _extra="${2:-}"
     for _pip in "pip" "pip3" "python3 -m pip"; do
         command -v "${_pip%% *}" > /dev/null 2>&1 || continue
         # shellcheck disable=SC2086  # deliberate word split: "python3 -m pip"
-        $_pip install --quiet --no-input "$_pkg" > /dev/null 2>&1 && return 0
+        $_pip install --quiet --no-input $_extra "$_pkg" > /dev/null 2>&1 && return 0
         # shellcheck disable=SC2086
-        $_pip install --quiet --no-input --break-system-packages "$_pkg" \
+        $_pip install --quiet --no-input $_extra --break-system-packages "$_pkg" \
             > /dev/null 2>&1 && return 0
         # shellcheck disable=SC2086
-        $_pip install --quiet --no-input --break-system-packages \
+        $_pip install --quiet --no-input $_extra --break-system-packages \
             --ignore-installed "$_pkg" > /dev/null 2>&1 && return 0
     done
     return 1
+}
+
+# --- py_tool_install: a Python CLI into BIN_DIR, off the system layout -------
+#
+# Only for a prefix or user install; the system layout keeps each tool's
+# existing route. A system pip cannot write site-packages unprivileged, and
+# `pip --prefix` puts the library where the system interpreter never looks, so
+# the console script installs and then fails to import.
+#
+# uv solves all of that: a venv per tool under the prefix, the shim in
+# BIN_DIR, and any Python it has to fetch kept under the prefix too, so an
+# explicit prefix holds everything a tool needs to run. Without uv, `pip
+# --user` is right only when the prefix IS the user base, $HOME/.local, which
+# is where it puts both halves; for any other prefix it would land the tool
+# outside it, so that case fails with a reason instead.
+py_tool_install() {
+    _pkg="$1"
+    if command -v uv > /dev/null 2>&1; then
+        UV_TOOL_DIR="$PREFIX/share/uv/tools" UV_TOOL_BIN_DIR="$BIN_DIR" \
+            UV_PYTHON_INSTALL_DIR="$PREFIX/share/uv/python" \
+            uv tool install "$_pkg" > /dev/null 2>&1
+        return
+    fi
+    [ "$PREFIX" = "$HOME/.local" ] || {
+        log "        $_pkg under $PREFIX needs uv, which is not on PATH"
+        return 1
+    }
+    pip_install "$_pkg" --user
+}
+
+# The two Python tools that took the system pip route before there was a
+# prefix. Kept on it in the system layout, so a root run is unchanged.
+python_cli_install() {
+    if [ "$INSTALL_MODE" = system ]; then
+        pip_install "$1"
+    else
+        py_tool_install "$1"
+    fi
+}
+
+# --- npm_global_install: a node CLI whose shim must land in BIN_DIR ----------
+#
+# npm's own global prefix is wherever this image's node put it, and is not
+# writable unprivileged. `--prefix` puts the package under PREFIX/lib and the
+# shim in PREFIX/bin, which is BIN_DIR. The system layout keeps npm's default.
+npm_global_install() {
+    if [ "$INSTALL_MODE" = system ]; then
+        npm install -g --silent "$1" > /dev/null 2>&1
+    else
+        npm install -g --silent --prefix "$PREFIX" "$1" > /dev/null 2>&1
+    fi
 }
 
 log "installing from ${REF}"
@@ -514,6 +647,13 @@ log "installing from ${REF}"
 on_off() { [ "$1" -eq 1 ] && echo "yes" || echo "no"; }
 log "profile -> $PROFILE"
 log "caps    :  gcloud=$(on_off "$WITH_GCLOUD") precommit=$(on_off "$WITH_PRECOMMIT") hooks=$(on_off "$WITH_HOOKS") gh=$(on_off "$WITH_GH") terraform=$(on_off "$WITH_TERRAFORM") devknowledge=$(on_off "$WITH_DEVKNOWLEDGE")"
+log "bin     -> $BIN_DIR ($INSTALL_MODE)"
+if [ "$BIN_ON_PATH" = no ]; then
+    log "WARN    : $BIN_DIR is NOT on PATH. Everything this run installs as a"
+    log "          command goes there, and this script cannot change the PATH a"
+    log "          session inherits. Add it in the environment's own settings,"
+    log "          or sessions will not find gcloud, terraform, pre-commit et al."
+fi
 
 # There is deliberately no apt step here.
 #
@@ -556,16 +696,9 @@ TIER1_START=$(now_s)
 
 # --- the helper --------------------------------------------------------------
 #
-# /usr/local/bin when writable, which is the case in a sandbox running as root,
-# so the helper is on PATH for every shell without touching a profile. Falling
-# back to ~/.local/bin keeps this usable unprivileged, where PATH may need help.
-
-if [ -w /usr/local/bin ] 2> /dev/null; then
-    BIN_DIR=/usr/local/bin
-else
-    BIN_DIR="$HOME/.local/bin"
-    mkdir -p "$BIN_DIR"
-fi
+# Into BIN_DIR, chosen once above: /usr/local/bin in a sandbox running as root,
+# so the helper is on PATH for every shell without touching a profile, and the
+# prefix's bin otherwise.
 
 fetch "$RAW/home/bin/gcp-credentials" "$TMP/gcp-credentials" ||
     die "could not fetch the helper from $REF"
@@ -988,10 +1121,12 @@ cap_gcloud() {
     fetch https://dl.google.com/dl/cloudsdk/channels/rapid/downloads/google-cloud-cli-linux-x86_64.tar.gz \
         "$TMP/gcloud.tar.gz" ||
         die "could not download the gcloud SDK — is dl.google.com on the allowlist?"
-    tar -xzf "$TMP/gcloud.tar.gz" -C /opt || die "could not unpack the gcloud SDK"
+    mkdir -p "$OPT_DIR" || die "could not create $OPT_DIR"
+    tar -xzf "$TMP/gcloud.tar.gz" -C "$OPT_DIR" || die "could not unpack the gcloud SDK"
+    _sdk="$OPT_DIR/google-cloud-sdk"
     # --path-update false, then symlink: a PATH line appended to a shell profile
     # is not reliably sourced by the non-interactive shells tool calls run in.
-    /opt/google-cloud-sdk/install.sh --quiet --usage-reporting false \
+    "$_sdk/install.sh" --quiet --usage-reporting false \
         --path-update false --command-completion false > /dev/null || true
     # A wrapper rather than a symlink, because the sandbox image presets
     # CLOUDSDK_AUTH_ACCESS_TOKEN and that variable outranks the
@@ -1007,7 +1142,11 @@ cap_gcloud() {
     # Narrow on purpose: it drops the variable only when a broker token actually
     # exists. With no grant installed, the preset token is whatever the sandbox
     # intended and is left alone.
-    cat > /usr/local/bin/gcloud << 'WRAPPER'
+    #
+    # The body is quoted so its own $-expansions stay literal; the SDK path is
+    # the one value it needs from here, filled in by sed. In the system layout
+    # that yields /opt/google-cloud-sdk, the path it always carried.
+    sed "s#@GCLOUD_SDK@#$_sdk#g" > "$BIN_DIR/gcloud" << 'WRAPPER'
 #!/bin/sh
 # Installed by agentic-coding-config cloud/bootstrap.sh.
 #
@@ -1062,12 +1201,12 @@ if [ -f "$CB_TOKEN" ] && [ -z "${CB_NO_RENEW:-}" ]; then
 fi
 
 if [ -n "${CLOUDSDK_AUTH_ACCESS_TOKEN:-}" ] && [ -f "$CB_TOKEN" ]; then
-    exec env -u CLOUDSDK_AUTH_ACCESS_TOKEN /opt/google-cloud-sdk/bin/gcloud "$@"
+    exec env -u CLOUDSDK_AUTH_ACCESS_TOKEN @GCLOUD_SDK@/bin/gcloud "$@"
 fi
-exec /opt/google-cloud-sdk/bin/gcloud "$@"
+exec @GCLOUD_SDK@/bin/gcloud "$@"
 WRAPPER
-    chmod 0755 /usr/local/bin/gcloud || true
-    ln -sf /opt/google-cloud-sdk/bin/gsutil /usr/local/bin/gsutil || true
+    chmod 0755 "$BIN_DIR/gcloud" || true
+    ln -sf "$_sdk/bin/gsutil" "$BIN_DIR/gsutil" || true
     log "gcloud  -> $(gcloud --version 2> /dev/null | head -1 || echo 'installed')"
 }
 
@@ -1094,6 +1233,20 @@ cap_precommit() {
     # binaries are here. Installing them is the whole point; SKIP= exists for a
     # laptop missing one, and normalising it would leave enforcement that is
     # routinely skipped, which is not enforcement.
+    #
+    # apt needs root, so off the system layout the binary comes from a pinned
+    # release instead, the same pattern as actionlint below. The system layout
+    # keeps apt: that is the route every root sandbox has always taken.
+    if ! command -v shellcheck > /dev/null 2>&1 && [ "$INSTALL_MODE" != system ]; then
+        SC_VER=0.11.0
+        fetch "https://github.com/koalaman/shellcheck/releases/download/v${SC_VER}/shellcheck-v${SC_VER}.linux.x86_64.tar.xz" \
+            "$TMP/shellcheck.tar.xz" ||
+            die "could not download shellcheck ${SC_VER}"
+        tar -xJf "$TMP/shellcheck.tar.xz" -C "$TMP" "shellcheck-v${SC_VER}/shellcheck" ||
+            die "could not unpack shellcheck — is xz present?"
+        install -m 0755 "$TMP/shellcheck-v${SC_VER}/shellcheck" "$BIN_DIR/shellcheck" ||
+            die "could not install shellcheck"
+    fi
     if ! command -v shellcheck > /dev/null 2>&1; then
         # A failed refresh is reported, not fatal. It used to die here, which
         # meant a blocked PPA -- a repository nothing in this script wants --
@@ -1119,7 +1272,7 @@ cap_precommit() {
             "$TMP/actionlint.tar.gz" ||
             die "could not download actionlint ${AL_VER}"
         tar -xzf "$TMP/actionlint.tar.gz" -C "$TMP" actionlint || die "could not unpack actionlint"
-        install -m 0755 "$TMP/actionlint" /usr/local/bin/actionlint || die "could not install actionlint"
+        install -m 0755 "$TMP/actionlint" "$BIN_DIR/actionlint" || die "could not install actionlint"
     fi
     log "actionl -> $(command -v actionlint)"
 
@@ -1132,7 +1285,7 @@ cap_precommit() {
         ML_VER=0.23.2
         command -v npm > /dev/null 2>&1 ||
             die "markdownlint-cli2 needs npm, which is not on PATH"
-        npm install -g --silent "markdownlint-cli2@${ML_VER}" > /dev/null 2>&1 ||
+        npm_global_install "markdownlint-cli2@${ML_VER}" ||
             die "could not install markdownlint-cli2 ${ML_VER} from npm"
     fi
     # This image carries several node installs with different global prefixes,
@@ -1151,7 +1304,10 @@ cap_precommit() {
     # fallback rather than the route: uv sits at /root/.local/bin in this
     # image, but one image is not the contract.
     if ! command -v semgrep > /dev/null 2>&1; then
-        if command -v uv > /dev/null 2>&1; then
+        if [ "$INSTALL_MODE" != system ]; then
+            py_tool_install semgrep ||
+                die "could not install semgrep under $PREFIX"
+        elif command -v uv > /dev/null 2>&1; then
             uv tool install semgrep > /dev/null 2>&1 ||
                 die "could not install semgrep with uv"
         else
@@ -1175,7 +1331,7 @@ cap_precommit() {
         CS_VER=10.3.3
         command -v npm > /dev/null 2>&1 ||
             die "cspell needs npm, which is not on PATH"
-        npm install -g --silent "cspell@${CS_VER}" > /dev/null 2>&1 ||
+        npm_global_install "cspell@${CS_VER}" ||
             die "could not install cspell ${CS_VER} from npm"
     fi
     # Same several-node-prefixes caveat as markdownlint-cli2: npm exiting 0
@@ -1220,7 +1376,7 @@ cap_precommit() {
                 die "could not download terraform ${TF_VER}"
             unzip -o -q "$TMP/terraform.zip" -d "$TMP" terraform ||
                 die "could not unpack terraform — is unzip present?"
-            install -m 0755 "$TMP/terraform" /usr/local/bin/terraform ||
+            install -m 0755 "$TMP/terraform" "$BIN_DIR/terraform" ||
                 die "could not install terraform"
         fi
         log "terrafm -> $(command -v terraform) ($(terraform version | head -1))"
@@ -1232,7 +1388,7 @@ cap_precommit() {
                 die "could not download tflint ${TFL_VER}"
             unzip -o -q "$TMP/tflint.zip" -d "$TMP" tflint ||
                 die "could not unpack tflint"
-            install -m 0755 "$TMP/tflint" /usr/local/bin/tflint ||
+            install -m 0755 "$TMP/tflint" "$BIN_DIR/tflint" ||
                 die "could not install tflint"
         fi
         log "tflint  -> $(command -v tflint)"
@@ -1261,7 +1417,7 @@ cap_precommit() {
         # checkov is a Python tool, so it takes the same pip route as
         # pre-commit rather than a release tarball.
         command -v checkov > /dev/null 2>&1 ||
-            pip_install checkov ||
+            python_cli_install checkov ||
             die "could not install checkov from PyPI"
         command -v checkov > /dev/null 2>&1 ||
             die "checkov reported installed but is not on PATH"
@@ -1269,7 +1425,7 @@ cap_precommit() {
     fi
 
     command -v pre-commit > /dev/null 2>&1 ||
-        pip_install pre-commit ||
+        python_cli_install pre-commit ||
         die "could not install pre-commit from PyPI"
     # pip exiting 0 is not the same as the console script existing: an image
     # carrying the pre_commit package without its shim, or a pip whose scripts
@@ -1507,7 +1663,7 @@ cap_gh() {
         die "could not download gh ${GH_VER}"
     tar -xzf "$TMP/gh.tar.gz" -C "$TMP" "gh_${GH_VER}_linux_amd64/bin/gh" ||
         die "could not unpack gh"
-    install -m 0755 "$TMP/gh_${GH_VER}_linux_amd64/bin/gh" /usr/local/bin/gh ||
+    install -m 0755 "$TMP/gh_${GH_VER}_linux_amd64/bin/gh" "$BIN_DIR/gh" ||
         die "could not install gh"
     log "gh      -> $(gh --version 2> /dev/null | head -1 || echo 'installed')"
 }
@@ -1599,7 +1755,7 @@ cap_golangci() {
         die "could not download golangci-lint ${GCL_VER}"
     tar -xzf "$TMP/golangci-lint.tar.gz" -C "$TMP" "golangci-lint-${GCL_VER}-linux-amd64/golangci-lint" ||
         die "could not unpack golangci-lint"
-    install -m 0755 "$TMP/golangci-lint-${GCL_VER}-linux-amd64/golangci-lint" /usr/local/bin/golangci-lint ||
+    install -m 0755 "$TMP/golangci-lint-${GCL_VER}-linux-amd64/golangci-lint" "$BIN_DIR/golangci-lint" ||
         die "could not install golangci-lint"
     # A copy earlier on PATH would still be the one a session runs.
     [ "$(golangci_ver)" = "$GCL_VER" ] ||
@@ -1710,6 +1866,12 @@ fi
     echo "skills=$SKILLS $COMPOSED_SKILLS"
     echo "composed_skills=$COMPOSED_SKILLS"
     echo "helpers=$BIN_SCRIPTS"
+    # Where the commands went (system, user or an explicit prefix), and whether
+    # the caller's PATH reaches them. `no` is the line to read when a session
+    # cannot find a tool this run reports installing.
+    echo "install_mode=$INSTALL_MODE"
+    echo "bin_dir=$BIN_DIR"
+    echo "bin_dir_on_path=$BIN_ON_PATH"
     echo "precommit=$WITH_PRECOMMIT"
     # How many pre-commit hook environments the warm left in the cache. 0 on a
     # container that never warmed one, which is the difference between "the gate
@@ -1749,6 +1911,11 @@ if [ -n "$DEGRADED" ]; then
     log "      the bootstrap retries them."
 else
     log "done, from ${REF}"
+fi
+# Repeated at the end, where a reader of the log actually looks.
+if [ "$BIN_ON_PATH" = no ]; then
+    log "WARN    : $BIN_DIR is not on PATH -- add it to the environment, or"
+    log "          sessions will not find what this run installed there."
 fi
 log "note: commands and skills are read when Claude Code starts, so a session"
 log "      already running will not see them until it restarts or resumes."

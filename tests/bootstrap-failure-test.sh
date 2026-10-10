@@ -47,10 +47,9 @@ if [ -z "$BOOTSTRAP_TEST_REF" ]; then
 fi
 
 # The full runs below take this copy, which skips the golangci-lint capability.
-# It is unconditional and installs into /usr/local/bin, which a CI runner's
-# user cannot write -- so on CI every full run would come back degraded for a
-# reason none of those cases is about, and in a sandbox each run would download
-# it. Section 10 tests the capability itself.
+# It is unconditional, so every full run would download it for a reason none of
+# those cases is about. Section 10 tests the capability itself, and section 11
+# runs it against a fixture.
 BOOTSTRAP_FULL=$(mktemp)
 sed 's/^capability 1 golangci cap_golangci$/capability 0 golangci cap_golangci/' \
     "$BOOTSTRAP" > "$BOOTSTRAP_FULL"
@@ -767,6 +766,224 @@ check "  without a download" "0" "$(count 'golangci-lint' "$H/calls.log")"
 gcl_run "golangci-lint has version v99.0.0 built with go1.30.0"
 check "a newer copy is left alone, not walked backwards" "0" "$?"
 check "  without a download" "0" "$(count 'golangci-lint' "$H/calls.log")"
+rm -rf "$H"
+
+# --- 11. where binaries go: one decision, every install follows it ---------
+#
+# The invariant: an unprivileged run installs everything it can under one
+# prefix, reports status=ok rather than degraded for it, and records the bin
+# dir -- while a run that can write the system paths lands exactly where it
+# always did (#573). Codex Cloud's runner is the unprivileged case.
+#
+# Root cannot be made to fail `[ -w ]`, so "unprivileged" is simulated by
+# rewriting the two SYSTEM_ lines in a copy to a path that does not exist (or,
+# for the system case, to one the test owns). Those two lines are the only
+# place the script names a system path, which 11a holds it to -- so the
+# rewrite moves every install, and the shipped script carries no test seam.
+echo
+echo "cloud/bootstrap.sh — where binaries go"
+
+# 11a. No install names a system path except through the decision.
+stray=$(grep -nE '(^|[ "=])(/usr/local/bin|/opt)([/" ]|$)' "$BOOTSTRAP" |
+    grep -vE '^[0-9]+:[[:space:]]*#' |
+    grep -vE '^[0-9]+:SYSTEM_(BIN|OPT)=')
+check "no install hard-codes /usr/local/bin or /opt" "" "$stray"
+check "  the two SYSTEM_ lines are the decision's only inputs" "2" \
+    "$(count '^SYSTEM_\(BIN\|OPT\)=' "$BOOTSTRAP")"
+
+# with_system <bin> <opt> <src> <dest> -- a copy whose system paths are moved.
+with_system() {
+    sed -e "s#^SYSTEM_BIN=.*#SYSTEM_BIN=$1#" -e "s#^SYSTEM_OPT=.*#SYSTEM_OPT=$2#" "$3" > "$4"
+}
+mval() { sed -n "s/^$1=//p" "$2" 2> /dev/null; }
+
+# 11b. System paths unwritable, no --prefix: $HOME/.local, and said so.
+H=$(mktemp -d)
+with_system "$H/sys/bin" "$H/sys/opt" "$BOOTSTRAP_FULL" "$H/bootstrap.sh"
+check "the fixture moved the system paths" "1" "$(count "^SYSTEM_BIN=$H/sys/bin\$" "$H/bootstrap.sh")"
+HOME="$H" sh "$H/bootstrap.sh" "$BOOTSTRAP_TEST_REF" --no-gcloud --no-precommit --no-hooks \
+    --no-devknowledge > "$H/run.log" 2>&1
+check "unwritable system paths: the run succeeds" "0" "$?"
+M="$H/.agents/.bootstrap-manifest"
+check "  install_mode=user" "user" "$(mval install_mode "$M")"
+check "  bin_dir is \$HOME/.local/bin" "$H/.local/bin" "$(mval bin_dir "$M")"
+check "  the helper landed there" "1" \
+    "$([ -x "$H/.local/bin/gcp-credentials" ] && echo 1 || echo 0)"
+check "  bin_dir_on_path=no is recorded" "no" "$(mval bin_dir_on_path "$M")"
+check "  and the log says so loudly" "1" "$(count 'is NOT on PATH' "$H/run.log")"
+check "  nothing was created at the system paths" "0" \
+    "$([ -e "$H/sys" ] && echo 1 || echo 0)"
+rm -rf "$H"
+
+# 11c. System paths writable: the system layout, unchanged. The paths are the
+# test's own, so this holds as root and as a CI runner's user alike.
+H=$(mktemp -d)
+mkdir -p "$H/sys/bin" "$H/sys/opt"
+with_system "$H/sys/bin" "$H/sys/opt" "$BOOTSTRAP_FULL" "$H/bootstrap.sh"
+HOME="$H" PATH="$H/sys/bin:$PATH" sh "$H/bootstrap.sh" "$BOOTSTRAP_TEST_REF" \
+    --no-gcloud --no-precommit --no-hooks --no-devknowledge > "$H/run.log" 2>&1
+check "writable system paths: the run succeeds" "0" "$?"
+M="$H/.agents/.bootstrap-manifest"
+check "  install_mode=system" "system" "$(mval install_mode "$M")"
+check "  the helper is in the system bin" "1" \
+    "$([ -x "$H/sys/bin/gcp-credentials" ] && echo 1 || echo 0)"
+check "  and not in \$HOME/.local/bin" "0" \
+    "$([ -e "$H/.local/bin/gcp-credentials" ] && echo 1 || echo 0)"
+check "  bin_dir_on_path=yes, and no warning" "yes 0" \
+    "$(mval bin_dir_on_path "$M") $(count 'NOT on PATH' "$H/run.log")"
+rm -rf "$H"
+
+# 11d. The unprivileged Codex shape end to end: --prefix, every capability the
+# codex profile turns on plus gh and golangci-lint, nothing pre-installed.
+#
+# Downloads come from file:// fixtures laid out at each release URL's path, so
+# the real fetch, unpack and install code runs against a stand-in archive. PATH
+# is a farm of the base utilities only, so no image copy of terraform or
+# pre-commit short-circuits an install. npm and uv are stubs that do what the
+# real ones do with the flags they are given (npm --prefix, UV_TOOL_BIN_DIR),
+# and log those flags -- the flags are this script's half of the contract.
+H=$(mktemp -d)
+FIX="$H/fix"
+pin() { sed -n "s/^[[:space:]]*$1=\([0-9.]*\)\$/\1/p" "$BOOTSTRAP" | head -1; }
+AL=$(pin AL_VER) SC=$(pin SC_VER) TF=$(pin TF_VER) TFL=$(pin TFL_VER)
+TFG=$(pin TFL_GOOGLE_VER) GHV=$(pin GH_VER) GCL=$(pin GCL_VER)
+check "every pin the fixture needs was found" "7" \
+    "$(printf '%s\n' "$AL" "$SC" "$TF" "$TFL" "$TFG" "$GHV" "$GCL" | grep -c .)"
+
+fake() { # fake <path> <version line>
+    mkdir -p "$(dirname "$1")"
+    printf '#!/bin/sh\necho "%s"\n' "$2" > "$1"
+    chmod +x "$1"
+}
+S="$H/stage"
+fake "$S/al/actionlint" "actionlint $AL"
+mkdir -p "$FIX/github.com/rhysd/actionlint/releases/download/v$AL"
+tar -czf "$FIX/github.com/rhysd/actionlint/releases/download/v$AL/actionlint_${AL}_linux_amd64.tar.gz" -C "$S/al" actionlint
+fake "$S/sc/shellcheck-v$SC/shellcheck" "ShellCheck $SC"
+mkdir -p "$FIX/github.com/koalaman/shellcheck/releases/download/v$SC"
+tar -cJf "$FIX/github.com/koalaman/shellcheck/releases/download/v$SC/shellcheck-v$SC.linux.x86_64.tar.xz" -C "$S/sc" "shellcheck-v$SC/shellcheck"
+fake "$S/tf/terraform" "Terraform v$TF"
+mkdir -p "$FIX/releases.hashicorp.com/terraform/$TF"
+zip -q -j "$FIX/releases.hashicorp.com/terraform/$TF/terraform_${TF}_linux_amd64.zip" "$S/tf/terraform"
+fake "$S/tfl/tflint" "TFLint version $TFL"
+mkdir -p "$FIX/github.com/terraform-linters/tflint/releases/download/v$TFL"
+zip -q -j "$FIX/github.com/terraform-linters/tflint/releases/download/v$TFL/tflint_linux_amd64.zip" "$S/tfl/tflint"
+fake "$S/tfg/tflint-ruleset-google" "ruleset $TFG"
+mkdir -p "$FIX/github.com/terraform-linters/tflint-ruleset-google/releases/download/v$TFG"
+zip -q -j "$FIX/github.com/terraform-linters/tflint-ruleset-google/releases/download/v$TFG/tflint-ruleset-google_linux_amd64.zip" "$S/tfg/tflint-ruleset-google"
+fake "$S/gh/gh_${GHV}_linux_amd64/bin/gh" "gh version $GHV"
+mkdir -p "$FIX/github.com/cli/cli/releases/download/v$GHV"
+tar -czf "$FIX/github.com/cli/cli/releases/download/v$GHV/gh_${GHV}_linux_amd64.tar.gz" -C "$S/gh" "gh_${GHV}_linux_amd64/bin/gh"
+fake "$S/gcl/golangci-lint-$GCL-linux-amd64/golangci-lint" "golangci-lint has version $GCL built with go1.27.0"
+mkdir -p "$FIX/github.com/golangci/golangci-lint/releases/download/v$GCL"
+tar -czf "$FIX/github.com/golangci/golangci-lint/releases/download/v$GCL/golangci-lint-$GCL-linux-amd64.tar.gz" -C "$S/gcl" "golangci-lint-$GCL-linux-amd64/golangci-lint"
+fake "$S/gc/google-cloud-sdk/bin/gcloud" "Google Cloud SDK 999.0.0 (fixture)"
+fake "$S/gc/google-cloud-sdk/bin/gsutil" "gsutil fixture"
+fake "$S/gc/google-cloud-sdk/install.sh" "fixture install.sh"
+mkdir -p "$FIX/dl.google.com/dl/cloudsdk/channels/rapid/downloads"
+tar -czf "$FIX/dl.google.com/dl/cloudsdk/channels/rapid/downloads/google-cloud-cli-linux-x86_64.tar.gz" -C "$S/gc" google-cloud-sdk
+
+# The farm: base utilities by symlink, plus the two stubs. A tool absent from
+# this host is skipped; the run then fails loudly on it, which is the signal.
+FARM="$H/farm"
+mkdir -p "$FARM"
+for t in sh cat cp mv rm ln mkdir chmod install mktemp date sed awk grep head tail \
+    cut tr wc sort dirname basename find env stat tar gzip xz unzip curl git jq \
+    id uname tee touch readlink ls true false; do
+    _p=$(command -v "$t" 2> /dev/null) && ln -s "$_p" "$FARM/$t"
+done
+cat > "$FARM/npm" << 'STUB'
+#!/bin/sh
+echo "$*" >> "$STUB_LOG/npm.log"
+prefix= pkg=
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --prefix) shift; prefix="$1" ;;
+        -*) ;;
+        *) pkg="$1" ;;
+    esac
+    shift
+done
+[ -n "$prefix" ] || exit 1
+name=${pkg%@*}
+mkdir -p "$prefix/bin"
+printf '#!/bin/sh\necho "%s fixture"\n' "$name" > "$prefix/bin/$name"
+chmod +x "$prefix/bin/$name"
+STUB
+cat > "$FARM/uv" << 'STUB'
+#!/bin/sh
+echo "$3 UV_TOOL_DIR=${UV_TOOL_DIR:-} UV_TOOL_BIN_DIR=${UV_TOOL_BIN_DIR:-} UV_PYTHON_INSTALL_DIR=${UV_PYTHON_INSTALL_DIR:-}" >> "$STUB_LOG/uv.log"
+[ "$1 $2" = "tool install" ] && [ -n "${UV_TOOL_BIN_DIR:-}" ] || exit 1
+mkdir -p "$UV_TOOL_BIN_DIR"
+if [ "$3" = pre-commit ]; then
+    # install-hooks has to leave a hook environment, or the warm reports
+    # that it cached nothing.
+    printf '#!/bin/sh\ncase "$1" in\n  install-hooks) mkdir -p "$PRE_COMMIT_HOME/repofixture" ;;\n  *) echo "pre-commit 9.9.9" ;;\nesac\n' \
+        > "$UV_TOOL_BIN_DIR/pre-commit"
+else
+    printf '#!/bin/sh\necho "%s fixture"\n' "$3" > "$UV_TOOL_BIN_DIR/$3"
+fi
+chmod +x "$UV_TOOL_BIN_DIR/$3"
+STUB
+chmod +x "$FARM/npm" "$FARM/uv"
+
+# golangci-lint included: the unmodified script, not BOOTSTRAP_FULL.
+with_system "$H/sys/bin" "$H/sys/opt" "$BOOTSTRAP" "$H/bs-sys.sh"
+sed -e "s#https://github.com/\([^\"]*\)/releases/download/#file://$FIX/github.com/\1/releases/download/#g" \
+    -e "s#https://releases.hashicorp.com/#file://$FIX/releases.hashicorp.com/#g" \
+    -e "s#https://dl.google.com/#file://$FIX/dl.google.com/#g" \
+    "$H/bs-sys.sh" > "$H/bootstrap.sh"
+check "the fixture rewrote every release download" "0" \
+    "$(grep -cE 'https://(github.com/[^ ]*/releases/download|releases.hashicorp.com|dl.google.com)/' "$H/bootstrap.sh")"
+
+P="$H/tools"
+mkdir -p "$H/home" "$H/cwd"
+( cd "$H/cwd" && HOME="$H/home" PATH="$FARM" STUB_LOG="$H" PRE_COMMIT_HOME="$H/pc-cache" \
+    sh "$H/bootstrap.sh" "$BOOTSTRAP_TEST_REF" --profile codex-cloud-sandbox --with-gh \
+    --prefix "$P" ) > "$H/run.log" 2>&1
+p_rc=$?
+check "an unprivileged --prefix run succeeds" "0" "$p_rc"
+M="$H/home/.agents/.bootstrap-manifest"
+check "  status=ok, not degraded" "ok" "$(mval status "$M")"
+check "  with nothing degraded" "" "$(mval degraded "$M")"
+if [ "$(mval status "$M")" != ok ]; then
+    printf '        --- run log (tail) ---\n'
+    tail -25 "$H/run.log" | sed 's/^/        /'
+fi
+check "  install_mode=prefix" "prefix" "$(mval install_mode "$M")"
+check "  bin_dir is the prefix's bin" "$P/bin" "$(mval bin_dir "$M")"
+check "  bin_dir_on_path=no is recorded" "no" "$(mval bin_dir_on_path "$M")"
+missing=
+for t in gcp-credentials gcloud gsutil shellcheck actionlint markdownlint-cli2 cspell \
+    semgrep terraform tflint checkov pre-commit gh golangci-lint; do
+    [ -x "$P/bin/$t" ] || missing="$missing $t"
+done
+check "  every command landed in the prefix's bin" "" "$missing"
+check "  the gcloud SDK is under the prefix" "1" \
+    "$([ -x "$P/opt/google-cloud-sdk/bin/gcloud" ] && echo 1 || echo 0)"
+check "  the wrapper execs the prefix's SDK" "2" \
+    "$(count "$P/opt/google-cloud-sdk/bin/gcloud \"\$@\"" "$P/bin/gcloud")"
+check "  and still strips the preset token for a broker grant" "1" \
+    "$(count 'exec env -u CLOUDSDK_AUTH_ACCESS_TOKEN' "$P/bin/gcloud")"
+check "  the wrapper runs the SDK it names" "Google Cloud SDK 999.0.0 (fixture)" \
+    "$(HOME="$H/home" PATH="$FARM" "$P/bin/gcloud" --version 2> /dev/null)"
+check "  uv installed all three Python tools" "3" "$(count . "$H/uv.log")"
+check "  each with its tools and Python under the prefix" "3" \
+    "$(count "UV_TOOL_DIR=$P/share/uv/tools UV_TOOL_BIN_DIR=$P/bin UV_PYTHON_INSTALL_DIR=$P/share/uv/python\$" "$H/uv.log")"
+check "  both npm installs were given the prefix" "2 2" \
+    "$(count . "$H/npm.log") $(count "prefix $P " "$H/npm.log")"
+check "  an explicit prefix beats the \$HOME/.local default" "0" \
+    "$([ -e "$H/home/.local/bin" ] && echo 1 || echo 0)"
+
+# And start-session tells the session its tools are off PATH.
+cur=$(HOME="$H/home" "$GATHER" 2> /dev/null |
+    sed -n '/^===bootstrap_currency/,/^===[a-z]/p')
+check "gather names a bin dir that is off this session's PATH" "bin_dir_off_path=$P/bin" \
+    "$(printf '%s\n' "$cur" | grep '^bin_dir_off_path=')"
+cur=$(HOME="$H/home" PATH="$P/bin:$PATH" "$GATHER" 2> /dev/null |
+    sed -n '/^===bootstrap_currency/,/^===[a-z]/p')
+check "  and is silent once it is on PATH" "0" \
+    "$(printf '%s\n' "$cur" | grep -c '^bin_dir_off_path=')"
 rm -rf "$H"
 
 printf '\n%s passed, %s failed\n' "$PASS" "$FAIL"
