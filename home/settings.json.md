@@ -912,8 +912,9 @@ point at went away with the plugin in #312.
    auto-approved, matching the existing `Bash(gh pr checks *)` grant.
 
 3. **PR-state push guard** — `~/.claude/bin/prepush-guard-claude-hook`.
-   Before any `git push` Claude makes, asks GitHub (`gh pr view <branch>`)
-   whether the pushed branch's PR is already `MERGED`/`CLOSED`, and if so
+   Before any `git push` Claude makes, asks GitHub (`gh api
+   repos/<owner>/<repo>/pulls?head=<owner>:<branch>&state=all`, REST because
+   cloud sandboxes refuse the GraphQL behind `gh pr view`) whether the pushed branch's PR is already `MERGED`/`CLOSED`, and if so
    **blocks** with `exit 2` and instructions to start a fresh branch. 30s
    timeout.
 
@@ -931,8 +932,9 @@ point at went away with the plugin in #312.
    recreating a branch); the push is `--delete`/`-d` or `--tags`; `gh` or
    `jq` is missing; HEAD is detached; the branch is the default branch; the
    branch has no PR; the PR is open; or the lookup fails for any reason
-   (offline, auth). `gh pr view` prefers an open PR when one exists, so
-   re-using a branch name under a new PR is not a false positive. Limitation:
+   (offline, auth, a proxy 403), or origin is not a github.com remote; each
+   of those prints a `not checked` line rather than passing silently. An open
+   PR for the branch wins over older closed ones, so re-using a branch name under a new PR is not a false positive. Limitation:
    it inspects the **current** branch — a push naming a different refspec is
    waved through.
 

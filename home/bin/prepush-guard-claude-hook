@@ -9,10 +9,13 @@
 # delete orphan, new PR). The prose rule in CLAUDE.md ("check the PR is still
 # open before pushing") failed twice in one session; this enforces it.
 #
-# Authority is `gh pr view <branch>`: local state is useless here (the stale
-# remote-tracking ref survives the remote deletion until a fetch --prune).
-# gh prefers an open PR for the branch when one exists, so re-using a branch
-# name after an old PR merged still pushes fine once a new PR is open.
+# Authority is GitHub's REST pulls listing for the branch, filtered by head:
+# local state is useless here (the stale remote-tracking ref survives the
+# remote deletion until a fetch --prune). REST rather than `gh pr view`,
+# because `gh pr view` is GraphQL, which cloud sandboxes refuse outright while
+# serving REST. An open PR for the branch wins over older closed ones, so
+# re-using a branch name after an old PR merged still pushes fine once a new
+# PR is open.
 #
 # Fail-open by design: no gh, no network, no repo, detached HEAD, or any
 # lookup error -> allow the push. The guard exists to stop one specific
@@ -92,25 +95,39 @@ default=$(git -C "$root" symbolic-ref --short -q refs/remotes/origin/HEAD | sed 
 # reports a missing gh.
 command -v gh >/dev/null 2>&1 || not_checked "gh unavailable: gh is not installed, so the PR state cannot be looked up."
 
-# --- Ask GitHub. Any failure (no PR, offline, auth) -> allow. -------------
-# gh exits 4 when authentication is required; its "no pull requests found"
-# is the ordinary no-PR-yet case and stays silent.
+# --- Ask GitHub which PRs have this branch as head. -----------------------
+# origin is read with `git config`, not `git remote get-url`: the latter
+# applies url.*.insteadOf rewrites, which sandboxes inject.
+origin=$(git -C "$root" config --get remote.origin.url 2>/dev/null) || origin=""
+slug=$(printf '%s' "$origin" | sed -n -E 's#^(https://|ssh://)?([^@/]+@)?github\.com[:/]([^/]+/[^/]+)$#\3#p' | sed 's#\.git$##')
+[ -n "$slug" ] || not_checked "origin is not a github.com remote, so the PR state cannot be looked up."
+head=$(printf '%s' "${slug%%/*}:$branch" | jq -sRr @uri)
+
 gh_err_file=$(mktemp 2>/dev/null) || gh_err_file=/dev/null
-pr=$(cd "$root" && gh pr view "$branch" --json state,number,url 2>"$gh_err_file")
+prs=$(gh api "repos/$slug/pulls?head=$head&state=all&per_page=100" 2>"$gh_err_file")
 gh_rc=$?
 gh_err=$(cat "$gh_err_file" 2>/dev/null)
 [ "$gh_err_file" = /dev/null ] || rm -f "$gh_err_file"
 if [ "$gh_rc" -ne 0 ]; then
-  case "$gh_err" in
-    *"no pull requests found"*) exit 0 ;;
-  esac
+  # gh exits 4 when authentication is required.
   case "$gh_rc:$gh_err" in
     4:* | *"gh auth login"* | *"HTTP 401"* | *"Bad credentials"*)
       not_checked "gh unauthorised: gh is not authenticated, so the PR state cannot be looked up." ;;
   esac
   not_checked "gh lookup failed: $(printf '%s' "$gh_err" | head -1)"
 fi
-state=$(printf '%s' "$pr" | jq -r '.state // empty')
+
+# No PR yet is the ordinary case and stays silent. Otherwise the open PR if
+# there is one, else the newest: MERGED when it has a merge time, else CLOSED.
+pr=$(printf '%s' "$prs" | jq -c '
+  if type != "array" or length == 0 then empty
+  else (map(select(.state == "open")) | first) // (sort_by(.number) | last)
+     | {number, url: .html_url,
+        state: (if .state == "open" then "OPEN"
+                elif .merged_at != null then "MERGED" else "CLOSED" end)}
+  end' 2>/dev/null) || not_checked "gh lookup failed: unreadable response from the pulls API."
+[ -n "$pr" ] || exit 0
+state=$(printf '%s' "$pr" | jq -r '.state')
 case "$state" in
   MERGED|CLOSED) ;;
   *) exit 0 ;;

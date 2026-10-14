@@ -13,7 +13,9 @@
 # reports as having no PR at all. Blocking is exit 2; allowing is exit 0.
 #
 # The PR lookup is stubbed rather than mocked at the network layer: the hook
-# shells out to `gh`, so a `gh` earlier on PATH is the whole seam.
+# shells out to `gh api`, so a `gh` earlier on PATH is the whole seam. The
+# stub answers the REST pulls listing, which is what the hook must use: cloud
+# sandboxes refuse the GraphQL behind `gh pr view` (#317).
 #
 # Usage: sh tests/prepush-guard-test.sh
 
@@ -30,7 +32,7 @@ WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"' EXIT INT TERM
 
 # --- Fixtures: two repos, on branches the stub answers differently. -------
-for r in merged live; do
+for r in merged live closed reused noorigin; do
     mkdir -p "$WORK/$r"
     (
         cd "$WORK/$r" || exit 1
@@ -38,18 +40,24 @@ for r in merged live; do
         git config user.email t@example.com
         git config user.name t
         git commit -q --allow-empty -m init
+        [ "$r" = noorigin ] || git remote add origin git@github.com:o/r.git
     ) || { echo "fixture setup failed"; exit 1; }
 done
 (cd "$WORK/merged" && git checkout -q -b claude/merged-pr)
 (cd "$WORK/live" && git checkout -q -b claude/live-pr)
+(cd "$WORK/closed" && git checkout -q -b claude/closed-pr)
+(cd "$WORK/reused" && git checkout -q -b claude/reused-pr)
+(cd "$WORK/noorigin" && git checkout -q -b claude/merged-pr)
 
-# --- Stub gh: MERGED for the merged branch, "no PR" for anything else. ----
-# GH_STUB_MODE=unauth / offline reproduces gh's own failure shapes: exit 4
-# with its login prompt, and exit 1 with a network error.
+# --- Stub gh: the REST pulls listing, keyed on the URL-encoded head. -----
+# merged-pr: one merged PR. closed-pr: one closed unmerged. reused-pr: an old
+# merged PR plus a newer open one. Anything else: no PR (an empty list).
+# GH_STUB_MODE reproduces gh's failure shapes: unauth is exit 4 with its login
+# prompt, offline a network error, graphql the sandbox's 403.
 mkdir -p "$WORK/bin"
 cat > "$WORK/bin/gh" <<'STUB'
 #!/bin/sh
-# Args: pr view <branch> --json ...
+# Args: api repos/o/r/pulls?head=o%3A<branch>&state=all&per_page=100
 case "${GH_STUB_MODE:-}" in
     unauth)
         printf 'To get started with GitHub CLI, please run:  gh auth login\n' >&2
@@ -59,17 +67,24 @@ case "${GH_STUB_MODE:-}" in
         printf 'error connecting to api.github.com\n' >&2
         exit 1
         ;;
+    forbidden)
+        printf 'HTTP 403: Access to this path is not permitted through this proxy.\n' >&2
+        exit 1
+        ;;
 esac
-for a in "$@"; do
-    case "$a" in
-        claude/merged-pr)
-            printf '{"state":"MERGED","number":170,"url":"https://example.invalid/pr/170"}\n'
-            exit 0
-            ;;
-    esac
-done
-printf 'no pull requests found for branch "%s"\n' "$3" >&2
-exit 1
+[ "$1" = api ] || { echo "stub: unexpected gh $*" >&2; exit 1; }
+case "$2" in
+    repos/o/r/pulls\?head=o%3Aclaude%2Fmerged-pr\&state=all*)
+        printf '[{"number":170,"state":"closed","merged_at":"2026-01-01T00:00:00Z","html_url":"https://example.invalid/pr/170"}]\n' ;;
+    repos/o/r/pulls\?head=o%3Aclaude%2Fclosed-pr\&state=all*)
+        printf '[{"number":171,"state":"closed","merged_at":null,"html_url":"https://example.invalid/pr/171"}]\n' ;;
+    repos/o/r/pulls\?head=o%3Aclaude%2Freused-pr\&state=all*)
+        printf '[{"number":180,"state":"open","merged_at":null,"html_url":"https://example.invalid/pr/180"},{"number":172,"state":"closed","merged_at":"2026-01-01T00:00:00Z","html_url":"https://example.invalid/pr/172"}]\n' ;;
+    repos/o/r/pulls\?head=*)
+        printf '[]\n' ;;
+    *)
+        echo "stub: unexpected path $2" >&2; exit 1 ;;
+esac
 STUB
 chmod +x "$WORK/bin/gh"
 PATH="$WORK/bin:$PATH"
@@ -150,6 +165,12 @@ expect "{ cd live; } | cat; git push stands down" \
 expect "control: cd merged || exit; git push blocks" \
     "$WORK/live" "cd $WORK/merged || exit 1; git push" 2
 
+echo "--- PR state comes from the REST listing (#317) ---"
+expect "closed without merging blocks" \
+    "$WORK/closed" "git push" 2
+expect "an open PR beats an older merged one" \
+    "$WORK/reused" "git push" 0
+
 echo "--- existing escape hatches are untouched ---"
 expect "--no-verify" \
     "$WORK/merged" "git push --no-verify" 0
@@ -212,13 +233,19 @@ expect_err "gh unauthorised" \
     "$HOOK" "$PATH" unauth "$WORK/merged" 'git push' 0 'not checked -- gh unauthorised'
 expect_err "gh lookup failed (offline)" \
     "$HOOK" "$PATH" offline "$WORK/merged" 'git push' 0 'not checked -- gh lookup failed'
+expect_err "gh lookup failed (proxy 403)" \
+    "$HOOK" "$PATH" forbidden "$WORK/merged" 'git push' 0 'not checked -- gh lookup failed: HTTP 403'
+expect_err "origin is not on github.com" \
+    "$HOOK" "$PATH" "" "$WORK/noorigin" 'git push' 0 'not checked -- origin is not a github.com remote'
 echo "--- ...and the no-business cases stay silent ---"
 expect_err "no PR for the branch: silent" \
     "$HOOK" "$PATH" "" "$WORK/live" 'git push' 0 ''
 expect_err "push only mentioned, no gh: silent" \
     "$HOOK" "$WORK/nogh" "" "$WORK/merged" 'grep push notes.md' 0 ''
 expect_err "a block still blocks, with its own message" \
-    "$HOOK" "$PATH" "" "$WORK/merged" 'git push' 2 'push blocked'
+    "$HOOK" "$PATH" "" "$WORK/merged" 'git push' 2 'push blocked: PR #170 for branch claude/merged-pr is already MERGED'
+expect_err "a closed PR names its state" \
+    "$HOOK" "$PATH" "" "$WORK/closed" 'git push' 2 'is already CLOSED'
 
 printf '\n%s passed, %s failed\n' "$PASS" "$FAIL"
 [ "$FAIL" -eq 0 ]
