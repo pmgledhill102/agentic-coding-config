@@ -136,7 +136,7 @@ stated rather than inferred from where it sits.
 - **Single-concern PRs**: Each PR should contain a single logical change. If multiple tasks are completed in a session, create separate PRs for each rather than bundling unrelated changes
 - **PR-stacking discipline**: only claim "stacked on" when the second branch literally has the first as parent (`git log --oneline first..second` shows just the second's commits). Branching both off `main` and writing "stacked on PR #N" in the body is misleading — reviewers can merge in any order, and the second PR's diff includes the first's changes. If they're truly independent, branch each from `main` and don't say stacked
 - **Batch reads before edits**: When modifying multiple files, read all target files first, then make all edits — avoids "file not read yet" errors on parallel edit calls
-- **Always create a tracking issue**: Even for quick single-file fixes, create a GitHub Issue in the repo before starting work — maintains the audit trail and keeps the habit consistent
+- **Always create a tracking issue**: Even for quick single-file fixes, create a GitHub Issue in the repo before starting work — maintains the audit trail and keeps the habit consistent. The one exception: a doc-sized correction a retro or end-session surfaces in the repo it is working in is fixed in that session and named in the retro instead, never filed as well
 - **Web fetch blocked by a 403? Fall back to curl + pandoc**: Some sites (UESP, other MediaWiki / Cloudflare-fronted wikis) reject an agent fetcher's User-Agent before serving content. On HTTP 403, don't burn time on alternative URLs — go straight to:
 
   ```sh

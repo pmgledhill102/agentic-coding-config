@@ -6,7 +6,7 @@ Why it is not opt-in: the retro is the step that generates the context every lat
 
 Two things this deliberately does **not** gate on:
 
-- **A red PR.** The retro is repo-read-only — it files journal drafts and Issues and changes no repo state — so a failing check is not a reason to defer it. Report the failure in the Phase 1 summary and run the retro anyway.
+- **A red PR.** The retro files journal drafts and Issues; its only repo write is a doc-sized fix the user approves, which is text and cannot be what turned a check red. So a failing check is not a reason to defer it. Report the failure in the Phase 1 summary and run the retro anyway.
 - **A short session.** A session with little in it produces a short retro, which costs little and still closes the loop on whatever the last one filed.
 
 The user can always interrupt. What has changed is the default: running is what happens if nobody says otherwise.
