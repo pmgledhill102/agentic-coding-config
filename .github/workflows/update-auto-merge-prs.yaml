@@ -1,0 +1,92 @@
+# Keeps auto-merge-armed PRs up to date with main, so the strict
+# required-checks rule never needs a manual "Update branch" click.
+#
+# For each open PR into main, from this repo, with auto-merge armed and
+# behind main, it calls the update-branch API, which merges main into the
+# PR head with a merge commit. Arming auto-merge is the owner's approval;
+# this workflow never arms or merges anything itself.
+#
+# It authenticates with AUTOMERGE_PAT, not GITHUB_TOKEN: a push made with
+# GITHUB_TOKEN does not trigger pull_request workflows, so the required
+# checks would never run on the updated head and auto-merge would stall.
+# A missing secret fails the run rather than falling back.
+#
+# Trial under #588. Back-out: set allow_auto_merge to false, delete this
+# file, and optionally remove the AUTOMERGE_PAT Actions secret.
+name: Update auto-merge PRs
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+    types: [auto_merge_enabled]
+  workflow_dispatch: {}
+
+permissions: {}
+
+# Runs are serialised, not cancelled: two concurrent runs would both update
+# the same PR, and the second would fail on its stale expected_head_sha.
+concurrency:
+  group: "${{ github.workflow }}"
+  cancel-in-progress: false
+
+jobs:
+  update:
+    name: Update armed PRs behind main
+    # A fork PR's run gets no secrets, and fork PRs are skipped anyway.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - name: Update branches
+        shell: sh
+        env:
+          GH_TOKEN: ${{ secrets.AUTOMERGE_PAT }}
+          R: ${{ github.repository }}
+        run: |
+          set -eu
+          if [ -z "${GH_TOKEN}" ]; then
+            echo "::error::AUTOMERGE_PAT is not set as an Actions secret in ${R}; refusing to fall back to GITHUB_TOKEN, whose pushes would not trigger CI."
+            exit 1
+          fi
+
+          prs="${RUNNER_TEMP}/prs.tsv"
+          # number, head SHA, head repo ("-" when the fork is gone), armed.
+          # No empty fields: tab is IFS whitespace, so read would collapse them.
+          gh api --paginate "repos/${R}/pulls?state=open&base=main&per_page=100" \
+            --jq '.[] | [.number, .head.sha, (.head.repo.full_name // "-"), (.auto_merge != null)] | @tsv' \
+            > "${prs}"
+
+          failed=0
+          while IFS="$(printf '\t')" read -r n sha head_repo armed; do
+            if [ "${head_repo}" != "${R}" ]; then
+              echo "#${n}: skipped (head is not in ${R})"
+              continue
+            fi
+            if [ "${armed}" != "true" ]; then
+              echo "#${n}: skipped (auto-merge not armed)"
+              continue
+            fi
+            # compare/BASE...HEAD: behind_by counts main's commits the head lacks.
+            if ! behind="$(gh api "repos/${R}/compare/main...${sha}" --jq '.behind_by')"; then
+              echo "::error::#${n}: could not compare ${sha} with main"
+              failed=$((failed + 1))
+              continue
+            fi
+            if [ "${behind}" -eq 0 ]; then
+              echo "#${n}: up to date"
+              continue
+            fi
+            if gh api -X PUT "repos/${R}/pulls/${n}/update-branch" \
+                 -f "expected_head_sha=${sha}" > /dev/null; then
+              echo "#${n}: updated (was ${behind} behind main)"
+            else
+              echo "::error::#${n}: update-branch failed (was ${behind} behind main at ${sha})"
+              failed=$((failed + 1))
+            fi
+          done < "${prs}"
+
+          if [ "${failed}" -gt 0 ]; then
+            echo "::error::${failed} PR(s) could not be updated"
+            exit 1
+          fi
