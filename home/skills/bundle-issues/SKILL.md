@@ -148,10 +148,11 @@ Two tests the bar as first written did not make:
   this session calls its real product.
 
   **This test needs step 2 to have read the threads**, and it is the only part
-  of the comment handling that does. Step 5 cannot rescue it — an issue deferred
-  here never reaches step 5. So when step 2 skipped the blanket fetch on volume,
-  say so in the report: the deferred list is then "deferred on the body", which
-  is a weaker claim than the one this skill usually makes for it.
+  of the comment handling that does. Step 5 rescues a deferral only where the
+  answer landed in the tree, never where it landed in a thread. So when step 2
+  skipped the blanket fetch on volume, say so in the report: the deferred list
+  is then "deferred on the body", which is a weaker claim than the one this
+  skill usually makes for it.
 - **Is the fix answerable, or only legible?** Where an item's fix names a tool,
   command, file or setting, confirm the repo names that thing somewhere. An item
   that requires inventing a contract the repo does not state is not eligible
@@ -161,7 +162,7 @@ Two tests the bar as first written did not make:
 
 ## 5. Verify every candidate against the tree and its own comments (Tier 1)
 
-For each issue not already `DEFER`ed, confirm the defect is still present. This
+For each candidate, confirm the defect is still present. This
 is the step with a documented failure behind it: three of five issues once
 offered as ready work had already been fixed. Search for the specific claim:
 
@@ -173,6 +174,21 @@ grep -rn "<the string the issue says is wrong>" <path>
 - Not found → re-read before concluding. The wording may have changed while the
   defect remains. Only mark `FIXED` when the *defect* is gone, not when the
   quoted string has moved.
+
+A `DEFER` or `BLOCKED` whose reason is a decision or a named blocker gets a
+tree check too, because the session that makes a decision usually writes
+`Refs #<n>` in a commit and never returns to the thread. Bounded by the
+deferred count, one command each:
+
+- **Commits** → `git log --oneline -E --grep="#<n>([^0-9]|$)"`. The anchor keeps
+  `#47` from matching `#470`. Any hit means re-reading the issue against that
+  commit before keeping the verdict.
+- **Named blocker** ("after #M", "until X", a new name) → one targeted search
+  for the blocker's own artefact: `grep` the tree for the name, or `issue_read`
+  the blocking issue. Cleared → re-judge the issue per step 4.
+- **Depth** → `git rev-parse --is-shallow-repository`. Cloud clones are shallow,
+  and a decision older than the clone is silence that could not have spoken:
+  deepen with a bounded `git fetch --depth=<n>`, or report the depth searched.
 
 **Then read that issue's comments, every time.** Not the counts — the threads.
 This is mandatory whatever step 2 decided about volume, because it is bounded by
@@ -325,6 +341,11 @@ own scope reads as terminal and gets re-derived from scratch. Where the
 blocker is a repo you cannot read, say which repo and what you would check
 in it.
 
+**Put `Closes #<this issue>` in the PR body when you open the PR**, alongside
+a `Closes` line for each issue above. A closing keyword fires only at merge:
+one added to a PR body afterwards closes nothing, even though the issue then
+shows the PR as linked.
+
 ## Stop rule
 
 If a fix turns out to need a judgment call, stop and report. Eligibility checked
@@ -343,7 +364,14 @@ supplied.
 
 **Never restate a time-sensitive literal from an issue body as an instruction.**
 A version, URL, tag or SHA quoted in an issue is only as current as the day it
-was written, and a bundle promotes it from an example into a work order. Carry
+was written, and a bundle promotes it from an example into a work order. So is
+a **capability claim** — what a tool, API or command accepts, returns or
+refuses — which is worse, because it reads as a fact rather than a value:
+verify it against the tool's own schema or a live call, usually free because
+the schema is already loaded, and always when the item's output lands in
+always-loaded text (`context/fragments/`). Bundle #536 carried "`get_sub_issues`
+takes no `perPage`" into a fragment edit when the loaded schema listed it
+(#540). Carry
 the requirement and name the lookup: *"bump to the current stable line from
 `releases.hashicorp.com`; the floor the estate needs is `>= 1.11`"*, never
 *"bump to a 1.13.x"*. Bundle #459 did the latter, copying an example from an
@@ -364,7 +392,8 @@ Same rule as the plan: markdown, never a gutter-aligned fence.
 >
 > - Clusters reported: `<c>`
 > - Eligible but unbundled: `<u>`
-> - Deferred: `<d>` — the backlog that actually needs you
+> - Deferred: `<d>` — the backlog that actually needs you; checked against
+>   commits and named blockers to depth `<commits searched>`
 > - Backlog: `<N>` open before, `<N-k+b>` now with the bundle issues,
 >   `<N-k-closed-by-bundles>` once the bundle PRs merge
 
