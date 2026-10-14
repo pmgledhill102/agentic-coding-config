@@ -195,6 +195,18 @@ GH_ISSUES_PREAMBLE='
     trap '\''rm -f "$errf"'\'' EXIT
 '
 
+# Row shape shared by gh_ready and gh_assigned: #<number>|P<n>|<age>|<title>.
+# <age> is whole days since the issue was last updated ("-" if gh omits it), so
+# the brief can show which rows have gone untouched. Title stays the last field
+# because it is the only one that can itself contain a "|".
+# shellcheck disable=SC2016,SC2089  # A jq program: its quotes and backslashes are meant literally.
+GH_ROW_JQ='.[] | "#\(.number)|\([(.labels // [])[].name]
+          | map(select(test("^P[0-4]$"))) | first // "-")|\(
+          if .updatedAt then "\((now - (.updatedAt | fromdateiso8601)) / 86400 | floor)d"
+          else "-" end)|\(.title)"'
+# shellcheck disable=SC2090  # Expanded only quoted, as jq's program argument.
+export GH_ROW_JQ
+
 # shellcheck disable=SC2016  # Intentional single quotes: expansion happens inside `sh -c`.
 run_sh local_state '
     echo "pwd=$(pwd)"
@@ -247,29 +259,23 @@ run_sh gh_ready "$GH_ISSUES_PREAMBLE"'
     # Ready work: open issues with no direct blocked-by relationship, per
     # docs/github-issues-workflow.md. Note -is:blocked filters direct blocks
     # only (no transitive query). Output: pipe-separated rows,
-    #   #<number>|P<n>|<title>
+    #   #<number>|P<n>|<age>|<title>
     # (priority "-" when no P0-P4 label). Empty output = no ready work.
     out=$(gh issue list ${REPO_SLUG:+-R "$REPO_SLUG"} --search "is:open -is:blocked" --limit 10 \
-        --json number,title,labels 2>"$errf") || { cat "$errf"; exit 1; }
+        --json number,title,labels,updatedAt 2>"$errf") || { cat "$errf"; exit 1; }
     printf "%s\n" "$out" \
-      | jq -r '\''
-          .[] | "#\(.number)|\([(.labels // [])[].name]
-                  | map(select(test("^P[0-4]$"))) | first // "-")|\(.title)"
-        '\''
+      | jq -r "$GH_ROW_JQ"
 '
 
 # shellcheck disable=SC2016
 run_sh gh_assigned "$GH_ISSUES_PREAMBLE"'
     # My active work: open issues assigned to me. Same row shape as gh_ready:
-    #   #<number>|P<n>|<title>
+    #   #<number>|P<n>|<age>|<title>
     # Empty output = nothing in flight.
     out=$(gh issue list ${REPO_SLUG:+-R "$REPO_SLUG"} --assignee @me --state open --limit 20 \
-        --json number,title,labels 2>"$errf") || { cat "$errf"; exit 1; }
+        --json number,title,labels,updatedAt 2>"$errf") || { cat "$errf"; exit 1; }
     printf "%s\n" "$out" \
-      | jq -r '\''
-          .[] | "#\(.number)|\([(.labels // [])[].name]
-                  | map(select(test("^P[0-4]$"))) | first // "-")|\(.title)"
-        '\''
+      | jq -r "$GH_ROW_JQ"
 '
 
 # shellcheck disable=SC2016
