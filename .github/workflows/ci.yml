@@ -73,6 +73,10 @@ jobs:
       # origin is never reached, so this needs no remote and no token.
       - name: Run the start-session gather GitHub-lane tests
         run: sh tests/start-session-gather-test.sh
+      # Every remote is a local bare repo, so the probe's fetch works offline
+      # and needs no token.
+      - name: Run the end-session gather multi-repo probe tests
+        run: sh tests/end-session-gather-test.sh
       # A SessionStart hook: a non-zero exit is a session that will not start.
       - name: Run the session-cache verdict tests
         run: sh tests/session-cache-verdict-test.sh
