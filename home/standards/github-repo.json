@@ -129,6 +129,11 @@
               "id": "fails-loud-on-a-missing-pat",
               "pattern": "::error::",
               "why": "a missing PAT must fail the job, not fall back to GITHUB_TOKEN, or the failure is a silently skipped merge."
+            },
+            {
+              "id": "missing-metadata-is-left-for-a-human",
+              "pattern": "steps\\.metadata\\.outcome\\s*==\\s*'failure'",
+              "why": "a grouped bump whose commit message exceeds 64 KiB has its metadata block truncated away, and fetch-metadata fails. Without continue-on-error and this branch the job reports red on a healthy PR, which trains the eye to ignore red checks (gcp-org-management#590)."
             }
           ],
           "must_not_match": [
