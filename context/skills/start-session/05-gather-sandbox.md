@@ -34,12 +34,14 @@ same message as the script:
 
 ```text
 mcp__github__list_issues(owner, repo, state: "OPEN", perPage: 100,
-                         fields: ["number", "title", "labels", "assignees", "state"])
+                         fields: ["number", "title", "labels", "assignees", "state",
+                                 "updated_at"])
 ```
 
 `fields` is what keeps this affordable: the full response for a 36-issue repo is
 around 750 tokens, where an unfiltered one is orders of magnitude larger. Do not
-omit it, and do not add `body`.
+omit it, and do not add `body`. `updated_at` is one short string per row; it is
+what the brief turns into each row's age.
 
 From that one response:
 

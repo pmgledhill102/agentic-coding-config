@@ -20,10 +20,10 @@ Ready bundles:                                      (omit when none)
   #<n>  <concern>                  (pre-triaged by /bundle-issues)
 
 In progress (assigned to you):
-  #<n>  P<pri>  <title>            (or "none")
+  #<n>  P<pri>  <title>   (<age>)  (or "none")
 
 Ready to pick up next:
-  #<n>  P<pri>  <title>            (top 5 by priority; or "none — backlog empty")
+  #<n>  P<pri>  <title>   (<age>)  (top 5 by priority; or "none — backlog empty")
   …
 
 Needs attention:
@@ -49,8 +49,9 @@ Rules:
 - Sections with nothing to say collapse to a single `none` line; "Needs attention" is omitted entirely when empty.
 - **"Ready bundles" comes first among the work sections**, above "In progress" and "Ready to pick up next". That ordering is the point of the section: a bundle is triaged and verified work, where the lists below it are neither. Sourced from gather section `gh_bundles`, rows already shaped `#<n>|<concern>` — split on `|` and emit them all. Omitted entirely when empty; `n/a (gh absent)` when the section could not answer.
 - **Rows in "Ready to pick up next" are open issues, which describe the world when they were filed.** Before acting on one — or citing it as a reason something will fail — verify its premises against current source. An issue is often fixed by adjacent work that never referenced it, and a body can be reversed by its own newest comment, so read the comments before implementing.
-- "Ready to pick up next" is sourced from gather section `gh_ready`. Each row is already pipe-separated `#<n>|P<pri>|<title>` — split on `|`, sort by priority label (P0 first, `-` last), and emit the top 5. Ready = open and not directly blocked; the filter is direct-blocks-only, so eyeball the blocked icon before claiming work.
-- "In progress" is sourced from gather section `gh_assigned`. Same `#<n>|P<pri>|<title>` row shape; no cap (usually 0–3 items).
+- Each issue row ends with its age, `(<N>d)`, from the `<age>` field of the gather row. A row untouched for more than about 14 days is the one the verify-premises rule above most likely applies to: apply it before presenting that row as the next thing to work on.
+- "Ready to pick up next" is sourced from gather section `gh_ready`. Each row is already pipe-separated `#<n>|P<pri>|<age>|<title>` — split on the first three `|` (a title may contain more), sort by priority label (P0 first, `-` last), and emit the top 5. Ready = open and not directly blocked; the filter is direct-blocks-only, so eyeball the blocked icon before claiming work.
+- "In progress" is sourced from gather section `gh_assigned`. Same `#<n>|P<pri>|<age>|<title>` row shape; no cap (usually 0–3 items).
 - "Recent merges" is sourced from gather section `recent_main_commits`. Omit the entire section when `count=0`.
 - "Parallel work" is sourced from gather section `unmerged_branches` (step 5c). Omit it when `count=0`. Where a branch touches more paths than fit on its line, name the ones in this session's working set first, then `+<k> more`. An overlap with the working set is never only a row here — it also gets its own "Needs attention" line, because that is the line that stops a duplicate edit.
 - If the repo has no GitHub origin (`gh_ready` / `gh_assigned` report `not-github` or are skipped), drop both issue sections silently (the brief still shows git lines).
