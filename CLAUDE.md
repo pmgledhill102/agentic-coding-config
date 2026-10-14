@@ -18,7 +18,9 @@ blocked-by dependencies).
 
 **When ending a work session:**
 
-1. **File issues for remaining work** — anything that needs follow-up
+1. **Fix what is doc-sized; file the rest** — a text-only correction in this
+   repo that needs no decision is fixed in the session, not filed; anything
+   else that needs follow-up becomes an issue
 2. **Run quality gates** (if code changed) — tests, linters, builds
 3. **Update issue status** — close finished work, comment on in-progress items
 4. **Push to remote** — work is not complete until `git push` succeeds:
