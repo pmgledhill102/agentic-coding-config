@@ -818,9 +818,9 @@ log "policy  -> $PROFILE_DIR/AGENTS.md (profile: $PROFILE)"
 # which is a different claim -- the same distinction ADR-0016 already
 # established for ~/.claude/skills.
 #
-# Codex profiles ship AGENTS.md only. Where Codex reads user-level AGENTS.md is
-# still unestablished (#176), so ~/.agents/ is where it goes and nothing here
-# claims that path is the one Codex reads.
+# Codex profiles ship AGENTS.md only, to ~/.agents/. Codex Cloud does not read
+# it there: its home is a managed CODEX_HOME and $HOME is read-only inside a
+# task (#495). Which channel replaces it is open in #575.
 case "$PROFILE" in
     claude-*)
         fetch "$RAW/profiles/$PROFILE/CLAUDE.md" "$TMP/CLAUDE.md" ||
