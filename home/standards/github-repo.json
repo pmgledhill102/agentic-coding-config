@@ -90,6 +90,7 @@
       },
       "rules_required": ["required_status_checks"],
       "dependabot_secrets": ["AUTOMERGE_PAT"],
+      "actions_secrets": ["AUTOMERGE_PAT"],
       "files": {
         ".github/workflows/dependabot*merge*.y*ml": {
           "required": true,
@@ -148,6 +149,59 @@
               "why": "GitHub refuses an Actions-token approval outright. Naming it as GH_TOKEN is the pre-#351 shape."
             }
           ]
+        },
+        ".github/workflows/update-auto-merge-prs.y*ml": {
+          "required": true,
+          "why": "the strict up-to-date rule makes every open PR stale the moment another merges, and arming auto-merge does not update a branch. This workflow merges the base into each armed PR so it lands without anyone clicking Update branch (agentic-coding-config#568, trialled under #588).",
+          "must_match": [
+            {
+              "id": "pushes-with-the-pat",
+              "pattern": "secrets\\.AUTOMERGE_PAT",
+              "why": "a push made with GITHUB_TOKEN triggers no pull_request workflow, so the required checks never run on the updated head and auto-merge waits forever."
+            },
+            {
+              "id": "fails-loud-on-a-missing-pat",
+              "pattern": "::error::",
+              "why": "a missing PAT must fail the run, not fall back to GITHUB_TOKEN, or every armed PR stalls with nothing red anywhere."
+            },
+            {
+              "id": "runs-when-a-pr-is-armed",
+              "pattern": "auto_merge_enabled",
+              "why": "without it, a PR armed while already behind waits for the next push to the default branch before anything updates it."
+            },
+            {
+              "id": "updates-only-armed-prs",
+              "pattern": "auto_merge\\s*!=\\s*null",
+              "why": "arming is the owner's approval. Updating an unarmed PR spends a CI run nobody approved, and merges the base into a branch someone may be rewriting."
+            },
+            {
+              "id": "skips-fork-heads",
+              "pattern": "head\\.repo\\.full_name",
+              "why": "the PAT can push only to this repository; a fork's branch is its author's to update."
+            },
+            {
+              "id": "pins-the-head-it-compared",
+              "pattern": "expected_head_sha",
+              "why": "a push to the PR between the compare and the update must make the update fail, not merge the base over a head nobody compared."
+            },
+            {
+              "id": "runs-are-serialised",
+              "pattern": "cancel-in-progress:\\s*false",
+              "why": "a cancelled run can stop between PRs; serialised runs each see every armed PR, and never race each other on the same head."
+            }
+          ],
+          "must_not_match": [
+            {
+              "id": "pushes-with-the-actions-token",
+              "pattern": "GH_TOKEN:\\s*\\$\\{\\{\\s*secrets\\.GITHUB_TOKEN\\s*\\}\\}",
+              "why": "the other half of pushes-with-the-pat: the shape that updates the branch and then never runs CI."
+            },
+            {
+              "id": "rebases-the-branch",
+              "pattern": "update-branch[^\\n]*--rebase",
+              "why": "merge commits only (agentic-coding-config#348): a rebase rewrites the author's commits and invalidates their checkout."
+            }
+          ]
         }
       }
     }
@@ -200,6 +254,7 @@
       "applies_below_tier": "automerge",
       "match": [
         { "file": ".github/workflows/dependabot*merge*.y*ml" },
+        { "file": ".github/workflows/update-auto-merge-prs.y*ml" },
         { "setting": "allow_auto_merge", "value": true }
       ],
       "because": "auto-merge is a safety control, not hardening. Ungated it merges immediately, and the wait for CI comes from the ruleset the automerge tier requires, not the flag. cloud-coop (protected) carried the workflow, the flag and no required checks; paul-context (baseline) carried a workflow that was simply dead. Neither was drift under a spec that only says what a tier must have."

@@ -452,27 +452,138 @@ jobs:
 
 Restating those reasons here is what produced the failure the spec exists to end: prose cannot be diffed, so four of five `automerge` repos ran a superseded copy of this workflow while reporting zero settings drift. **The half of the loop the sweep cannot close is this one** — a property added to the spec does not propagate into the sample above. Change both in the same PR.
 
-#### 8d. The `AUTOMERGE_PAT` — do this when installing 8c
+#### 8d. The `AUTOMERGE_PAT` — do this when installing 8c and 8e
 
 **One shared fine-grained token serves the whole estate**; installing the workflow means adding this repo to its list, not minting a new token. Both steps, in order:
 
 1. **Add this repository to the `AUTOMERGE_PAT` token's selected-repositories list.** Skipping this is the failure the workflow's second guard exists to catch — the secret is present and non-empty, so the missing-PAT check passes and the approval fails with a bare 403. **A PAT's scope cannot be audited from outside**, so this step at install time is the only real control.
-2. Store the token as a **Dependabot** secret (Settings → Secrets and variables → **Dependabot**), not an Actions secret. Dependabot-triggered runs read from the Dependabot store; a secret in the Actions store is simply empty at run time, with no error.
+2. Store the token **twice, under the same name**: as a **Dependabot** secret for 8c and as an **Actions** secret for 8e. Dependabot-triggered runs read only the Dependabot store and push-triggered runs read only the Actions store; either reads a secret held in the other store as empty, with no error.
 
 ```sh
 printf 'Fine-grained PAT (input hidden): '
 read -rs TOKEN; echo
-printf '%s' "$TOKEN" | gh secret set AUTOMERGE_PAT --app dependabot --repo "<owner>/<repo>"
+for app in dependabot actions; do
+  printf '%s' "$TOKEN" | gh secret set AUTOMERGE_PAT --app "$app" --repo "<owner>/<repo>"
+done
 unset TOKEN
 ```
 
 The token goes in on stdin rather than `--body`: `--body` puts the secret in `argv`, visible to `ps` while the command runs, and whatever set the variable sits in shell history.
+
+**In this estate the token is not kept anywhere after it is distributed**, so step 2 cannot be done for one repo on its own. Getting a value means regenerating the token, and regenerating invalidates every other repo's copy. Adding a repo is therefore a tier-wide redistribution: assign the repo to `automerge` in `paul-context`'s `registry/repo-tiers.json`, add it to the token's repository list, regenerate, and run `paul-context`'s `tools/set-automerge-pat.sh`. That script derives the repo list from the registry and writes every repo in the tier. The single-repo loop above is for an estate that does keep the token.
 
 Permissions are Contents read/write plus Pull requests read/write, and no more. Contents write is the floor, not an over-grant: the merge writes to the base branch, and GitHub has no narrower "may merge but not push" permission.
 
 Also enable **Allow auto-merge** in Settings → General (`/setup-repo` does this).
 
 > **The combination that must never exist: auto-merge enabled with no required status checks on the default branch.** Without required checks `gh pr merge --auto` merges *immediately* — the "wait for CI" everyone assumes comes from the ruleset, not the flag. If a repo has no check worth requiring, it does not get 8c.
+
+#### 8e. Keep armed PRs up to date (every repo that gets 8c)
+
+The standard ruleset requires branches to be up to date before merging, so every open PR goes stale the moment another merges, and arming auto-merge does not update a branch. This workflow merges the default branch into each armed PR that is behind it, so parallel PRs land in turn without anyone clicking **Update branch**. Install it as `.github/workflows/update-auto-merge-prs.yaml`:
+
+```yaml
+# Keeps auto-merge-armed PRs up to date with main, so the strict
+# required-checks rule never needs a manual "Update branch" click.
+#
+# For each open PR into main, from this repo, with auto-merge armed and
+# behind main, it calls the update-branch API, which merges main into the
+# PR head with a merge commit. Arming auto-merge is the owner's approval;
+# this workflow never arms or merges anything itself.
+#
+# It authenticates with AUTOMERGE_PAT, not GITHUB_TOKEN: a push made with
+# GITHUB_TOKEN does not trigger pull_request workflows, so the required
+# checks would never run on the updated head and auto-merge would stall.
+# A missing secret fails the run rather than falling back.
+#
+# Required on every automerge-tier repo. agentic-coding-config declares its
+# properties in home/standards/github-repo.json, keeps the installable copy in
+# setup-common's SKILL.md, and gives the reasoning in github-standards.md
+# ("Keeping armed PRs current"). Change them together.
+name: Update auto-merge PRs
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+    types: [auto_merge_enabled]
+  workflow_dispatch: {}
+
+permissions: {}
+
+# Runs are serialised, not cancelled: two concurrent runs would both update
+# the same PR, and the second would fail on its stale expected_head_sha.
+concurrency:
+  group: "${{ github.workflow }}"
+  cancel-in-progress: false
+
+jobs:
+  update:
+    name: Update armed PRs behind main
+    # A fork PR's run gets no secrets, and fork PRs are skipped anyway.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - name: Update branches
+        shell: sh
+        env:
+          GH_TOKEN: ${{ secrets.AUTOMERGE_PAT }}
+          R: ${{ github.repository }}
+        run: |
+          set -eu
+          if [ -z "${GH_TOKEN}" ]; then
+            echo "::error::AUTOMERGE_PAT is not set as an Actions secret in ${R}; refusing to fall back to GITHUB_TOKEN, whose pushes would not trigger CI."
+            exit 1
+          fi
+
+          prs="${RUNNER_TEMP}/prs.tsv"
+          # number, head SHA, head repo ("-" when the fork is gone), armed.
+          # No empty fields: tab is IFS whitespace, so read would collapse them.
+          gh api --paginate "repos/${R}/pulls?state=open&base=main&per_page=100" \
+            --jq '.[] | [.number, .head.sha, (.head.repo.full_name // "-"), (.auto_merge != null)] | @tsv' \
+            > "${prs}"
+
+          failed=0
+          while IFS="$(printf '\t')" read -r n sha head_repo armed; do
+            if [ "${head_repo}" != "${R}" ]; then
+              echo "#${n}: skipped (head is not in ${R})"
+              continue
+            fi
+            if [ "${armed}" != "true" ]; then
+              echo "#${n}: skipped (auto-merge not armed)"
+              continue
+            fi
+            # compare/BASE...HEAD: behind_by counts main's commits the head lacks.
+            if ! behind="$(gh api "repos/${R}/compare/main...${sha}" --jq '.behind_by')"; then
+              echo "::error::#${n}: could not compare ${sha} with main"
+              failed=$((failed + 1))
+              continue
+            fi
+            if [ "${behind}" -eq 0 ]; then
+              echo "#${n}: up to date"
+              continue
+            fi
+            if gh api -X PUT "repos/${R}/pulls/${n}/update-branch" \
+                 -f "expected_head_sha=${sha}" > /dev/null; then
+              echo "#${n}: updated (was ${behind} behind main)"
+            else
+              echo "::error::#${n}: update-branch failed (was ${behind} behind main at ${sha})"
+              failed=$((failed + 1))
+            fi
+          done < "${prs}"
+
+          if [ "${failed}" -gt 0 ]; then
+            echo "::error::${failed} PR(s) could not be updated"
+            exit 1
+          fi
+```
+
+It needs the Actions copy of the `AUTOMERGE_PAT` from 8d. It uses only the runner's preinstalled `gh`, so there is no action to pin. If the repo's default branch is not `main`, change the two `branches:` filters, the `base=` query and the `compare/` base. The comments and log messages say `main` too, but changing them is cosmetic.
+
+**Arming auto-merge is the approval** on a repo with this workflow: the ruleset requires no review, so an armed PR merges once its checks pass. Never arm auto-merge on a PR you opened yourself; that would be an agent merging its own work.
+
+The reasons behind each property are in [github-standards.md](../../standards/github-standards.md#keeping-armed-prs-current), and the properties themselves are declared in [`home/standards/github-repo.json`](../../standards/github-repo.json) under the `automerge` tier's `files` block, the same arrangement as 8c. Change the sample above and the spec in the same PR.
 
 ### 9. Agent permissions for cloud sessions
 

@@ -83,7 +83,7 @@ The standard repository signature:
 | Allow squash merging | **off** |
 | Allow rebase merging | **off** |
 | Automatically delete head branches | on |
-| Allow auto-merge | on where CI gates exist (see Dependabot) |
+| Allow auto-merge | on where CI gates exist (the `automerge` tier) |
 
 Merge-commit is the only enabled method; squash and rebase are both
 disabled at the repository, not merely discouraged. Where a branch genuinely
@@ -120,6 +120,45 @@ No squash message format is set, and setting one is not an omission to
 correct: `gh` gates `--squash-merge-commit-message` on `--enable-squash-merge`
 being present in the same invocation, so specifying the format re-enables the
 button the standard just turned off.
+
+### Keeping armed PRs current
+
+Decided 2026-10-14 under agentic-coding-config#568, after the #588 trial.
+The ruleset keeps `strict_required_status_checks_policy: true`, so CI always
+runs against what will actually land, and the cost that rule imposes is
+paid by a workflow rather than by a person: on an `automerge`-tier repo,
+`.github/workflows/update-auto-merge-prs.yaml` merges the default branch
+into every open PR that has auto-merge armed and is behind it. Parallel PRs
+then land one after another with nobody clicking **Update branch**.
+
+- **Arming auto-merge is the approval.** The ruleset requires no approving
+  review, so an armed PR merges as soon as its checks pass. An agent never
+  arms auto-merge on its own pull request, because that would be an agent
+  merging its own work. Dependabot's patch and minor bumps are the one
+  standing exception, armed by their own workflow under the gates in
+  [Dependabot](#dependabot).
+- **It pushes with `AUTOMERGE_PAT`, never `GITHUB_TOKEN`.** A push made with
+  `GITHUB_TOKEN` starts no `pull_request` workflow, so the required checks
+  would never run on the updated head and the PR would wait forever. A
+  missing secret fails the run rather than falling back.
+- **It merges, never rebases**: `PUT /pulls/{n}/update-branch` with
+  `expected_head_sha`, so a push between the comparison and the update fails
+  the update rather than being merged over. It touches only armed PRs whose
+  head is in the same repository, and its runs are serialised rather than
+  cancelled.
+- **It cannot resolve a conflict.** A conflicted PR fails its update and
+  turns the run red, which is the signal to fix it by hand. GitHub computes
+  no merge ref for a conflicted PR, so arming one starts no run either; the
+  next push to the default branch still reports it.
+- **The CI cost is unchanged, only the clicking goes.** A PR with *k*
+  merges ahead of it is updated and re-tested *k* times, the same as
+  clicking the button *k* times. Relaxing strict checks would remove that
+  cost and the guarantee with it; a merge queue would batch it, and is not
+  available to a personal account.
+
+The workflow's load-bearing properties are declared in the spec, under the
+`automerge` tier's `files` block, and the sweep checks every repo in the tier
+against them. `/setup-common` installs it.
 
 ## Branch rules: rulesets, not classic protection
 
@@ -282,10 +321,15 @@ running the auto-merge apparatus — no wider.
   itself writes commits to the base branch — GitHub has no narrower
   "may merge but not push" permission, so Contents write cannot be
   trimmed away.
-- **Storage stays per-repo even though the token is shared.** A personal
-  account has no organisation secrets, so the same token is stored under
-  the same name in each repo's Dependabot store, which keeps the workflow
-  file the same shape everywhere; the spec's `must_match` patterns, not a
+- **Storage stays per-repo even though the token is shared, and each repo
+  holds it twice.** A personal account has no organisation secrets, so the
+  same token is stored under the same name in each repo's **Dependabot**
+  store, read by the Dependabot auto-merge workflow, and its **Actions**
+  store, read by the [branch-update workflow](#keeping-armed-prs-current).
+  A Dependabot-triggered run cannot read the Actions store and a
+  push-triggered run cannot read the Dependabot one, and either reads an
+  absent secret as empty with no error. Keeping one name keeps the workflow
+  files the same shape everywhere; the spec's `must_match` patterns, not a
   byte comparison, are what the sweep checks. Distribution and rotation
   are one loop, and the token goes in on stdin: `--body` would put it in
   `argv`, visible to `ps` while the command runs, and whatever set the
@@ -295,7 +339,9 @@ running the auto-merge apparatus — no wider.
   printf 'Fine-grained PAT (input hidden): '
   read -rs TOKEN; echo
   for r in <tier-2 repos>; do
-    printf '%s' "$TOKEN" | gh secret set AUTOMERGE_PAT --app dependabot --repo "pmgledhill102/$r"
+    for app in dependabot actions; do
+      printf '%s' "$TOKEN" | gh secret set AUTOMERGE_PAT --app "$app" --repo "pmgledhill102/$r"
+    done
   done
   unset TOKEN
   ```
@@ -530,7 +576,7 @@ extending the last, defined in the spec:
 | --- | --- | --- |
 | `baseline` | every repo | dependency graph, alerts, security updates |
 | `protected` | deployed or reachable | the merge-methods signature, the standard ruleset |
-| `automerge` | protected, and CI proves something | auto-merge, a required-checks rule, `AUTOMERGE_PAT`, the declared properties of the auto-merge workflow |
+| `automerge` | protected, and CI proves something | auto-merge, a required-checks rule, `AUTOMERGE_PAT` in both secret stores, the declared properties of the Dependabot auto-merge and branch-update workflows |
 
 Which repo sits in which tier is private, in `paul-context`: the spec
 carries the tiers, the private registry carries the assignments. The
