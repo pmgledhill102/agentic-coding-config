@@ -739,8 +739,11 @@ replacing it wholesale would silently drop whatever else it holds. Note
 `~/.claude/launcher-settings.json` is a different file with its own hooks,
 written by the harness; nothing here touches it, and both are read.
 
-Two of the three degrade to no-ops in a sandbox rather than failing:
-`prepush-guard-claude-hook` needs `gh`, which is absent (#257), and
+Two of the three can degrade rather than fail in a sandbox.
+`prepush-guard-claude-hook` needs `gh`: without `--with-gh` it allows each
+push with a `not checked -- gh unavailable` line, and with it the guard works,
+because it asks the REST pulls API, which the sandbox serves, rather than the
+GraphQL behind `gh pr view`, which the sandbox refuses (#317).
 `precommit-claude-hook` needs the pre-commit framework, so it does nothing
 without `--with-precommit`.
 
