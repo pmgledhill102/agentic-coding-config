@@ -285,10 +285,11 @@ running the auto-merge apparatus — no wider.
 - **Storage stays per-repo even though the token is shared.** A personal
   account has no organisation secrets, so the same token is stored under
   the same name in each repo's Dependabot store, which keeps the workflow
-  file byte-identical everywhere. Distribution and rotation are one loop,
-  and the token goes in on stdin: `--body` would put it in `argv`, visible
-  to `ps` while the command runs, and whatever set the variable would sit
-  in shell history.
+  file the same shape everywhere; the spec's `must_match` patterns, not a
+  byte comparison, are what the sweep checks. Distribution and rotation
+  are one loop, and the token goes in on stdin: `--body` would put it in
+  `argv`, visible to `ps` while the command runs, and whatever set the
+  variable would sit in shell history.
 
   ```sh
   printf 'Fine-grained PAT (input hidden): '
