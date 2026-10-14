@@ -25,10 +25,10 @@ Ready bundles:                                      (omit when none)
   #<n>  <concern>                  (pre-triaged by /bundle-issues)
 
 In progress (assigned to you):
-  #<n>  P<pri>  <title>            (or "none")
+  #<n>  P<pri>  <title>   (<age>)  (or "none")
 
 Open issues (blocked filter unavailable):
-  #<n>  P<pri>  <title>            (top 5 by priority; or "none — backlog empty")
+  #<n>  P<pri>  <title>   (<age>)  (top 5 by priority; or "none — backlog empty")
   …
 
 Needs attention:
@@ -58,6 +58,7 @@ Rules:
 - `state=failed` from `bootstrap_currency` prints **above** the brief, not inside "Needs attention", and it is the only thing that does. A half-installed container misreports its own state, so burying it in a bullet list next to a stale-branch count would rank it as one item among several when it invalidates the rest. Print it, then print the brief anyway — the git lines are still gathered from the repo and remain true — but say plainly that the GitHub and skill-dependent lines may not be.
 - Sections with nothing to say collapse to a single `none` line; "Needs attention" is omitted entirely when empty.
 - **Rows in the issue list are open issues, which describe the world when they were filed.** Before acting on one — or citing it as a reason something will fail — verify its premises against current source. An issue is often fixed by adjacent work that never referenced it, and a body can be reversed by its own newest comment, so read the comments before implementing.
+- Each issue row ends with its age, `(<N>d)` — whole days since `updated_at`. A row untouched for more than about 14 days is the one the verify-premises rule above most likely applies to: apply it before presenting that row as the next thing to work on.
 - The issue list is titled **"Open issues (blocked filter unavailable)"**, not "Ready to pick up next". That is not a cosmetic difference: the query in step 1(b) cannot express `-is:blocked`, so some rows may be blocked. Titling it as a ready list would assert a filter that was never applied. Sort by priority label (P0 first, `-` last), emit the top 5, and check an issue's blockers before claiming it.
 - **"Ready bundles" comes first among the work sections**, above "In progress" and "Open issues". That ordering is the point of the section: a bundle is triaged and verified work, where the open-issue list below it is neither. Sourced from the `Bundle:`-titled rows of step 1(b)'s response, and omitted entirely when there are none.
 - "In progress" is the same response filtered client-side to the authenticated login. Report the real answer — including `none` when the filter genuinely returned nothing. It reads `n/a (no GitHub route)` **only** when the MCP call itself failed.
