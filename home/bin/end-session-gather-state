@@ -44,6 +44,60 @@ if [ -z "$RESOLVE_STATE" ]; then
     fi
 fi
 
+# count_unpushed <repo> — commits on local branches that no remote holds.
+#
+# --branches --not --remotes: commits on any local branch that no
+# remote-tracking ref holds. Unlike @{u}..HEAD it needs neither a checked-out
+# branch nor a configured upstream, and it sees every branch rather than the
+# current one.
+#
+# It judges against *locally known* refs, so a branch merged on GitHub with its
+# remote branch deleted reads as unpushed while the local origin/<default>
+# predates the merge. A zero needs no network and gets none. A non-zero earns
+# one fetch and a re-count, and `git cherry` against origin/<default> then
+# drops commits whose patch the default branch already carries — which is what
+# a squash or rebase merge leaves behind. If the fetch fails the count cannot
+# be verified, so it is reported as the local count, labelled, never as zero.
+count_unpushed() {
+    local repo=$1 n def b plus
+    n=$(git -C "$repo" log --branches --not --remotes --format=%H 2>/dev/null | grep -c . || true)
+    if [ "$n" -eq 0 ]; then
+        printf '0'
+        return
+    fi
+    if ! GIT_TERMINAL_PROMPT=0 GIT_SSH_COMMAND="${GIT_SSH_COMMAND:-ssh -o BatchMode=yes}" \
+        git -C "$repo" fetch --quiet origin >/dev/null 2>&1; then
+        printf '%s (refs unfetched)' "$n"
+        return
+    fi
+    def=$(git -C "$repo" symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null || true)
+    if [ -z "$def" ]; then
+        for b in origin/main origin/master; do
+            if git -C "$repo" rev-parse --verify --quiet "$b" >/dev/null; then
+                def=$b
+                break
+            fi
+        done
+    fi
+    if [ -z "$def" ]; then
+        git -C "$repo" log --branches --not --remotes --format=%H 2>/dev/null | grep -c . || true
+        return
+    fi
+    # Count a commit only when it is still on no remote after the fetch AND
+    # `git cherry` marks it "+" (no equivalent patch upstream) on some branch.
+    plus=$(git -C "$repo" for-each-ref --format='%(refname:short)' refs/heads \
+        | while IFS= read -r b; do
+            git -C "$repo" cherry "$def" "$b" 2>/dev/null
+        done | sed -n 's/^+ //p')
+    if [ -z "$plus" ]; then
+        printf '0'
+        return
+    fi
+    # Newline-separated -e patterns are a pattern list, one SHA per line.
+    git -C "$repo" log --branches --not --remotes --format=%H 2>/dev/null \
+        | grep -cFx -e "$plus" || true
+}
+
 RESOLVED_REPO=""
 case "$RESOLVE_STATE" in
     cwd)
@@ -65,18 +119,15 @@ case "$RESOLVE_STATE" in
         # (#450). Tidy-up happens in one repo, but the three kinds of state
         # that a reclaimed container destroys — dirty tree, unpushed commits,
         # stashes — exist per repo, and a repo nobody chose is a repo nobody
-        # looked at. The probes are local-only and take no network: status,
-        # a log of commits on no remote, and the stash list.
+        # looked at. The probes are local-first: status, a log of commits on
+        # no remote, and the stash list. Only a non-zero unpushed count goes
+        # to the network, via count_unpushed below.
         printf '===repo_candidates (exit=2)===\n'
         printf 'cwd=%s\n' "$(pwd)"
         printf '%s\n' "$RESOLVE_OUT" | sed -n 's/^candidate=//p' | while IFS= read -r c; do
             [ -n "$c" ] || continue
             dirty=$(git -C "$c" status --porcelain=v1 2>/dev/null | grep -c . || true)
-            # --branches --not --remotes: commits on any local branch that no
-            # remote-tracking ref holds. Unlike @{u}..HEAD it needs neither a
-            # checked-out branch nor a configured upstream, and it sees every
-            # branch rather than the current one.
-            unpushed=$(git -C "$c" log --branches --not --remotes --oneline 2>/dev/null | grep -c . || true)
+            unpushed=$(count_unpushed "$c")
             stashes=$(git -C "$c" stash list 2>/dev/null | grep -c . || true)
             printf 'candidate=%s dirty=%s unpushed=%s stashes=%s\n' \
                 "$c" "$dirty" "$unpushed" "$stashes"
