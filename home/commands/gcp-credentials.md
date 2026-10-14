@@ -181,7 +181,10 @@ channel by the service that built it.
 | 0 | Installed | Carry on. Say which project and when the grant expires. |
 | 2 | Usage error, **or a live grant already exists** | Fix the arguments. If it names a live grant, use `renew` / `refresh --background` instead — see [above](#if-a-grant-is-already-live-request-refuses). |
 | 3 | **Denied** or revoked | Stop. A human said no. Do not re-request without asking them why. |
-| 4 | Timed out / expired | Nobody answered, which the broker treats as a deny. Ask the user before retrying. |
+| 4 | **The card expired** — the broker closed it | Nobody answered, and the broker treats that as a deny. The card is dead, so nothing can land on it late. Ask the user before a fresh `request`. |
+| 4 | **Timed out** — this helper stopped waiting first | Not a deny: nobody has answered *yet*, and the card may still be live. Tell the user it is waiting on them; `wait` collects a late approval. Do not open a second card. |
+| 4 | **Timed out mid-provisioning** | Already approved; the sandbox is still being built server-side and nothing is lost. Run `wait` again, or a later `request` resolves the finished sandbox. Nothing to ask. |
+| 4 | **Grant no longer active** (from `renew`, `refresh` or `wait`'s token exchange) | It expired or a human revoked it, and the broker does not say which. Ask the user before requesting again — if it was revoked, someone said no. |
 | 5 | Rate limited | Wait. Do not loop. |
 | 6 | Not configured | No request key or no broker URL — see [Setup](#setup-not-per-session). |
 | 7 | Approved, but the identity never became usable | **Not a deny** — nobody refused. Report the reason the helper printed. Requesting again is legitimate; if it recurs, say so, because the sandbox's agent identity needs attention. |

@@ -246,6 +246,8 @@ reset_state
 request_then_poll 200 '{"state":"expired"}'
 run wait
 expect_rc "card expired" 4
+expect_out "says the card is dead" "card is dead"
+expect_no_out "does not leave the card open" "may still be live"
 
 reset_state
 request_then_poll 200 '{"state":"revoked"}'
@@ -263,13 +265,16 @@ reset_state
 request_then_poll 200 '{"state":"pending"}' --timeout 0
 run wait
 expect_rc "gave up waiting" 4
-expect_out "treats silence as a deny" "Treat this as a deny"
+expect_out "says a late approval still lands" "may still be live"
+expect_no_out "does not claim the card is closed" "card is dead"
+expect_no_out "does not call silence a deny" "deny"
 
 reset_state
 request_then_poll 200 '{"state":"provisioning"}' --timeout 0
 run wait
 expect_rc "timed out mid-provisioning" 4
 expect_out "says the build continues server-side" "still being built server-side"
+expect_no_out "mid-provisioning is not a deny" "deny"
 expect_out "announces the provisioning wait" "creating the sandbox project"
 
 reset_state
@@ -440,6 +445,8 @@ expect_out "names the project" "example-project-sbx"
 canned exchange 403
 run renew
 expect_rc "grant no longer active" 4
+expect_out "names both causes, not a guess" "expired or because a human revoked it"
+expect_out "says to ask before re-requesting" "Ask the user before requesting again"
 
 canned exchange 401
 run renew
