@@ -52,7 +52,7 @@ case "$1 $2" in
         case "${STUB_LIST:-ok}" in
             ok)
                 echo "warning: a notice on stderr that must not reach jq" >&2
-                echo '[{"number":7,"title":"Bundle: seven","labels":[{"name":"P2"}]}]' ;;
+                echo '[{"number":7,"title":"Bundle: seven","labels":[{"name":"P2"}],"updatedAt":"2020-01-01T00:00:00Z"}]' ;;
             *)
                 echo "HTTP 502: Bad Gateway" >&2
                 exit 1 ;;
@@ -113,7 +113,8 @@ done
 STUB_REST=ok STUB_GQL=ok STUB_LIST=ok
 gather >"$out"
 check "healthy: gh_ready exit=0" grep -q "^===gh_ready (exit=0)===" "$out"
-check "healthy: gh_ready row parsed" grep -qx "#7|P2|Bundle: seven" "$out"
+check "healthy: gh_ready row parsed, with its age in days" \
+    grep -Eqx "#7\|P2\|[0-9]{4,}d\|Bundle: seven" "$out"
 check "healthy: gh_bundles row parsed" grep -qx "#7|seven" "$out"
 check "healthy: stderr warning kept out of the data" \
     sh -c '! grep -q "must not reach jq" "$1"' _ "$out"
