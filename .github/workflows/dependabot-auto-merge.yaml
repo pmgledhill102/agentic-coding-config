@@ -1,0 +1,84 @@
+name: Dependabot Auto-merge
+on: pull_request
+
+# Read-only is sufficient: fetch-metadata only reads, and both writes go
+# through the PAT. Raising these grants nothing, and GitHub would still
+# refuse an Actions-token approval.
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  automerge:
+    if: github.event.pull_request.user.login == 'dependabot[bot]' && github.repository == 'pmgledhill102/agentic-coding-config'
+    runs-on: ubuntu-latest
+    steps:
+      # A grouped bump whose commit message exceeds 64 KiB loses its metadata
+      # block to truncation, and fetch-metadata fails. continue-on-error makes
+      # that a clean skip rather than a red check on a healthy PR; every later
+      # step is gated on the step's outcome, so nothing approves or merges
+      # without metadata, whatever made the fetch fail.
+      - name: Fetch update metadata
+        id: metadata
+        continue-on-error: true
+        uses: dependabot/fetch-metadata@25dd0e34f4fe68f24cc83900b1fe3fe149efef98 # v3.1.0
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Leave PRs without metadata for a human
+        if: steps.metadata.outcome == 'failure'
+        run: echo "::notice::No Dependabot metadata on this PR (commit message likely truncated past 64 KiB). Deliberately not auto-merged -- merge by hand."
+
+      # Below 1.0.0 the MINOR position is the breaking one: semver promises
+      # nothing there, and the convention is that 0.x shifts every position up.
+      # fetch-metadata compares positions literally with no 0.x case, so its
+      # major branch is unreachable below 1.0.0 and `0.21.4 -> 0.33.0` reports
+      # semver-minor. Refuse that; keep auto-merging a 0.x bump that moves only
+      # the patch position, which is the 0.x equivalent of a patch.
+      #
+      # Scan updated-dependencies-json, NOT previous-version: update-type is
+      # the largest jump across a group, but previous-version is
+      # updatedDependencies[0] alone, so reading it passes a 0.x dependency
+      # whenever a 1.x one sorts first.
+      - name: Check for breaking pre-1.0 bumps
+        id: pre_release
+        if: steps.metadata.outcome == 'success'
+        env:
+          DEPS_JSON: ${{ steps.metadata.outputs.updated-dependencies-json }}
+        run: |
+          names="$(printf '%s' "$DEPS_JSON" | jq -r '
+            [ .[]
+              | . as $d
+              | (($d.prevVersion // "") | ltrimstr("v") | split(".")) as $p
+              | (($d.newVersion  // "") | ltrimstr("v") | split(".")) as $n
+              | select($p[0] == "0" and ($p[0] != $n[0] or $p[1] != $n[1]))
+              | "\($d.dependencyName) \($d.prevVersion) -> \($d.newVersion)"
+            ] | join("; ")')"
+          if [ -n "$names" ]; then
+            echo "::notice::Pre-1.0 dependency whose minor position moved. Below 1.0.0 that is the breaking position, even though update-type reports it as a minor. Left for a human: $names"
+            echo "blocked=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "blocked=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      # For a grouped PR, update-type is the LARGEST jump in the group, so a
+      # group containing one major is treated as a major and skipped.
+      - name: Approve and enable auto-merge (patch/minor)
+        if: steps.metadata.outcome == 'success' && steps.pre_release.outputs.blocked == 'false' && (steps.metadata.outputs.update-type == 'version-update:semver-patch' || steps.metadata.outputs.update-type == 'version-update:semver-minor')
+        env:
+          GH_TOKEN: ${{ secrets.AUTOMERGE_PAT }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+        run: |
+          if [ -z "$GH_TOKEN" ]; then
+            echo "::error::AUTOMERGE_PAT is not set in the Dependabot secret store. Refusing to fall back to GITHUB_TOKEN: Actions may not approve pull requests, and a GITHUB_TOKEN merge does not trigger workflows that run on push to the default branch."
+            exit 1
+          fi
+          if ! gh pr review --approve "$PR_URL"; then
+            echo "::error::Approval failed with a non-empty AUTOMERGE_PAT. The most likely cause is that this repository is not on the token's selected-repositories list -- a fine-grained PAT's scope cannot be read from outside the token, so this is where a missed repo surfaces. Add ${{ github.repository }} to the AUTOMERGE_PAT repository list."
+            exit 1
+          fi
+          gh pr merge --auto --merge "$PR_URL"
+
+      - name: Leave majors for a human
+        if: steps.metadata.outputs.update-type == 'version-update:semver-major'
+        run: echo "Major update -- deliberately not auto-merged."
