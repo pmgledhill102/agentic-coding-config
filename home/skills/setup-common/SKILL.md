@@ -470,6 +470,8 @@ unset TOKEN
 
 The token goes in on stdin rather than `--body`: `--body` puts the secret in `argv`, visible to `ps` while the command runs, and whatever set the variable sits in shell history.
 
+**In this estate the token is not kept anywhere after it is distributed**, so step 2 cannot be done for one repo on its own. Getting a value means regenerating the token, and regenerating invalidates every other repo's copy. Adding a repo is therefore a tier-wide redistribution: assign the repo to `automerge` in `paul-context`'s `registry/repo-tiers.json`, add it to the token's repository list, regenerate, and run `paul-context`'s `tools/set-automerge-pat.sh`. That script derives the repo list from the registry and writes every repo in the tier. The single-repo loop above is for an estate that does keep the token.
+
 Permissions are Contents read/write plus Pull requests read/write, and no more. Contents write is the floor, not an over-grant: the merge writes to the base branch, and GitHub has no narrower "may merge but not push" permission.
 
 Also enable **Allow auto-merge** in Settings → General (`/setup-repo` does this).
