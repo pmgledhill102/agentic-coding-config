@@ -11,8 +11,10 @@
 # checks would never run on the updated head and auto-merge would stall.
 # A missing secret fails the run rather than falling back.
 #
-# Trial under #588. Back-out: set allow_auto_merge to false, delete this
-# file, and optionally remove the AUTOMERGE_PAT Actions secret.
+# Required on every automerge-tier repo. agentic-coding-config declares its
+# properties in home/standards/github-repo.json, keeps the installable copy in
+# setup-common's SKILL.md, and gives the reasoning in github-standards.md
+# ("Keeping armed PRs current"). Change them together.
 name: Update auto-merge PRs
 
 on:

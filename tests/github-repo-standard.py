@@ -54,7 +54,7 @@ PROHIBITED_RULES = {"required_linear_history"}
 TIER_KEYS = {
     "applies_to", "extends", "repository", "security", "ruleset",
     "rules_required", "rules_when_ci", "classic_branch_protection",
-    "dependabot_secrets", "files", "labels_required",
+    "dependabot_secrets", "actions_secrets", "files", "labels_required",
 }
 FILE_RULE_KEYS = {"required", "why", "must_match", "must_not_match"}
 PROHIBITION_KEYS = {"id", "applies_below_tier", "match", "because"}
