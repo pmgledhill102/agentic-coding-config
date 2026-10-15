@@ -31,6 +31,14 @@ passes through a shell variable, so it never reaches the transcript or the
 model's context. What a stolen token buys is therefore one project, a limited
 role set, and at most an hour — the broker's job is to make token theft boring.
 
+A second tier, `readonly-estate` (gcp-org-management ADR 025), is a separate
+grant held alongside the sandbox one: read-only across the whole organisation,
+1–24h, for investigation. A stolen estate token buys reads of metadata, IAM
+policies, logs and billing everywhere — no writes, no secret values, no bucket
+contents — for at most an hour. Its state sits next to the sandbox tier's with a
+`-readonly-estate` suffix, and every procedure below applies to it with
+`--tier readonly-estate`.
+
 ## Ending access
 
 Three levels. Pick by what you are actually worried about, because they differ
@@ -79,6 +87,12 @@ session looks off.
 If the broker is unreachable, `revoke` cleans up locally and says so — the grant
 may still be live. Retry, or escalate to level 3.
 
+An estate grant is ended the same way, by tier:
+
+```sh
+~/.claude/bin/gcp-credentials revoke --tier readonly-estate
+```
+
 ### 3. Disable the service account — everything stops now
 
 The hard kill, for when a live token is believed to be in the wrong hands and an
@@ -90,6 +104,8 @@ gcloud iam service-accounts disable agent-sandbox@<project>.iam.gserviceaccount.
 
 This invalidates tokens already issued, which levels 1 and 2 cannot. It needs
 admin credentials — that is, **not** an agent session's credentials, by design.
+For an estate grant the account to disable is the estate identity, named in the
+private runbook; disabling it ends every estate grant at once.
 Re-enable with `enable` once the grant is revoked and the incident is closed.
 
 ## Retiring a sandbox early: `teardown`

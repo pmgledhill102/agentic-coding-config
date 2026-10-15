@@ -1165,6 +1165,30 @@ cap_gcloud() {
 # session hook never sees.
 CB_HOME="${CREDENTIAL_BROKER_HOME:-$HOME/.config/claude/credential-broker}"
 CB_TOKEN="$CB_HOME/access_token"
+CB_RENEW_ARGS=""
+
+# The broker has two tiers, each with its own token, and which one this call
+# uses is decided by its gcloud configuration: agent-broker-estate is the
+# readonly-estate tier's (gcp-credentials keeps the name in step). Read the way
+# gcloud reads it -- --configuration, then CLOUDSDK_ACTIVE_CONFIG_NAME, then the
+# active_config file -- so a call that selects the estate configuration gets the
+# estate token renewed and preferred, and every other call behaves as before.
+cb_config="${CLOUDSDK_ACTIVE_CONFIG_NAME:-}"
+cb_next=""
+for cb_arg in "$@"; do
+    if [ -n "$cb_next" ]; then cb_config="$cb_arg"; cb_next=""; continue; fi
+    case "$cb_arg" in
+        --configuration=*) cb_config="${cb_arg#--configuration=}" ;;
+        --configuration) cb_next=1 ;;
+    esac
+done
+if [ -z "$cb_config" ]; then
+    cb_config=$(cat "${CLOUDSDK_CONFIG:-$HOME/.config/gcloud}/active_config" 2> /dev/null || true)
+fi
+if [ "$cb_config" = agent-broker-estate ]; then
+    CB_TOKEN="$CB_HOME/access_token-readonly-estate"
+    CB_RENEW_ARGS="--tier readonly-estate"
+fi
 
 # The threshold is really a floor on how much token life a call can start with:
 # a token renewed at age T has 3600 - T seconds left, so T is chosen from how
@@ -1194,7 +1218,8 @@ if [ -f "$CB_TOKEN" ] && [ -z "${CB_NO_RENEW:-}" ]; then
             # not pollute output a script may be parsing. Failure is worth a
             # line, but is not fatal here -- gcloud reports its own auth error
             # better than a wrapper can guess at one.
-            CB_NO_RENEW=1 "$cb_helper" renew > /dev/null 2>&1 ||
+            # shellcheck disable=SC2086 # CB_RENEW_ARGS is empty or two words
+            CB_NO_RENEW=1 "$cb_helper" renew $CB_RENEW_ARGS > /dev/null 2>&1 ||
                 echo "gcloud: broker token is stale and renew failed; run 'gcp-credentials status'" >&2
         fi
     fi

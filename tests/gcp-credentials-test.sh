@@ -89,6 +89,9 @@ canned() {
 reset_state() {
     rm -f "$CB_DIR"/grant.json "$CB_DIR"/pending.json "$CB_DIR"/access_token \
         "$CB_DIR"/refresh.pid "$CB_DIR"/refresh.log "$CB_DIR"/created-projects.jsonl
+    rm -f "$CB_DIR"/grant-readonly-estate.json "$CB_DIR"/pending-readonly-estate.json \
+        "$CB_DIR"/access_token-readonly-estate "$CB_DIR"/refresh-readonly-estate.pid \
+        "$CB_DIR"/refresh-readonly-estate.log
     rm -f "$STUB_DIR"/*.status "$STUB_DIR"/*.json 2> /dev/null
     : > "$STUB_DIR/calls.log"
 }
@@ -791,6 +794,210 @@ expect_out "status names an environment key as such" "key     : \$CREDENTIAL_BRO
 rm -f "$STUB_DIR/key-mode"
 
 # --- the invariant -----------------------------------------------------------
+
+# --- readonly-estate tier (#602) ---------------------------------------------
+#
+# A second, independent grant: read-only across the whole organisation, held
+# alongside a sandbox grant rather than instead of it. What matters is that the
+# two never touch each other's state, that an estate request names no project
+# or repo, and that the estate gcloud configuration does not displace the
+# sandbox one.
+ESTATE_SA='agent-readonly-estate@example-org-services.iam.gserviceaccount.com'
+ESTATE_REQ='{"request_id":"req-estate","phrase":"read-silver-heron","expires_at":"2026-08-15T12:00:00Z"}'
+ESTATE_APPROVED='{"state":"approved","project":"example-org-services","service_account":"'"$ESTATE_SA"'","grant_expires_at":"2026-08-15T16:00:00Z","session_token":"stub-estate-session"}'
+ESTATE_EXCHANGE='{"access_token":"'"$SENTINEL"'","expires_at":"2026-08-15T13:00:00Z","grant_expires_at":"2026-08-15T16:00:00Z","project":"example-org-services","service_account":"'"$ESTATE_SA"'"}'
+# The live-grant refusal compares against the clock, so the coexistence cases
+# need grants that are still live when the test runs; the fixtures above are
+# dated in the past.
+LIVE_SANDBOX_APPROVED=$(printf '%s' "$APPROVED" | sed 's/"grant_expires_at":"[^"]*"/"grant_expires_at":"2099-01-01T00:00:00Z"/')
+LIVE_ESTATE_APPROVED=$(printf '%s' "$ESTATE_APPROVED" | sed 's/"grant_expires_at":"[^"]*"/"grant_expires_at":"2099-01-01T00:00:00Z"/')
+
+echo "readonly-estate: what the request sends"
+reset_state
+canned request 200 "$ESTATE_REQ"
+run request --tier readonly-estate --purpose "why is org-services over budget" --no-gcloud --no-refresh
+expect_rc "estate request opens" 0
+if jq -e '.tier == "readonly-estate" and .grant_ttl == "4h" and (has("repo") | not) and (has("project") | not)' \
+    "$STUB_DIR/request-body.json" > /dev/null 2>&1; then
+    ok "sends the tier and a 4h default, and no repo or project"
+else
+    no "estate request body — got: $(cat "$STUB_DIR/request-body.json" 2> /dev/null)"
+fi
+expect_out "card scope is stated" "ENTIRE ORGANISATION, read-only"
+expect_out "points at the tier-specific wait" "wait --tier readonly-estate"
+expect_file "pending request is the estate tier's" "$CB_DIR/pending-readonly-estate.json"
+expect_no_file "sandbox pending untouched" "$CB_DIR/pending.json"
+
+echo "readonly-estate: local refusals"
+reset_state
+run request --tier readonly-estate --purpose t --project p
+expect_rc "estate with --project" 2
+run request --tier readonly-estate --purpose t --repo https://example.com/r.git
+expect_rc "estate with --repo" 2
+if [ -s "$STUB_DIR/calls.log" ]; then no "no broker call for a refused estate request"; else ok "no broker call for a refused estate request"; fi
+run request --tier readonly-estat --purpose t
+expect_rc "unknown tier" 2
+run status --tier nope
+expect_rc "unknown tier on status" 2
+
+echo "readonly-estate: held alongside a sandbox grant"
+reset_state
+request_then_poll 200 "$LIVE_SANDBOX_APPROVED"
+canned exchange 200 "$EXCHANGE_OK"
+run wait
+expect_rc "sandbox grant installed" 0
+sb_grant_before=$(cksum < "$CB_DIR/grant.json")
+sb_token_mtime=$(stat -c %Y "$CB_DIR/access_token" 2> /dev/null || stat -f %m "$CB_DIR/access_token")
+
+canned request 200 "$ESTATE_REQ"
+run request --tier readonly-estate --purpose t --no-gcloud --no-refresh
+expect_rc "a live sandbox grant does not block an estate request" 0
+canned poll 200 "$LIVE_ESTATE_APPROVED"
+canned exchange 200 "$ESTATE_EXCHANGE"
+sleep 1
+run wait
+expect_rc "wait with no --tier picks the only outstanding (estate) request" 0
+expect_out "install names the scope, not the home project" "ENTIRE ORGANISATION, read-only"
+expect_file "estate grant written" "$CB_DIR/grant-readonly-estate.json"
+expect_file "estate token written" "$CB_DIR/access_token-readonly-estate"
+if jq -e '.session_token == "stub-estate-session"' "$STUB_DIR/exchange-body.json" > /dev/null 2>&1; then
+    ok "estate exchange used the estate session token"
+else
+    no "estate exchange body — got: $(jq -c '{request_id}' "$STUB_DIR/exchange-body.json" 2> /dev/null)"
+fi
+if [ "$(cksum < "$CB_DIR/grant.json")" = "$sb_grant_before" ]; then ok "sandbox grant file untouched"; else no "sandbox grant file was modified"; fi
+if [ "$(stat -c %Y "$CB_DIR/access_token" 2> /dev/null || stat -f %m "$CB_DIR/access_token")" = "$sb_token_mtime" ]; then
+    ok "sandbox token untouched"
+else
+    no "sandbox token was rewritten by the estate install"
+fi
+
+run request --purpose t --project p --no-gcloud --no-refresh
+expect_rc "control: the sandbox grant is live, so a sandbox re-request is refused" 2
+canned request 200 "$ESTATE_REQ"
+run request --tier readonly-estate --purpose t --no-gcloud --no-refresh
+expect_rc "a live estate grant blocks a second estate request" 2
+expect_out "says which tier's grant is live" "live readonly-estate grant"
+
+run status
+expect_out "status shows the sandbox grant" "example-project-sbx"
+expect_out "status shows the estate tier" "tier readonly-estate"
+expect_out "status names the estate scope, not its home project" "whole organisation, read-only"
+
+run revoke --tier readonly-estate
+expect_rc "revoke the estate grant" 0
+expect_no_file "estate grant gone" "$CB_DIR/grant-readonly-estate.json"
+expect_no_file "estate token gone" "$CB_DIR/access_token-readonly-estate"
+expect_file "sandbox grant kept" "$CB_DIR/grant.json"
+expect_file "sandbox token kept" "$CB_DIR/access_token"
+
+echo "readonly-estate: unambiguous commands pick the estate tier"
+reset_state
+canned request 200 "$ESTATE_REQ"
+run request --tier readonly-estate --purpose t --no-gcloud --no-refresh
+canned poll 200 "$ESTATE_APPROVED"
+canned exchange 200 "$ESTATE_EXCHANGE"
+run wait --tier readonly-estate
+expect_rc "wait --tier readonly-estate" 0
+run renew
+expect_rc "renew with only an estate grant renews it" 0
+expect_out "renew reports the estate identity" "$ESTATE_SA"
+
+echo "readonly-estate: gcloud configuration created but not activated"
+reset_state
+GC_REC="$WORK/gcloud-recorder"
+mkdir -p "$GC_REC"
+cat > "$GC_REC/gcloud" << 'STUB'
+#!/bin/sh
+# Records every invocation; reports no configuration as existing.
+printf '%s\n' "$*" >> "$GCLOUD_LOG"
+case "$*" in
+    "config configurations describe"*) exit 1 ;;
+esac
+exit 0
+STUB
+chmod 0755 "$GC_REC/gcloud"
+GCLOUD_LOG="$WORK/gcloud.log"
+export GCLOUD_LOG
+: > "$GCLOUD_LOG"
+canned request 200 "$ESTATE_REQ"
+OUT=$(PATH="$GC_REC:$PATH" "$HELPER" request --tier readonly-estate --purpose t --no-refresh 2>&1) && RC=0 || RC=$?
+printf '%s\n' "$OUT" >> "$ALL_OUTPUT"
+canned poll 200 "$ESTATE_APPROVED"
+canned exchange 200 "$ESTATE_EXCHANGE"
+OUT=$(PATH="$GC_REC:$PATH" "$HELPER" wait 2>&1) && RC=0 || RC=$?
+printf '%s\n' "$OUT" >> "$ALL_OUTPUT"
+expect_rc "estate install with gcloud present" 0
+if grep -q "configurations create agent-broker-estate" "$GCLOUD_LOG"; then ok "creates the agent-broker-estate configuration"; else no "no agent-broker-estate configuration created — log: $(tr '\n' ';' < "$GCLOUD_LOG")"; fi
+if grep -q "configurations activate" "$GCLOUD_LOG"; then no "estate configuration was activated"; else ok "estate configuration left inactive"; fi
+expect_out "says how to use it per call" "CLOUDSDK_ACTIVE_CONFIG_NAME=agent-broker-estate"
+
+# --- the bootstrap's gcloud wrapper follows the tier (#602) -------------------
+#
+# cloud/bootstrap.sh installs a gcloud wrapper that renews a stale broker token
+# before each call and strips the sandbox image's preset token when a broker
+# token exists. With two tiers it has to pick the token by the configuration the
+# call uses. Extracted from bootstrap.sh and run against a fake SDK gcloud and a
+# fake helper, so this tests the shipped text rather than a copy of it.
+echo "gcloud wrapper follows the tier"
+WR="$WORK/wrapper"
+mkdir -p "$WR/sdk/bin" "$WR/bin" "$WR/cb" "$WR/gcfg"
+cat > "$WR/sdk/bin/gcloud" << 'STUB'
+#!/bin/sh
+echo "sdk-gcloud token=${CLOUDSDK_AUTH_ACCESS_TOKEN:-unset}"
+STUB
+cat > "$WR/bin/gcp-credentials" << 'STUB'
+#!/bin/sh
+printf '%s\n' "$*" >> "$WRAPPER_HELPER_LOG"
+STUB
+sed -n '/<< .WRAPPER.$/,/^WRAPPER$/p' "$ROOT/cloud/bootstrap.sh" | sed '1d;$d' \
+    | sed "s#@GCLOUD_SDK@#$WR/sdk#g" > "$WR/bin/gcloud"
+chmod 0755 "$WR/sdk/bin/gcloud" "$WR/bin/gcp-credentials" "$WR/bin/gcloud"
+WRAPPER_HELPER_LOG="$WR/helper.log"
+export WRAPPER_HELPER_LOG
+
+# run_wrapper [VAR=value...] -- [gcloud args...]
+run_wrapper() {
+    rw_env=""
+    while [ $# -gt 0 ] && [ "$1" != "--" ]; do rw_env="$rw_env $1"; shift; done
+    shift
+    : > "$WRAPPER_HELPER_LOG"
+    # shellcheck disable=SC2086 # rw_env is a list of VAR=value words
+    OUT=$(env -u CLOUDSDK_ACTIVE_CONFIG_NAME CREDENTIAL_BROKER_HOME="$WR/cb" \
+        CLOUDSDK_CONFIG="$WR/gcfg" CLOUDSDK_AUTH_ACCESS_TOKEN=preset \
+        PATH="$WR/bin:$PATH" $rw_env "$WR/bin/gcloud" "$@" 2>&1) && RC=0 || RC=$?
+}
+stale() { touch -t 202601010000 "$1"; }
+
+if [ -s "$WR/bin/gcloud" ] && grep -q 'exec env -u CLOUDSDK_AUTH_ACCESS_TOKEN' "$WR/bin/gcloud"; then
+    ok "wrapper extracted from cloud/bootstrap.sh"
+else
+    no "could not extract the gcloud wrapper from cloud/bootstrap.sh"
+fi
+
+: > "$WR/cb/access_token-readonly-estate"
+stale "$WR/cb/access_token-readonly-estate"
+run_wrapper CLOUDSDK_ACTIVE_CONFIG_NAME=agent-broker-estate -- projects list
+if grep -qx 'renew --tier readonly-estate' "$WRAPPER_HELPER_LOG"; then ok "estate config: renews the estate token"; else no "estate config renew — helper saw: $(cat "$WRAPPER_HELPER_LOG")"; fi
+expect_out "estate config: strips the preset token with only an estate token on disk" "token=unset"
+
+run_wrapper -- --configuration agent-broker-estate projects list
+if grep -qx 'renew --tier readonly-estate' "$WRAPPER_HELPER_LOG"; then ok "--configuration flag selects the estate token"; else no "--configuration renew — helper saw: $(cat "$WRAPPER_HELPER_LOG")"; fi
+
+printf 'agent-broker-estate' > "$WR/gcfg/active_config"
+run_wrapper -- projects list
+if grep -qx 'renew --tier readonly-estate' "$WRAPPER_HELPER_LOG"; then ok "an active estate config selects the estate token"; else no "active_config renew — helper saw: $(cat "$WRAPPER_HELPER_LOG")"; fi
+rm -f "$WR/gcfg/active_config"
+
+run_wrapper -- projects list
+if [ -s "$WRAPPER_HELPER_LOG" ]; then no "default config renewed with only an estate token present"; else ok "default config: no sandbox token, no renew"; fi
+expect_out "default config: preset token left alone without a sandbox token" "token=preset"
+
+: > "$WR/cb/access_token"
+stale "$WR/cb/access_token"
+run_wrapper -- projects list
+if grep -qx 'renew' "$WRAPPER_HELPER_LOG"; then ok "default config: renews the sandbox token, with no --tier"; else no "sandbox renew — helper saw: $(cat "$WRAPPER_HELPER_LOG")"; fi
+expect_out "default config: strips the preset token with a sandbox token" "token=unset"
 
 echo "transcript hygiene"
 if grep -q "$SENTINEL" "$ALL_OUTPUT"; then
