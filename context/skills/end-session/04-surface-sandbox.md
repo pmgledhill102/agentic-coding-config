@@ -10,12 +10,16 @@ surface it is running on, and nothing below describes a machine this is not.
 
 **How GitHub is reached: the MCP server, not `gh`.** The gather script's GitHub
 sections do not work on this surface and are not expected to. `gh` is either
-absent or, on an Anthropic-hosted sandbox, present but 403ed by the egress
-proxy on every repo-scoped API path
+absent or, on an Anthropic-hosted sandbox, present but unable to list PRs or
+issues: `gh pr list` and `gh issue list` go through GraphQL, which the egress
+proxy blocks for every Claude Code session. Repo-scoped REST paths are a
+separate lane, and the proxy has both 403ed them
 ([#273](https://github.com/pmgledhill102/agentic-coding-config/issues/273),
-[#276](https://github.com/pmgledhill102/agentic-coding-config/issues/276)). So
-those sections return `gh-unavailable` or `gh-unauthorized` **every time**, and
-the MCP server is the only route. Step 1 therefore issues the MCP queries as a
+[#276](https://github.com/pmgledhill102/agentic-coding-config/issues/276)) and
+allowed them, so the script's REST probe may pass and a `gh_*` section can then
+carry a raw GraphQL 403 body, even under `exit=0`
+([#600](https://github.com/pmgledhill102/agentic-coding-config/issues/600)).
+Ignore those sections whatever they contain: the MCP server is the only route. Step 1 therefore issues the MCP queries as a
 matter of course rather than waiting to see a sentinel and recovering from it.
 Tool names below are Claude Code's spelling (`mcp__github__list_issues`); a
 client that namespaces MCP tools differently is naming the same server and the

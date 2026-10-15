@@ -46,12 +46,16 @@ surface it is running on, and nothing below describes a machine this is not.
 
 **How GitHub is reached: the MCP server, not `gh`.** The gather script's GitHub
 sections do not work on this surface and are not expected to. `gh` is either
-absent or, on an Anthropic-hosted sandbox, present but 403ed by the egress
-proxy on every repo-scoped API path
+absent or, on an Anthropic-hosted sandbox, present but unable to list PRs or
+issues: `gh pr list` and `gh issue list` go through GraphQL, which the egress
+proxy blocks for every Claude Code session. Repo-scoped REST paths are a
+separate lane, and the proxy has both 403ed them
 ([#273](https://github.com/pmgledhill102/agentic-coding-config/issues/273),
-[#276](https://github.com/pmgledhill102/agentic-coding-config/issues/276)). So
-those sections return `gh-unavailable` or `gh-unauthorized` **every time**, and
-the MCP server is the only route. Step 1 therefore issues the MCP queries as a
+[#276](https://github.com/pmgledhill102/agentic-coding-config/issues/276)) and
+allowed them, so the script's REST probe may pass and a `gh_*` section can then
+carry a raw GraphQL 403 body, even under `exit=0`
+([#600](https://github.com/pmgledhill102/agentic-coding-config/issues/600)).
+Ignore those sections whatever they contain: the MCP server is the only route. Step 1 therefore issues the MCP queries as a
 matter of course rather than waiting to see a sentinel and recovering from it.
 Tool names below are Claude Code's spelling (`mcp__github__list_issues`); a
 client that namespaces MCP tools differently is naming the same server and the
@@ -99,7 +103,7 @@ Output is a sectioned stream. Each section starts with `===<name> (exit=<N>)===`
 | `stashes` | 9 | Exit 0 even when empty. |
 | `worktrees` | 13 | Exit 0 even when empty. |
 | `merged_brs` | 6 Batch A | Script appends `\|\| true` — exit 0 even if no matches. |
-| `open_prs`, `gh_assigned` | — | `gh-unavailable` or `gh-unauthorized` on this surface, every time (see §Surface). Ignore both; part (b) is where that data comes from. They are still emitted because the script is one file shared with the workstation composition. |
+| `open_prs`, `gh_assigned` | — | Never usable on this surface (see §Surface): a sentinel, or a raw GraphQL 403 body that can arrive under `exit=0` (#600). Ignore both whatever they contain; part (b) is where that data comes from. They are still emitted because the script is one file shared with the workstation composition. |
 | `stale_claude_files` | — | `chezmoi-unavailable` on this surface, every time. Silent skip; step 11 says why. |
 | `gcp_projects` | 14 | Always exit 0. First line is `state=` (`no-grant` / `grant` / `helper-unavailable`); `created=` lines follow only when this session's approval built the repo's sandbox project. Step 14 has the mapping, including why `no-grant` and `none` are different answers. |
 
