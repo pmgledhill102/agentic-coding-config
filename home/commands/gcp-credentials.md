@@ -17,9 +17,14 @@ Do **not** request credentials speculatively. Every request pings a human on
 Discord and burns a little of their willingness to read the card carefully. One
 per session, when the work actually needs it.
 
+Investigating something **outside** the sandbox — a cost, an IAM policy, a log,
+a service in another project — is a different tier with its own grant: see
+[Investigating across the estate](#investigating-across-the-estate---tier-readonly-estate).
+
 ## How it works, in one paragraph
 
-The broker turns **one human approval into a grant** lasting 1–7 days. Inside
+The broker turns **one human approval into a grant** lasting 1–7 days (the
+sandbox tier; the estate tier is shorter). Inside
 that window a background loop silently re-mints 1-hour GCP access tokens with no
 further approvals. The human approves in Discord only if the card shows the same
 three-word phrase as the session — that match is what binds an approval to
@@ -467,6 +472,66 @@ approval, a fresh phrase — and tell the user that is what you are doing:
 > The 24h grant expired. Requesting a new one; new phrase: `willow-basalt-heron`.
 
 Do not diagnose it as an auth bug, and do not go looking for another credential.
+
+## Investigating across the estate: `--tier readonly-estate`
+
+A second, separate grant: **read-only across the whole organisation**, for
+questions that cross project boundaries and change nothing. Design and the exact
+role set: ADR 025 in `pmgledhill102/gcp-org-management`.
+
+| It can read | It cannot |
+| --- | --- |
+| Project and resource metadata, IAM policies, logs, monitoring, service and scheduler config, billing, and the rows of the billing-export dataset | Change anything; read secret values; read bucket contents (Terraform state included); read BigQuery data outside billing export |
+
+**When:** a budget alert (which project, what is costing the money), a failed
+apply that turns on what an IAM policy actually says, a drift or scope finding,
+what a function in another project logged. **Never for work** — every write
+fails by construction, and the sandbox tier is where work happens.
+
+```sh
+~/.claude/bin/gcp-credentials request --tier readonly-estate --purpose "find which project is driving the services budget alert"
+~/.claude/bin/gcp-credentials wait --tier readonly-estate
+```
+
+- **No `--project` or `--repo`.** The grant is not scoped to one, and the helper
+  refuses both rather than let a request look narrower than it is.
+- **Short:** 4h by default, `--ttl` from 1h to 24h.
+- **Relay the scope with the phrase.** The card leads with it, and so should you:
+
+  > Requesting **read-only access to the entire organisation** (readonly-estate
+  > tier, 4h). **Verification phrase: `read-silver-heron`** — approve the
+  > Discord card only if it shows exactly that.
+
+- **It sits alongside a sandbox grant.** Separate grant, token and refresh loop;
+  a live sandbox grant does not block it and it does not replace one. `status`
+  shows both. Commands without `--tier` act on the sandbox grant, except when
+  the estate grant is the only one there.
+
+**Using it.** The estate grant gets its own gcloud configuration,
+`agent-broker-estate`, which is **not** activated, so the session's default
+gcloud stays on its sandbox. Opt in per call:
+
+```sh
+CLOUDSDK_ACTIVE_CONFIG_NAME=agent-broker-estate gcloud projects list
+CLOUDSDK_ACTIVE_CONFIG_NAME=agent-broker-estate gcloud logging read '...' --project <the project you are inspecting>
+```
+
+That configuration's default project is the estate identity's home project,
+which is where API quota is billed and BigQuery runs jobs — **not** the scope of
+the grant. Pass `--project` for whatever you are inspecting. The cloud sandbox's
+gcloud wrapper renews the estate token on the same per-call basis as the
+sandbox one, keyed on the configuration the call uses.
+
+**Logs are the residual risk, so they get a rule.** The grant reads every
+project's logs, production included, and an application can log things it
+should not. Quote the minimum lines needed to explain a finding; **never paste
+raw log output wholesale** into the transcript, a PR body, or an issue. A public
+issue full of production log lines is an exfiltration path that needs no
+attacker.
+
+End it early, once the question is answered, with
+`~/.claude/bin/gcp-credentials revoke --tier readonly-estate`. Exit codes are
+the same as for the sandbox tier.
 
 ## Other subcommands
 
