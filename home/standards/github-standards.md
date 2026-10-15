@@ -330,15 +330,32 @@ running the auto-merge apparatus — no wider.
   push-triggered run cannot read the Dependabot one, and either reads an
   absent secret as empty with no error. Keeping one name keeps the workflow
   files the same shape everywhere; the spec's `must_match` patterns, not a
-  byte comparison, are what the sweep checks. Distribution and rotation
-  are one loop, and the token goes in on stdin: `--body` would put it in
-  `argv`, visible to `ps` while the command runs, and whatever set the
-  variable would sit in shell history.
+  byte comparison, are what the sweep checks.
+- **The token is not kept after it is distributed, so it is only ever
+  written to the whole tier at once.** Storing it in one more repo needs
+  its value, and the only way to get the value is to regenerate the
+  token, which invalidates every copy already stored. A single-repo
+  `gh secret set` therefore leaves every other `automerge` repo holding a
+  dead token until the next full run, and nothing reports it until each
+  of those repos' next Dependabot bump fails with a 403. Adding a repo,
+  and rotating, are both the same sequence:
+  1. Assign the repo to `automerge` in `paul-context`'s
+     `registry/repo-tiers.json`.
+  2. Add it to the token's selected-repositories list.
+  3. Check that list against
+     `paul-context/tools/set-automerge-pat.sh --dry-run`, which derives
+     its repos from the registry.
+  4. Regenerate the token and run `tools/set-automerge-pat.sh`. It writes
+     both stores on every `automerge` repo and verifies each.
+
+  The script is a loop of this shape. The token goes in on stdin, because
+  `--body` would put it in `argv`, visible to `ps` while the command runs,
+  and whatever set the variable would sit in shell history:
 
   ```sh
   printf 'Fine-grained PAT (input hidden): '
   read -rs TOKEN; echo
-  for r in <tier-2 repos>; do
+  for r in <every automerge repo>; do
     for app in dependabot actions; do
       printf '%s' "$TOKEN" | gh secret set AUTOMERGE_PAT --app "$app" --repo "pmgledhill102/$r"
     done
@@ -352,7 +369,7 @@ running the auto-merge apparatus — no wider.
   per-repo credentials in a multi-tenant organisation does not apply
   here, and every extra token is another row the PAT inventory has to
   account for. Widening the covered set is an edit to the token's repo
-  list plus one loop iteration, never a new credential.
+  list plus one full redistribution (above), never a new credential.
 - **What bounds a leaked token is the ruleset, not the token's scope.**
   The standard ruleset requires a pull request and passing checks on the
   default branch, with an empty bypass list — so even a stolen
