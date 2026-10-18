@@ -34,7 +34,7 @@
 # Ubuntu archives, so --no-precommit is the escape for an environment that
 # cannot reach them. It then WARMS the hook cache from cloud/precommit-warm.yaml
 # and from any checkout it finds, because the alternative is the first commit in
-# a fresh container spending two minutes compiling Go hooks inside a 120 s hook
+# a fresh container building every hook environment inside a 120 s hook
 # timeout (#441). The warm is its own capability, so `degraded=` can say which
 # of the two failed.
 #
@@ -1352,7 +1352,7 @@ cap_precommit() {
     # itself resolves fine through the redirect -- a naive reachability probe
     # against github.com reads as an egress block and is not one.
     if ! command -v actionlint > /dev/null 2>&1; then
-        AL_VER=1.7.7
+        AL_VER=1.7.12
         fetch "https://github.com/rhysd/actionlint/releases/download/v${AL_VER}/actionlint_${AL_VER}_linux_amd64.tar.gz" \
             "$TMP/actionlint.tar.gz" ||
             die "could not download actionlint ${AL_VER}"
@@ -1362,8 +1362,23 @@ cap_precommit() {
     log "actionl -> $(command -v actionlint)"
     step_end precommit.actionlint
 
+    # gitleaks for the `gitleaks-system` hook /setup-common stamps. The
+    # `gitleaks` id is `language: golang` and compiles from source on a cold
+    # cache, ~30s per container. The `-system` entry uses `gitleaks git`, which
+    # needs 8.19 or later. Bump with the gitleaks rev in setup-common.
+    if ! command -v gitleaks > /dev/null 2>&1; then
+        GL_VER=8.30.1
+        fetch "https://github.com/gitleaks/gitleaks/releases/download/v${GL_VER}/gitleaks_${GL_VER}_linux_x64.tar.gz" \
+            "$TMP/gitleaks.tar.gz" ||
+            die "could not download gitleaks ${GL_VER}"
+        tar -xzf "$TMP/gitleaks.tar.gz" -C "$TMP" gitleaks || die "could not unpack gitleaks"
+        install -m 0755 "$TMP/gitleaks" "$BIN_DIR/gitleaks" || die "could not install gitleaks"
+    fi
+    log "gitleak -> $(command -v gitleaks)"
+    step_end precommit.gitleaks
+
     # Serves `markdownlint-cli2 "**/*.md"`, the gate CLAUDE.md documents, which
-    # needs the binary on PATH. Unlike the two above this is not a
+    # needs the binary on PATH. Unlike the three above this is not a
     # `language: system` hook -- the pre-commit hook builds its own node
     # environment -- so the pin here and the rev in .pre-commit-config.yaml are
     # two versions of the same tool. Bump them together.
@@ -1576,8 +1591,10 @@ HOOK
 # `pre-commit install-hooks` builds a hook's environment; the first run that
 # meets a cold cache builds it instead. In this estate that first run is a
 # COMMIT, inside two 120 s timeouts -- precommit-claude-hook's, and the Bash
-# tool's -- and the build is roughly two minutes, because gitleaks, actionlint
-# and shfmt are `language: golang` hooks compiled from source. Every outcome of
+# tool's. For the estate set that is ~20 s of python and node builds; it was
+# two minutes while gitleaks and actionlint compiled from source, before they
+# moved to their `-system` ids (#609), and a repo's own golang hooks still
+# can be. Every outcome of
 # that race is wrong: a hook that times out and lets the commit through is a
 # gate that silently did not run, and a commit killed for a reason unrelated to
 # its content is a failure that succeeds on retry (#441).
@@ -1682,8 +1699,8 @@ cap_precommit_warm() {
 
     # When `go` is absent pre-commit fetches its own toolchain, and the first
     # call is https://go.dev/dl/?mode=json -- which this sandbox's egress proxy
-    # answers 403 (measured 2026-09-15), so the golang hooks fail rather than
-    # falling back. The image ships Go at /usr/local/go/bin, so this warns about
+    # answers 403 (measured 2026-09-15), so a golang hook fails rather than
+    # falling back. The estate set has none; a checkout found in step 2 may. The image ships Go at /usr/local/go/bin, so this warns about
     # an image change rather than a routine path; the remedy is allowlisting
     # go.dev or putting Go back, and it is not something this script can do.
     command -v go > /dev/null 2>&1 ||
@@ -1932,7 +1949,7 @@ capability "$WITH_GCLOUD" gcloud cap_gcloud
 capability "$WITH_PRECOMMIT" precommit cap_precommit
 # Separate from cap_precommit, not folded into it, because they fail
 # differently. Without pre-commit there is no gate at all; without the warm the
-# gate is present and the first commit in a fresh container pays two minutes for
+# gate is present and the first commit in a fresh container pays the build for
 # it. Its own entry means `degraded=` says which of the two happened, and
 # `timings` carries its duration rather than burying it in the install's (#441).
 capability "$WITH_PRECOMMIT" precommit-warm cap_precommit_warm

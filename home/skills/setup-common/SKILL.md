@@ -55,12 +55,14 @@ repos:
   - repo: https://github.com/gitleaks/gitleaks
     rev: <latest tag>
     hooks:
-      - id: gitleaks
+      - id: gitleaks-system
 ```
 
 Look up the latest release tag for each repo and use those for the `rev:` values.
 
-Do **not** run `pre-commit install` — nothing should write to `.git/hooks`. The config file is the source of truth, and it is enforced from two directions: a global pre-tool hook runs pre-commit on every `git commit`/`git push` the agent makes, and CI runs `pre-commit run --all-files` on every push. Manual terminal commits are CI-backed. Mention this model in the closing summary so the user knows why no git hook was installed.
+Use `gitleaks-system`, not `gitleaks`. The plain id is `language: golang`, so pre-commit compiles gitleaks from source the first time it runs in a container, which takes about 30 seconds. The `-system` id runs the `gitleaks` binary on `PATH`; the workstation Brewfile and the cloud bootstrap both install it. It needs gitleaks 8.19 or later.
+
+Do **not** run `pre-commit install` — nothing should write to `.git/hooks`. The config file is the source of truth, and it is enforced from two directions: a global pre-tool hook runs pre-commit on every `git commit`/`git push` the agent makes, and CI runs the same scanners as jobs of their own on every push (step 7). CI does not run pre-commit itself, so a `-system` hook needs nothing installed on the runner. Manual terminal commits are CI-backed. Mention this model in the closing summary so the user knows why no git hook was installed.
 
 If `pre-commit` is not installed, tell the user to install it (`brew install pre-commit`) and stop.
 
@@ -182,10 +184,10 @@ Add an actionlint pre-commit hook to `.pre-commit-config.yaml`:
   - repo: https://github.com/rhysd/actionlint
     rev: <latest tag>
     hooks:
-      - id: actionlint
+      - id: actionlint-system
 ```
 
-Look up the latest release tag and use it for the `rev:` value.
+Look up the latest release tag and use it for the `rev:` value. Use `actionlint-system` rather than `actionlint`, for the same reason as `gitleaks-system`: the plain id compiles from source, and the binary is already installed in both environments.
 
 ### 5. semgrep (static analysis)
 
