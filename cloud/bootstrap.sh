@@ -140,6 +140,28 @@ record_timing() { # name seconds
     TIMINGS="${TIMINGS:+$TIMINGS }$1=$2s"
 }
 
+# Per-tool timing inside a capability. A capability runs in a subshell, so
+# record_timing there would be lost with it; these append to a file instead,
+# and capability() folds the file into TIMINGS after its own entry. step_end
+# records the time since the previous step_begin or step_end and restarts the
+# clock, so consecutive tools need one call each.
+step_begin() {
+    STEP_T0=$(now_s)
+    PIP_ATTEMPT=
+}
+step_end() { # step_end <name>
+    _step_secs=$(( $(now_s) - STEP_T0 ))
+    echo "$1=${_step_secs}s" >> "$TMP/step-timings"
+    # Which pip attempt succeeded: 2 and 3 each re-resolve the whole
+    # dependency set after the one before failed, so a high number is time
+    # spent on fallbacks rather than on the tool.
+    if [ -n "${PIP_ATTEMPT:-}" ]; then
+        echo "$1.pip-attempt=$PIP_ATTEMPT" >> "$TMP/step-timings"
+    fi
+    log "time    : $1 ${_step_secs}s"
+    step_begin
+}
+
 # Which session this run built for, so a later one can tell a cache rebuild from
 # a snapshot restore EXACTLY rather than inferring it from clock arithmetic: if
 # this id matches the session asking, the setup script ran for that session.
@@ -576,11 +598,14 @@ pip_install() {
     _extra="${2:-}"
     for _pip in "pip" "pip3" "python3 -m pip"; do
         command -v "${_pip%% *}" > /dev/null 2>&1 || continue
+        PIP_ATTEMPT=$((${PIP_ATTEMPT:-0} + 1))
         # shellcheck disable=SC2086  # deliberate word split: "python3 -m pip"
         $_pip install --quiet --no-input $_extra "$_pkg" > /dev/null 2>&1 && return 0
+        PIP_ATTEMPT=$((PIP_ATTEMPT + 1))
         # shellcheck disable=SC2086
         $_pip install --quiet --no-input $_extra --break-system-packages "$_pkg" \
             > /dev/null 2>&1 && return 0
+        PIP_ATTEMPT=$((PIP_ATTEMPT + 1))
         # shellcheck disable=SC2086
         $_pip install --quiet --no-input $_extra --break-system-packages \
             --ignore-installed "$_pkg" > /dev/null 2>&1 && return 0
@@ -1273,6 +1298,7 @@ WRAPPER
 # same way.
 
 cap_precommit() {
+    step_begin
     # Both linters are `language: system` hooks in this estate's config -- they
     # run the binary on PATH rather than a pinned mirror, so the hook and CI
     # cannot drift to different versions.
@@ -1311,6 +1337,7 @@ cap_precommit() {
         fi
     fi
     log "shellck -> $(command -v shellcheck)"
+    step_end precommit.shellcheck
 
     # actionlint is not packaged in Ubuntu, so it comes from a pinned release.
     # Note github.com answers 403 to this sandbox's curl while the release asset
@@ -1325,6 +1352,7 @@ cap_precommit() {
         install -m 0755 "$TMP/actionlint" "$BIN_DIR/actionlint" || die "could not install actionlint"
     fi
     log "actionl -> $(command -v actionlint)"
+    step_end precommit.actionlint
 
     # Serves `markdownlint-cli2 "**/*.md"`, the gate CLAUDE.md documents, which
     # needs the binary on PATH. Unlike the two above this is not a
@@ -1343,6 +1371,7 @@ cap_precommit() {
     command -v markdownlint-cli2 > /dev/null 2>&1 ||
         die "markdownlint-cli2 installed but is not on PATH"
     log "mdlint  -> $(command -v markdownlint-cli2) ($(markdownlint-cli2 --version 2>&1 | head -1))"
+    step_end precommit.markdownlint-cli2
 
     # semgrep is a `language: system` hook across this estate, so the hook runs
     # whatever is on PATH and fails hard with "Executable `semgrep` not found"
@@ -1368,6 +1397,7 @@ cap_precommit() {
     command -v semgrep > /dev/null 2>&1 ||
         die "semgrep reported installed but is not on PATH"
     log "semgrep -> $(command -v semgrep)"
+    step_end precommit.semgrep
 
     # cspell already runs inside pre-commit's own node environment, so the hook
     # passes without this. What does not work without it is the documented
@@ -1389,6 +1419,7 @@ cap_precommit() {
     command -v cspell > /dev/null 2>&1 ||
         die "cspell installed but is not on PATH"
     log "cspell  -> $(command -v cspell) ($(cspell --version 2>&1 | head -1))"
+    step_end precommit.cspell
 
     # The Terraform toolchain, opt-in. A repo's .pre-commit-config.yaml can
     # call terraform_fmt, terraform_validate, terraform_tflint and checkov;
@@ -1430,6 +1461,7 @@ cap_precommit() {
                 die "could not install terraform"
         fi
         log "terrafm -> $(command -v terraform) ($(terraform version | head -1))"
+        step_end precommit.terraform
 
         if ! command -v tflint > /dev/null 2>&1; then
             TFL_VER=0.53.0
@@ -1442,6 +1474,7 @@ cap_precommit() {
                 die "could not install tflint"
         fi
         log "tflint  -> $(command -v tflint)"
+        step_end precommit.tflint
 
         # tflint --init resolves plugins through the GitHub releases API, which
         # the sandbox proxy 403s, so the ruleset is seeded from its release
@@ -1463,6 +1496,7 @@ cap_precommit() {
                 die "could not make tflint-ruleset-google executable"
         fi
         log "tflplug -> $tfl_plugins"
+        step_end precommit.tflint-ruleset-google
 
         # checkov is a Python tool, so it takes the same pip route as
         # pre-commit rather than a release tarball.
@@ -1472,6 +1506,7 @@ cap_precommit() {
         command -v checkov > /dev/null 2>&1 ||
             die "checkov reported installed but is not on PATH"
         log "checkov -> $(command -v checkov)"
+        step_end precommit.checkov
     fi
 
     command -v pre-commit > /dev/null 2>&1 ||
@@ -1485,6 +1520,7 @@ cap_precommit() {
     command -v pre-commit > /dev/null 2>&1 ||
         die "pre-commit reported installed but is not on PATH"
     log "precmit -> $(command -v pre-commit) ($(pre-commit --version))"
+    step_end precommit.pre-commit
 
     # A GLOBAL hook via core.hooksPath, not `pre-commit install` per repo.
     #
@@ -1579,6 +1615,44 @@ precommit_home() {
     fi
 }
 
+# warm_install <dir> <config> <prefix>: `pre-commit install-hooks` with each
+# hook repo's environment build timed, into the step-timings file as
+# <prefix>.<repo>=Ns, plus <prefix>.clone for the fetches before the first
+# build. pre-commit prints "Installing environment for <url>." as each build
+# starts, so stamping lines as they arrive splits one invocation by repo
+# without changing what it does. PYTHONUNBUFFERED because a pipe otherwise
+# delivers those lines in one burst at exit, stamping them all the same second.
+# A repo already in the cache prints nothing and is not timed. Output lands in
+# $TMP/warm.log, as before; returns pre-commit's status.
+warm_install() {
+    : > "$TMP/warm.log"
+    : > "$TMP/warm.stamped"
+    rm -f "$TMP/warm.rc"
+    _w_start=$(now_s)
+    (
+        cd "$1" || exit 1
+        if PYTHONUNBUFFERED=1 pre-commit install-hooks -c "$2" 2>&1; then
+            echo 0 > "$TMP/warm.rc"
+        else
+            echo "$?" > "$TMP/warm.rc"
+        fi
+    ) | while IFS= read -r _l; do
+        printf '%s\n' "$_l" >> "$TMP/warm.log"
+        printf '%s %s\n' "$(now_s)" "$_l" >> "$TMP/warm.stamped"
+    done
+    _w_end=$(now_s)
+    awk -v s="$_w_start" -v e="$_w_end" -v p="$3" '
+        / Installing environment for / {
+            n = $NF; sub(/\.$/, "", n); sub(/\/$/, "", n); sub(/.*\//, "", n); sub(/\.git$/, "", n)
+            if (cur != "") printf "%s.%s=%ds\n", p, cur, $1 - t
+            else printf "%s.clone=%ds\n", p, $1 - s
+            cur = n; t = $1
+        }
+        END { if (cur != "") printf "%s.%s=%ds\n", p, cur, e - t }
+    ' "$TMP/warm.stamped" >> "$TMP/step-timings" 2> /dev/null || true
+    return "$(cat "$TMP/warm.rc" 2> /dev/null || echo 1)"
+}
+
 cap_precommit_warm() {
     # cap_precommit is what installs pre-commit, and it already names itself in
     # `degraded=` when it cannot. Reporting one root cause under two names makes
@@ -1616,8 +1690,7 @@ cap_precommit_warm() {
     grep -q '^repos:' "$TMP/precommit-warm.yaml" ||
         die "fetched warm config has no repos: block — check that $REF exists"
 
-    if ( cd "$_warm_repo" && pre-commit install-hooks -c "$TMP/precommit-warm.yaml" ) \
-        > "$TMP/warm.log" 2>&1; then
+    if warm_install "$_warm_repo" "$TMP/precommit-warm.yaml" warm; then
         log "warm    -> estate hook set (cloud/precommit-warm.yaml)"
     else
         # TMP is cleaned on exit, so quote the tail into this log rather than
@@ -1665,7 +1738,7 @@ cap_precommit_warm() {
         # Per-config failures are logged, not fatal. A repo whose config names a
         # hook this container cannot build is a slow first commit in that repo;
         # the estate warm has already delivered the guarantee.
-        if ( cd "$_dir" && pre-commit install-hooks -c "$_cfg" ) > "$TMP/warm.log" 2>&1; then
+        if warm_install "$_dir" "$_cfg" "warm.$(basename "$_dir")"; then
             log "warm    -> $_cfg"
         else
             log "warn    : could not warm $_cfg — its first commit pays the build"
@@ -1831,6 +1904,10 @@ capability() {
     # the interesting case, and recording only successes would hide it.
     _cap_secs=$((  $(now_s) - _cap_start ))
     record_timing "$2" "$_cap_secs"
+    if [ -s "$TMP/step-timings" ]; then
+        TIMINGS="$TIMINGS $(tr '\n' ' ' < "$TMP/step-timings" | sed 's/ $//')"
+        : > "$TMP/step-timings"
+    fi
     [ "$_cap_rc" -eq 0 ] && return 0
 
     # die wrote its message here on the way out of the subshell, where a
