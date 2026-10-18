@@ -246,7 +246,9 @@ into its `bin`, `shellcheck` comes from its pinned release because `apt`
 needs root, `npm` gets `--prefix`, and the Python tools (`pre-commit`,
 `checkov`, `semgrep`) go through `uv tool install` with uv's tool, bin and
 Python directories under the prefix. Without uv, the `~/.local` default falls
-back to `pip --user`; any other prefix needs uv.
+back to `pip --user`; any other prefix needs uv. The root layout prefers uv
+too, for `pre-commit` and `checkov` with their shims in `/usr/local/bin`, and
+uses the system `pip` only when uv is absent or fails.
 
 ```sh
 sh /tmp/bootstrap.sh "$REF" --profile "$PROFILE" --prefix /workspace/.tools

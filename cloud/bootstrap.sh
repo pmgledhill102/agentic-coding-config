@@ -455,8 +455,8 @@ esac
 # that uv and pip use.
 #
 # INSTALL_MODE distinguishes system from the other two because the system
-# layout keeps each tool's own default install route (apt, a global npm and
-# pip, uv's default bin) exactly as before, where a prefix has to steer every
+# layout keeps each tool's own default install route (apt, a global npm,
+# uv's default tool dir) exactly as before, where a prefix has to steer every
 # one of them explicitly.
 SYSTEM_BIN=/usr/local/bin
 SYSTEM_OPT=/opt
@@ -641,14 +641,22 @@ py_tool_install() {
     pip_install "$_pkg" --user
 }
 
-# The two Python tools that took the system pip route before there was a
-# prefix. Kept on it in the system layout, so a root run is unchanged.
+# checkov and pre-commit. In the system layout uv comes first when it is on
+# PATH: pip resolves checkov's dependency tree in ~64s where uv takes ~10s on a
+# cold cache, and a venv per tool never has to replace the image's apt-managed
+# `packaging` (#344). The shim goes to BIN_DIR, where pip's console script
+# went, so `command -v` finds the same path either way. pip remains the route
+# when uv is absent or fails.
 python_cli_install() {
-    if [ "$INSTALL_MODE" = system ]; then
-        pip_install "$1"
-    else
+    if [ "$INSTALL_MODE" != system ]; then
         py_tool_install "$1"
+        return
     fi
+    if command -v uv > /dev/null 2>&1; then
+        UV_TOOL_BIN_DIR="$BIN_DIR" uv tool install "$1" > /dev/null 2>&1 && return 0
+        log "        uv could not install $1; falling back to pip"
+    fi
+    pip_install "$1"
 }
 
 # --- npm_global_install: a node CLI whose shim must land in BIN_DIR ----------
@@ -1498,7 +1506,7 @@ cap_precommit() {
         log "tflplug -> $tfl_plugins"
         step_end precommit.tflint-ruleset-google
 
-        # checkov is a Python tool, so it takes the same pip route as
+        # checkov is a Python tool, so it takes the same uv-or-pip route as
         # pre-commit rather than a release tarball.
         command -v checkov > /dev/null 2>&1 ||
             python_cli_install checkov ||
