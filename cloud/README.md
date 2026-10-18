@@ -537,7 +537,7 @@ then also land in `<prefix>/bin`. The manifest's `bin_dir=` names which.
 | `~/.claude/settings.json` | harness hook wiring, with `--with-hooks` (merged, not replaced) |
 | `~/.claude/bin/*-claude-hook` | the harness hook scripts (`credguard`, `prchecks-wait`, `prepush-guard`, `precommit`), with `--with-hooks` |
 | `~/.claude/bin/lib/resolve-command-dir` | the `cd` / `pushd` / `git -C` resolution the commit and push hooks source to find the repo a command targets; a hook that cannot source it reports "not checked" and stands down. With `--with-hooks` |
-| `/usr/local/bin/pre-commit`, `/usr/bin/shellcheck`, `/usr/local/bin/actionlint`, `markdownlint-cli2` (npm global), `cspell` (npm global), `semgrep` (uv tool) | with `--with-precommit` |
+| `/usr/local/bin/pre-commit`, `/usr/bin/shellcheck`, `/usr/local/bin/actionlint`, `/usr/local/bin/gitleaks`, `markdownlint-cli2` (npm global), `cspell` (npm global), `semgrep` (uv tool) | with `--with-precommit` |
 | `/usr/local/bin/gh` | the GitHub CLI, pinned release, with `--with-gh` |
 | `/usr/local/bin/golangci-lint` | always: pinned to the estate's CI version, overwriting the image's older copy (`golangci=` in the manifest) |
 | `~/.claude.json` → `mcpServers."google-developer-knowledge"` | one user-scope MCP entry, no key, with `--with-devknowledge` (merged, not replaced) |
@@ -602,7 +602,7 @@ committed `.pre-commit-config.yaml` did nothing here (#254).
 
 On by default for every `*-cloud-sandbox` profile; `--no-precommit` opts out.
 
-It installs `pre-commit`, plus `shellcheck` and `actionlint`, which this
+It installs `pre-commit`, plus `shellcheck`, `actionlint` and `gitleaks`, which this
 estate's config runs as `language: system` hooks — they use the binary on
 `PATH` so the hook and CI cannot drift to different versions, which only works
 if the binaries are present. Installing them is the point; the config's `SKIP=`

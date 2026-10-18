@@ -1352,7 +1352,7 @@ cap_precommit() {
     # itself resolves fine through the redirect -- a naive reachability probe
     # against github.com reads as an egress block and is not one.
     if ! command -v actionlint > /dev/null 2>&1; then
-        AL_VER=1.7.7
+        AL_VER=1.7.12
         fetch "https://github.com/rhysd/actionlint/releases/download/v${AL_VER}/actionlint_${AL_VER}_linux_amd64.tar.gz" \
             "$TMP/actionlint.tar.gz" ||
             die "could not download actionlint ${AL_VER}"
@@ -1362,8 +1362,23 @@ cap_precommit() {
     log "actionl -> $(command -v actionlint)"
     step_end precommit.actionlint
 
+    # gitleaks for the `gitleaks-system` hook /setup-common stamps. The
+    # `gitleaks` id is `language: golang` and compiles from source on a cold
+    # cache, ~30s per container. The `-system` entry uses `gitleaks git`, which
+    # needs 8.19 or later. Bump with the gitleaks rev in setup-common.
+    if ! command -v gitleaks > /dev/null 2>&1; then
+        GL_VER=8.30.1
+        fetch "https://github.com/gitleaks/gitleaks/releases/download/v${GL_VER}/gitleaks_${GL_VER}_linux_x64.tar.gz" \
+            "$TMP/gitleaks.tar.gz" ||
+            die "could not download gitleaks ${GL_VER}"
+        tar -xzf "$TMP/gitleaks.tar.gz" -C "$TMP" gitleaks || die "could not unpack gitleaks"
+        install -m 0755 "$TMP/gitleaks" "$BIN_DIR/gitleaks" || die "could not install gitleaks"
+    fi
+    log "gitleak -> $(command -v gitleaks)"
+    step_end precommit.gitleaks
+
     # Serves `markdownlint-cli2 "**/*.md"`, the gate CLAUDE.md documents, which
-    # needs the binary on PATH. Unlike the two above this is not a
+    # needs the binary on PATH. Unlike the three above this is not a
     # `language: system` hook -- the pre-commit hook builds its own node
     # environment -- so the pin here and the rev in .pre-commit-config.yaml are
     # two versions of the same tool. Bump them together.

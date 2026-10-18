@@ -933,9 +933,9 @@ H=$(mktemp -d)
 FIX="$H/fix"
 pin() { sed -n "s/^[[:space:]]*$1=\([0-9.]*\)\$/\1/p" "$BOOTSTRAP" | head -1; }
 AL=$(pin AL_VER) SC=$(pin SC_VER) TF=$(pin TF_VER) TFL=$(pin TFL_VER)
-TFG=$(pin TFL_GOOGLE_VER) GHV=$(pin GH_VER) GCL=$(pin GCL_VER)
-check "every pin the fixture needs was found" "7" \
-    "$(printf '%s\n' "$AL" "$SC" "$TF" "$TFL" "$TFG" "$GHV" "$GCL" | grep -c .)"
+TFG=$(pin TFL_GOOGLE_VER) GHV=$(pin GH_VER) GCL=$(pin GCL_VER) GL=$(pin GL_VER)
+check "every pin the fixture needs was found" "8" \
+    "$(printf '%s\n' "$AL" "$SC" "$TF" "$TFL" "$TFG" "$GHV" "$GCL" "$GL" | grep -c .)"
 
 fake() { # fake <path> <version line>
     mkdir -p "$(dirname "$1")"
@@ -946,6 +946,9 @@ S="$H/stage"
 fake "$S/al/actionlint" "actionlint $AL"
 mkdir -p "$FIX/github.com/rhysd/actionlint/releases/download/v$AL"
 tar -czf "$FIX/github.com/rhysd/actionlint/releases/download/v$AL/actionlint_${AL}_linux_amd64.tar.gz" -C "$S/al" actionlint
+fake "$S/gl/gitleaks" "$GL"
+mkdir -p "$FIX/github.com/gitleaks/gitleaks/releases/download/v$GL"
+tar -czf "$FIX/github.com/gitleaks/gitleaks/releases/download/v$GL/gitleaks_${GL}_linux_x64.tar.gz" -C "$S/gl" gitleaks
 fake "$S/sc/shellcheck-v$SC/shellcheck" "ShellCheck $SC"
 mkdir -p "$FIX/github.com/koalaman/shellcheck/releases/download/v$SC"
 tar -cJf "$FIX/github.com/koalaman/shellcheck/releases/download/v$SC/shellcheck-v$SC.linux.x86_64.tar.xz" -C "$S/sc" "shellcheck-v$SC/shellcheck"
@@ -1041,7 +1044,7 @@ check "  install_mode=prefix" "prefix" "$(mval install_mode "$M")"
 check "  bin_dir is the prefix's bin" "$P/bin" "$(mval bin_dir "$M")"
 check "  bin_dir_on_path=no is recorded" "no" "$(mval bin_dir_on_path "$M")"
 missing=
-for t in gcp-credentials gcloud gsutil shellcheck actionlint markdownlint-cli2 cspell \
+for t in gcp-credentials gcloud gsutil shellcheck actionlint gitleaks markdownlint-cli2 cspell \
     semgrep terraform tflint checkov pre-commit gh golangci-lint; do
     [ -x "$P/bin/$t" ] || missing="$missing $t"
 done
