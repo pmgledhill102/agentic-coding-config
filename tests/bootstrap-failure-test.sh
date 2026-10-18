@@ -201,6 +201,51 @@ check "  --ignore-installed only as a last resort" "1" \
     "$(sed -n 3p "$H/calls.log" | grep -c -- '--ignore-installed')"
 rm -rf "$H"
 
+# --- 4b. python_cli_install in the system layout: uv first, pip behind it ---
+#
+# pip spends ~64s resolving checkov where uv takes ~10s (#608). uv must be
+# given BIN_DIR, or the shim lands in ~/.local/bin rather than where pip's
+# console script went, and pip must still be reached when uv fails or is absent.
+H=$(mktemp -d)
+mkdir -p "$H/stub" "$H/nouv"
+cat > "$H/stub/pip" << 'STUB'
+#!/bin/sh
+echo "pip $*" >> "$LOGF"
+STUB
+cat > "$H/stub/uv" << 'STUB'
+#!/bin/sh
+echo "uv $* UV_TOOL_BIN_DIR=${UV_TOOL_BIN_DIR:-}" >> "$LOGF"
+exit "${UV_RC:-0}"
+STUB
+chmod +x "$H/stub/pip" "$H/stub/uv"
+ln -s "$H/stub/pip" "$H/nouv/pip"
+for t in sh cat; do ln -s "$(command -v "$t")" "$H/nouv/$t"; done
+
+for fn in pip_install python_cli_install; do
+    sed -n "/^$fn() {/,/^}\$/p" "$BOOTSTRAP"
+done > "$H/fn.sh"
+check "python_cli_install was extractable from the script" "1" \
+    "$(count '^python_cli_install() {' "$H/fn.sh")"
+run_pci() { # run_pci <path> <uv rc> <log>
+    PATH="$1" LOGF="$3" UV_RC="$2" INSTALL_MODE=system BIN_DIR=/sys/bin \
+        sh -c 'log() { :; }; . "$0/fn.sh"; python_cli_install checkov' "$H"
+}
+
+run_pci "$H/stub:$PATH" 0 "$H/a.log"
+check "system layout with uv installs through uv" "0" "$?"
+check "  into BIN_DIR, and pip is never called" "1 0" \
+    "$(count '^uv tool install checkov UV_TOOL_BIN_DIR=/sys/bin$' "$H/a.log") $(count '^pip ' "$H/a.log")"
+
+run_pci "$H/stub:$PATH" 1 "$H/b.log"
+check "a failing uv falls back to pip" "0" "$?"
+check "  uv then pip, once each" "1 1" \
+    "$(count '^uv ' "$H/b.log") $(count '^pip install' "$H/b.log")"
+
+run_pci "$H/nouv" 0 "$H/c.log"
+check "no uv on PATH goes straight to pip" "0 1" \
+    "$(count '^uv ' "$H/c.log") $(count '^pip install' "$H/c.log")"
+rm -rf "$H"
+
 # --- 5. the gather script reads what the bootstrap writes ------------------
 #
 # The two halves ship in different files and are deployed by different
