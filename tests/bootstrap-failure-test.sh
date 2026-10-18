@@ -408,11 +408,11 @@ echo "cloud/bootstrap.sh — warming the cache at bootstrap time"
 # markdownlint-cli2 first, and the warm is what is under test.
 H=$(mktemp -d)
 {
-    for fn in precommit_home cap_precommit_warm fetch now_s record_timing capability; do
+    for fn in precommit_home warm_install cap_precommit_warm fetch now_s record_timing capability; do
         sed -n "/^$fn() {/,/^}\$/p" "$BOOTSTRAP"
     done
 } > "$H/fn.sh"
-for f in precommit_home cap_precommit_warm fetch capability; do
+for f in precommit_home warm_install cap_precommit_warm fetch capability; do
     check "$f was extractable from the script" "1" "$(count "^$f() {" "$H/fn.sh")"
 done
 
@@ -498,6 +498,15 @@ if command -v pre-commit > /dev/null 2>&1; then
         "$(count 'warm    -> estate hook set' "$log8b")"
     check "  and the checkout it found in the workspace" "1" \
         "$(count 'warm    -> .*repo-a/.pre-commit-config.yaml' "$log8b")"
+    # Per-repo timing: the estate set built pre-commit-hooks from an empty
+    # cache, so it is timed along with the clone before it. repo-a uses the same
+    # config, finds it cached, and so adds nothing.
+    check "  the hook repo it built is timed" "1" \
+        "$(count '^warm\.pre-commit-hooks=[0-9][0-9]*s$' "$H/t8b/step-timings")"
+    check "  as is the clone before the first build" "1" \
+        "$(count '^warm\.clone=[0-9][0-9]*s$' "$H/t8b/step-timings")"
+    check "  and a cached checkout adds no entries" "0" \
+        "$(count '^warm\.repo-a\.' "$H/t8b/step-timings")"
 
     # The acceptance criterion this file exists to hold: cache present after the
     # bootstrap, asserted from the cache rather than inferred from an exit code.
@@ -548,6 +557,39 @@ check "  it names itself in degraded=" "1" \
     "$(printf '%s\n' "$out" | grep -c '^degraded=precommit-warm$')"
 check "  and it is timed even though it failed" "1" \
     "$(printf '%s\n' "$out" | grep -c '^timings=precommit-warm=')"
+
+# --- 8c'. per-tool timings survive the capability subshell -------------------
+#
+# step_end writes to a file because the capability's own variables die with
+# its subshell; capability() has to fold that file into TIMINGS, after the
+# capability's own entry, and empty it for the next one.
+{
+    for fn in now_s record_timing step_begin step_end capability; do
+        sed -n "/^$fn() {/,/^}\$/p" "$BOOTSTRAP"
+    done
+} > "$H/fn-steps.sh"
+mkdir -p "$H/t8e"
+cat > "$H/t8e-run.sh" << 'RUN'
+set -eu
+log() { :; }
+TIMINGS=
+DEGRADED=
+FAIL_FILE="$TMP/fail-reason"
+. "$FNS"
+fake_cap() {
+    step_begin
+    step_end fake.one
+    PIP_ATTEMPT=2
+    step_end fake.two
+}
+capability 1 fake fake_cap
+capability 1 other true
+echo "timings=$TIMINGS"
+RUN
+out=$(TMP="$H/t8e" FNS="$H/fn-steps.sh" sh "$H/t8e-run.sh" 2>&1)
+check "step timings are folded in after the capability's own entry" \
+    "timings=fake=0s fake.one=0s fake.two=0s fake.two.pip-attempt=2 other=0s" \
+    "$(printf '%s\n' "$out" | sed 's/=[0-9]*s/=0s/g' | grep '^timings=')"
 
 # --- 8d. the core.hooksPath claim cloud/README.md now makes ----------------
 #
