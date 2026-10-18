@@ -121,8 +121,8 @@ sh /tmp/bootstrap.sh "$REF" --profile "$PROFILE" --no-gcloud
 
 `--no-gcloud` is the one worth knowing: it saves a ~96 MB download in an
 environment that does no Google Cloud work. `--no-precommit` is the escape for
-an environment that cannot reach the Ubuntu archives, since that is the only
-part of the script needing them.
+an environment that cannot reach GitHub's release downloads or the package
+indexes, since the pre-commit tooling needs them.
 
 The run reports what it resolved, because with defaults in play the command
 line no longer says what happened:
@@ -537,7 +537,7 @@ then also land in `<prefix>/bin`. The manifest's `bin_dir=` names which.
 | `~/.claude/settings.json` | harness hook wiring, with `--with-hooks` (merged, not replaced) |
 | `~/.claude/bin/*-claude-hook` | the harness hook scripts (`credguard`, `prchecks-wait`, `prepush-guard`, `precommit`), with `--with-hooks` |
 | `~/.claude/bin/lib/resolve-command-dir` | the `cd` / `pushd` / `git -C` resolution the commit and push hooks source to find the repo a command targets; a hook that cannot source it reports "not checked" and stands down. With `--with-hooks` |
-| `/usr/local/bin/pre-commit`, `/usr/bin/shellcheck`, `/usr/local/bin/actionlint`, `/usr/local/bin/gitleaks`, `markdownlint-cli2` (npm global), `cspell` (npm global), `semgrep` (uv tool) | with `--with-precommit` |
+| `/usr/local/bin/pre-commit`, `/usr/local/bin/shellcheck`, `/usr/local/bin/actionlint`, `/usr/local/bin/gitleaks`, `markdownlint-cli2` (npm global), `cspell` (npm global), `semgrep` (uv tool) | with `--with-precommit` |
 | `/usr/local/bin/gh` | the GitHub CLI, pinned release, with `--with-gh` |
 | `/usr/local/bin/golangci-lint` | always: pinned to the estate's CI version, overwriting the image's older copy (`golangci=` in the manifest) |
 | `~/.claude.json` → `mcpServers."google-developer-knowledge"` | one user-scope MCP entry, no key, with `--with-devknowledge` (merged, not replaced) |
@@ -616,8 +616,8 @@ and CI uses the action, so this install is what makes `markdownlint-cli2
 "**/*.md"` — the gate this repo documents first — runnable, since that needs
 the binary on `PATH`.
 
-It used to be opt-in for two reasons: it is the only part of this script needing
-the Ubuntu archives, so an environment that cannot reach them keeps working by
+It used to be opt-in for two reasons: it needs GitHub's release downloads and
+the package indexes, so an environment that cannot reach them keeps working by
 not asking; and the one line an environment carries should declare what kind of
 environment it is.
 
