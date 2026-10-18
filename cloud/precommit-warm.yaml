@@ -8,11 +8,17 @@
 # first use; it is never a failure. See cloud/bootstrap.sh's cap_precommit_warm
 # and docs/cloud-sandbox-design.md §"Warming the pre-commit cache" (#441).
 #
-# WHY IT IS WORTH THE BYTES: gitleaks, actionlint and shfmt are
-# `language: golang` hooks that pre-commit compiles from source. Cold, that is
-# roughly two minutes — paid inside precommit-claude-hook's 120 s timeout, on
-# the first commit of every fresh container. The setup script's filesystem is
-# snapshotted and reused for about seven days; the session's is not.
+# WHY IT IS WORTH THE BYTES: the python and node hooks below build an
+# environment each, and every hook repo is cloned, on first use. Cold, that is
+# ~20 s, paid inside precommit-claude-hook's 120 s timeout on the first commit
+# of every fresh container. The setup script's filesystem is snapshotted and
+# reused for about seven days; the session's is not.
+#
+# NO HOOK HERE IS `language: golang`, and none should be. A golang hook compiles
+# from source on a cold cache (~30 s each for gitleaks and actionlint), which
+# is why the estate runs those two through their `-system` ids against binaries
+# the bootstrap installs (#609). A system hook has no environment to build, so
+# warming one only pre-clones its repo for the hook definition: ~1 s.
 #
 # ONE HOOK ID PER REPO IS ENOUGH. pre-commit keys an environment on the repo,
 # its rev, the language and any additional_dependencies — not on the hook id —
@@ -32,20 +38,19 @@ repos:
     hooks:
       - id: trailing-whitespace
 
-  # language: golang — compiled from source. One of the three that make this
-  # file worth having.
+  # language: system — runs the gitleaks binary the bootstrap installs.
   - repo: https://github.com/gitleaks/gitleaks
     rev: v8.30.1
     hooks:
-      - id: gitleaks
+      - id: gitleaks-system
 
-  # language: golang.
+  # language: system — runs the actionlint binary the bootstrap installs.
   - repo: https://github.com/rhysd/actionlint
     rev: v1.7.12
     hooks:
-      - id: actionlint
+      - id: actionlint-system
 
-  # language: golang.
+  # language: python — downloads the prebuilt shfmt binary.
   - repo: https://github.com/scop/pre-commit-shfmt
     rev: v3.13.1-1
     hooks:

@@ -533,7 +533,7 @@ then also land in `<prefix>/bin`. The manifest's `bin_dir=` names which.
 | `~/.claude/bin/<script>` | the five session helper scripts |
 | `~/.agents/.bootstrap-manifest` | what this run installed: ref, SHA, profile, skills, helpers, and `bin_dir=` (where the commands went) |
 | `~/.config/git/hooks/pre-commit` | global git hook, with `--with-precommit` |
-| `~/.cache/pre-commit/` | the warmed hook environments, with `--with-precommit` (~222 MB) |
+| `~/.cache/pre-commit/` | the warmed hook environments, with `--with-precommit` (~126 MB) |
 | `~/.claude/settings.json` | harness hook wiring, with `--with-hooks` (merged, not replaced) |
 | `~/.claude/bin/*-claude-hook` | the harness hook scripts (`credguard`, `prchecks-wait`, `prepush-guard`, `precommit`), with `--with-hooks` |
 | `~/.claude/bin/lib/resolve-command-dir` | the `cd` / `pushd` / `git -C` resolution the commit and push hooks source to find the repo a command targets; a hook that cannot source it reports "not checked" and stands down. With `--with-hooks` |
@@ -630,8 +630,10 @@ sandbox being rebuilt from a script is that nobody has to remember.
 **It also warms the hook cache, so the first commit does not pay for it.**
 `pre-commit` builds a hook's environment on first use, and in this estate that
 first use is a *commit* — inside `precommit-claude-hook`'s 120-second timeout.
-Cold, the estate's hook set is about two minutes, because `gitleaks`,
-`actionlint` and `shfmt` are `language: golang` hooks compiled from source. Both
+Cold, the estate's hook set is about 20 seconds of python and node environment
+builds. It used to be about two minutes, when `gitleaks` and `actionlint` ran
+as `language: golang` hooks compiled from source; they now use their `-system`
+ids against binaries this script installs (#609). Both
 outcomes of that race are wrong: a hook that times out and lets the commit
 through is a gate that silently did not run, and a commit killed for a reason
 unrelated to its content is a failure that succeeds on retry (#441).
@@ -658,8 +660,9 @@ shares are cached and the rest build on first use. Keeping that rare is #442.
 The measured cost is in
 [`docs/cloud-sandbox-design.md`](../docs/cloud-sandbox-design.md) §3.
 
-One dependency worth knowing about: the golang hooks need `go` on `PATH`. The
-sandbox image ships it at `/usr/local/go/bin`, and when it is absent pre-commit
+One dependency worth knowing about: a `language: golang` hook needs `go` on
+`PATH`. The estate set has none now, but a repo's own config can. The
+sandbox image ships Go at `/usr/local/go/bin`, and when it is absent pre-commit
 fetches its own toolchain from `https://go.dev/dl/?mode=json` — which this
 egress proxy answers 403. The warm logs a warning and degrades rather than
 hanging; the remedy is allowlisting `go.dev` or putting Go back.

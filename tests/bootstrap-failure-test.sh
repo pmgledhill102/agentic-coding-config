@@ -433,10 +433,13 @@ check "every repo carries a rev" "$repo_lines" "$rev_lines"
 check "  and none of them float" "0" \
     "$(count '^    rev: \(main\|master\|HEAD\)$' "$WARM_YAML")"
 
-# The three that make this file worth having. If a rename or a bump ever drops
-# one, the file still warms something and the two minutes come back.
-for r in gitleaks actionlint pre-commit-shfmt; do
-    check "  warms $r (language: golang)" "1" "$(count "/$r\$" "$WARM_YAML")"
+# gitleaks and actionlint stay in the set through their `-system` ids, which
+# build nothing (#609). The plain ids are `language: golang` and compile from
+# source, ~30 s each, so one creeping back in is the regression to catch.
+for r in gitleaks actionlint; do
+    check "  lists $r" "1" "$(count "/$r\$" "$WARM_YAML")"
+    check "  as $r-system, not the golang id" "1 0" \
+        "$(count "id: $r-system\$" "$WARM_YAML") $(count "id: $r\$" "$WARM_YAML")"
 done
 
 # semgrep is #316's, provisioned as a system binary. Its pre-commit hook clones

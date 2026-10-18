@@ -34,7 +34,7 @@
 # Ubuntu archives, so --no-precommit is the escape for an environment that
 # cannot reach them. It then WARMS the hook cache from cloud/precommit-warm.yaml
 # and from any checkout it finds, because the alternative is the first commit in
-# a fresh container spending two minutes compiling Go hooks inside a 120 s hook
+# a fresh container building every hook environment inside a 120 s hook
 # timeout (#441). The warm is its own capability, so `degraded=` can say which
 # of the two failed.
 #
@@ -1591,8 +1591,10 @@ HOOK
 # `pre-commit install-hooks` builds a hook's environment; the first run that
 # meets a cold cache builds it instead. In this estate that first run is a
 # COMMIT, inside two 120 s timeouts -- precommit-claude-hook's, and the Bash
-# tool's -- and the build is roughly two minutes, because gitleaks, actionlint
-# and shfmt are `language: golang` hooks compiled from source. Every outcome of
+# tool's. For the estate set that is ~20 s of python and node builds; it was
+# two minutes while gitleaks and actionlint compiled from source, before they
+# moved to their `-system` ids (#609), and a repo's own golang hooks still
+# can be. Every outcome of
 # that race is wrong: a hook that times out and lets the commit through is a
 # gate that silently did not run, and a commit killed for a reason unrelated to
 # its content is a failure that succeeds on retry (#441).
@@ -1697,8 +1699,8 @@ cap_precommit_warm() {
 
     # When `go` is absent pre-commit fetches its own toolchain, and the first
     # call is https://go.dev/dl/?mode=json -- which this sandbox's egress proxy
-    # answers 403 (measured 2026-09-15), so the golang hooks fail rather than
-    # falling back. The image ships Go at /usr/local/go/bin, so this warns about
+    # answers 403 (measured 2026-09-15), so a golang hook fails rather than
+    # falling back. The estate set has none; a checkout found in step 2 may. The image ships Go at /usr/local/go/bin, so this warns about
     # an image change rather than a routine path; the remedy is allowlisting
     # go.dev or putting Go back, and it is not something this script can do.
     command -v go > /dev/null 2>&1 ||
@@ -1947,7 +1949,7 @@ capability "$WITH_GCLOUD" gcloud cap_gcloud
 capability "$WITH_PRECOMMIT" precommit cap_precommit
 # Separate from cap_precommit, not folded into it, because they fail
 # differently. Without pre-commit there is no gate at all; without the warm the
-# gate is present and the first commit in a fresh container pays two minutes for
+# gate is present and the first commit in a fresh container pays the build for
 # it. Its own entry means `degraded=` says which of the two happened, and
 # `timings` carries its duration rather than burying it in the install's (#441).
 capability "$WITH_PRECOMMIT" precommit-warm cap_precommit_warm
