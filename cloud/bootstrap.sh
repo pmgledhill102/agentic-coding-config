@@ -30,9 +30,9 @@
 #
 # --with-precommit installs the pre-commit framework and the binaries this
 # estate's hooks need, and points git at a global hook so every repo in the
-# container is covered. It is the only part of this script that needs the
-# Ubuntu archives, so --no-precommit is the escape for an environment that
-# cannot reach them. It then WARMS the hook cache from cloud/precommit-warm.yaml
+# container is covered. Its binaries come from pinned GitHub releases and its
+# tools from PyPI and npm, so --no-precommit is the escape for an environment
+# that cannot reach those. It then WARMS the hook cache from cloud/precommit-warm.yaml
 # and from any checkout it finds, because the alternative is the first commit in
 # a fresh container building every hook environment inside a 120 s hook
 # timeout (#441). The warm is its own capability, so `degraded=` can say which
@@ -455,8 +455,8 @@ esac
 # that uv and pip use.
 #
 # INSTALL_MODE distinguishes system from the other two because the system
-# layout keeps each tool's own default install route (apt, a global npm,
-# uv's default tool dir) exactly as before, where a prefix has to steer every
+# layout keeps each tool's own default install route (a global npm, uv's
+# default tool dir) exactly as before, where a prefix has to steer every
 # one of them explicitly.
 SYSTEM_BIN=/usr/local/bin
 SYSTEM_OPT=/opt
@@ -539,36 +539,6 @@ fetch() {
     curl -sSfL $CURL_RETRY_OPTS \
         --connect-timeout 15 --speed-limit 1024 --speed-time 30 --max-time 600 \
         "$1" -o "$2"
-}
-
-# --- apt_update: refresh Ubuntu's own sources, and only those --------------
-#
-# `apt-get update` returns non-zero if ANY configured source fails, and a
-# sandbox image carries sources this script has no interest in: deadsnakes,
-# ondrej/php and docker.list all ship in /etc/apt/sources.list.d/. Where
-# egress policy blocks a PPA -- which it does in some environments and not
-# others -- a bare update fails on a repository nothing here needs, and the
-# only package actually wanted (shellcheck) is in the Ubuntu archive.
-#
-# So point apt at Ubuntu's list alone and blank SourceParts, which is the
-# directory the third-party entries live in. noble and later put the archive
-# entries in deb822 /etc/apt/sources.list.d/ubuntu.sources; jammy and earlier
-# in /etc/apt/sources.list. Try whichever exists, then an unrestricted update
-# as a last resort for an image laid out like neither.
-#
-# The return value is advisory. Callers should attempt the install regardless:
-# a refresh that could not reach the archive still leaves whatever package
-# lists the image was built with, and those are frequently enough.
-apt_update() {
-    for _src in /etc/apt/sources.list.d/ubuntu.sources /etc/apt/sources.list; do
-        [ -s "$_src" ] || continue
-        if apt-get update -qq \
-            -o Dir::Etc::SourceList="$_src" \
-            -o Dir::Etc::SourceParts=/dev/null > /dev/null 2>&1; then
-            return 0
-        fi
-    done
-    apt-get update -qq > /dev/null 2>&1
 }
 
 # --- pip_install: PyPI, whatever this image calls pip ----------------------
@@ -703,11 +673,11 @@ fi
 # revisit it. A task that genuinely needs a package can install it, having
 # established that it is missing.
 #
-# --with-precommit does apt-get, which is not a reversal of that. The objection
-# above is to installing on a *guess*; a hook declared in a repo's committed
+# --with-precommit is not a reversal of that. The objection above is to
+# installing on a *guess*; a hook declared in a repo's committed
 # .pre-commit-config.yaml that cannot run without shellcheck is a demonstrated
-# dependency. It stays behind a flag so the archive requirement is opted into
-# rather than imposed on every environment.
+# dependency. It stays behind a flag so the install is opted into rather than
+# imposed on every environment.
 
 # =============================================================================
 # TIER 1 -- the toolkit. Runs first, and a failure here is fatal.
@@ -1318,10 +1288,11 @@ cap_precommit() {
     # laptop missing one, and normalising it would leave enforcement that is
     # routinely skipped, which is not enforcement.
     #
-    # apt needs root, so off the system layout the binary comes from a pinned
-    # release instead, the same pattern as actionlint below. The system layout
-    # keeps apt: that is the route every root sandbox has always taken.
-    if ! command -v shellcheck > /dev/null 2>&1 && [ "$INSTALL_MODE" != system ]; then
+    # The binary comes from the pinned release on every layout, the same pattern
+    # as actionlint below. Ubuntu's package is 0.9.0, so an apt fallback would
+    # put the CLI and the hook on different versions exactly when GitHub is
+    # unreachable; failing loudly, as the other pinned binaries do, is the point.
+    if ! command -v shellcheck > /dev/null 2>&1; then
         SC_VER=0.11.0
         fetch "https://github.com/koalaman/shellcheck/releases/download/v${SC_VER}/shellcheck-v${SC_VER}.linux.x86_64.tar.xz" \
             "$TMP/shellcheck.tar.xz" ||
@@ -1330,19 +1301,6 @@ cap_precommit() {
             die "could not unpack shellcheck — is xz present?"
         install -m 0755 "$TMP/shellcheck-v${SC_VER}/shellcheck" "$BIN_DIR/shellcheck" ||
             die "could not install shellcheck"
-    fi
-    if ! command -v shellcheck > /dev/null 2>&1; then
-        # A failed refresh is reported, not fatal. It used to die here, which
-        # meant a blocked PPA -- a repository nothing in this script wants --
-        # took down an install that the image's existing package lists would
-        # have satisfied. apt_update narrows the sources to Ubuntu's own, so
-        # a failure now means the archives really are unreachable; even then,
-        # let the install be the thing that decides.
-        apt_update || log "warn: apt refresh failed, trying the install anyway"
-        if ! DEBIAN_FRONTEND=noninteractive apt-get install -y -qq shellcheck \
-            > /dev/null 2>&1; then
-            die "could not install shellcheck — are the Ubuntu archives reachable?"
-        fi
     fi
     log "shellck -> $(command -v shellcheck)"
     step_end precommit.shellcheck
