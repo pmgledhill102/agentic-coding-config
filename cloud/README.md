@@ -811,9 +811,10 @@ curl -sSL https://raw.githubusercontent.com/pmgledhill102/agentic-coding-config/
 sh /tmp/bootstrap.sh main --profile claude-cloud-sandbox
 ```
 
-Do not add `--no-gcloud` here even where gcloud already exists: the install is
-skipped anyway when it is on `PATH`, and that same branch is what installs the
-gcloud wrapper.
+Do not add `--no-gcloud` here even where gcloud already exists: the download
+is skipped when an SDK is already on `PATH`, but the same capability is what
+wraps that SDK so the preset `CLOUDSDK_AUTH_ACCESS_TOKEN` does not beat a broker
+grant.
 
 Skills are read when the agent starts, so a newly installed skill appears after
 the session restarts or resumes. The helper is usable immediately.
