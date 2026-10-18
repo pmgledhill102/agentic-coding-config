@@ -984,6 +984,39 @@ cur=$(HOME="$H/home" PATH="$P/bin:$PATH" "$GATHER" 2> /dev/null |
     sed -n '/^===bootstrap_currency/,/^===[a-z]/p')
 check "  and is silent once it is on PATH" "0" \
     "$(printf '%s\n' "$cur" | grep -c '^bin_dir_off_path=')"
+
+# An image that already ships gcloud, as a symlink in the very bin dir the
+# wrapper is written to. The SDK must be wrapped rather than skipped, and the
+# wrapper must not be written through the symlink into the SDK's own gcloud.
+Q="$H/preinstalled"
+mkdir -p "$Q/sdk" "$Q/bin" "$H/home2" "$H/cwd2"
+cp -R "$S/gc/google-cloud-sdk" "$Q/sdk/"
+ln -s "$Q/sdk/google-cloud-sdk/bin/gcloud" "$Q/bin/gcloud"
+( cd "$H/cwd2" && HOME="$H/home2" PATH="$Q/bin:$FARM" STUB_LOG="$H" PRE_COMMIT_HOME="$H/pc-cache" \
+    sh "$H/bootstrap.sh" "$BOOTSTRAP_TEST_REF" --profile codex-cloud-sandbox \
+    --no-precommit --no-hooks --no-terraform --no-devknowledge --prefix "$Q" ) > "$H/run2.log" 2>&1
+check "a preinstalled gcloud run succeeds" "0" "$?"
+check "  gcloud is not degraded" "" "$(mval degraded "$H/home2/.agents/.bootstrap-manifest")"
+check "  the image's symlink was replaced by the wrapper" "0 1" \
+    "$([ -L "$Q/bin/gcloud" ] && echo 1 || echo 0) $(count '^# Installed by agentic-coding-config cloud/bootstrap.sh' "$Q/bin/gcloud")"
+check "  the wrapper execs the preinstalled SDK" "2" \
+    "$(count "$Q/sdk/google-cloud-sdk/bin/gcloud \"\$@\"" "$Q/bin/gcloud")"
+check "  the SDK's own gcloud was not overwritten" "0" \
+    "$(count 'Installed by agentic-coding-config' "$Q/sdk/google-cloud-sdk/bin/gcloud")"
+check "  nothing was downloaded into the prefix" "0" \
+    "$([ -e "$Q/opt/google-cloud-sdk" ] && echo 1 || echo 0)"
+check "  the wrapper runs the SDK it names" "Google Cloud SDK 999.0.0 (fixture)" \
+    "$(HOME="$H/home2" PATH="$FARM" "$Q/bin/gcloud" --version 2> /dev/null)"
+# A second run finds its own wrapper and keeps the SDK it points at.
+( cd "$H/cwd2" && HOME="$H/home2" PATH="$Q/bin:$FARM" STUB_LOG="$H" PRE_COMMIT_HOME="$H/pc-cache" \
+    sh "$H/bootstrap.sh" "$BOOTSTRAP_TEST_REF" --profile codex-cloud-sandbox \
+    --no-precommit --no-hooks --no-terraform --no-devknowledge --prefix "$Q" ) > "$H/run3.log" 2>&1
+check "  a re-run still wraps the same SDK" "2" \
+    "$(count "$Q/sdk/google-cloud-sdk/bin/gcloud \"\$@\"" "$Q/bin/gcloud")"
+if [ "$FAIL" -gt 0 ]; then
+    printf '        --- preinstalled run log (tail) ---\n'
+    tail -25 "$H/run2.log" | sed 's/^/        /'
+fi
 rm -rf "$H"
 
 printf '\n%s passed, %s failed\n' "$PASS" "$FAIL"

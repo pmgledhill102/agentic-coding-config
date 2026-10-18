@@ -1114,22 +1114,40 @@ record_timing toolkit "$TIER1_SECS"
 # that costs a second human approval.
 
 cap_gcloud() {
-    if command -v gcloud > /dev/null 2>&1; then
-        log "gcloud  : already present, left alone"
-        return 0
+    # An SDK already on PATH is wrapped, not skipped: the Claude cloud image
+    # ships gcloud preinstalled, and skipping it left the preset token below
+    # unhandled. Only the download is skipped.
+    _existing=$(command -v gcloud 2> /dev/null || true)
+    _fresh=0
+    if [ -n "$_existing" ] && grep -q '^# Installed by agentic-coding-config cloud/bootstrap.sh' "$_existing" 2> /dev/null; then
+        # Our own wrapper, from an earlier run: rewrite it from the current
+        # template, keeping the SDK it already points at.
+        _sdk=$(sed -n 's#^exec \(.*\)/bin/gcloud "\$@"$#\1#p' "$_existing" | tail -1)
+    elif [ -n "$_existing" ]; then
+        _real=$(readlink -f "$_existing" 2> /dev/null || echo "$_existing")
+        _sdk=$(dirname "$(dirname "$_real")")
+    else
+        fetch https://dl.google.com/dl/cloudsdk/channels/rapid/downloads/google-cloud-cli-linux-x86_64.tar.gz \
+            "$TMP/gcloud.tar.gz" ||
+            die "could not download the gcloud SDK — is dl.google.com on the allowlist?"
+        mkdir -p "$OPT_DIR" || die "could not create $OPT_DIR"
+        tar -xzf "$TMP/gcloud.tar.gz" -C "$OPT_DIR" || die "could not unpack the gcloud SDK"
+        _sdk="$OPT_DIR/google-cloud-sdk"
+        # --path-update false, then a wrapper on BIN_DIR: a PATH line appended to
+        # a shell profile is not reliably sourced by the non-interactive shells
+        # tool calls run in.
+        "$_sdk/install.sh" --quiet --usage-reporting false \
+            --path-update false --command-completion false > /dev/null || true
+        _fresh=1
     fi
-    fetch https://dl.google.com/dl/cloudsdk/channels/rapid/downloads/google-cloud-cli-linux-x86_64.tar.gz \
-        "$TMP/gcloud.tar.gz" ||
-        die "could not download the gcloud SDK — is dl.google.com on the allowlist?"
-    mkdir -p "$OPT_DIR" || die "could not create $OPT_DIR"
-    tar -xzf "$TMP/gcloud.tar.gz" -C "$OPT_DIR" || die "could not unpack the gcloud SDK"
-    _sdk="$OPT_DIR/google-cloud-sdk"
-    # --path-update false, then symlink: a PATH line appended to a shell profile
-    # is not reliably sourced by the non-interactive shells tool calls run in.
-    "$_sdk/install.sh" --quiet --usage-reporting false \
-        --path-update false --command-completion false > /dev/null || true
-    # A wrapper rather than a symlink, because the sandbox image presets
-    # CLOUDSDK_AUTH_ACCESS_TOKEN and that variable outranks the
+    if [ -z "$_sdk" ] || [ ! -x "$_sdk/bin/gcloud" ]; then
+        die "gcloud at $_existing is not inside an SDK tree, so it cannot be wrapped"
+    fi
+    [ "$_fresh" -eq 1 ] || log "gcloud  : SDK already at $_sdk; wrapping it"
+    # A wrapper rather than a symlink, because the agent proxy presets
+    # CLOUDSDK_AUTH_ACCESS_TOKEN in every tool-call shell (the agent process
+    # itself does not carry it, so no environment setting removes it), and that
+    # variable outranks the
     # auth/access_token_file the broker configures. Every call then fails
     # ACCESS_TOKEN_TYPE_UNSUPPORTED while the helper, `status` and the token file
     # all report healthy — confirmed in two independent fresh sandboxes.
@@ -1146,6 +1164,11 @@ cap_gcloud() {
     # The body is quoted so its own $-expansions stay literal; the SDK path is
     # the one value it needs from here, filled in by sed. In the system layout
     # that yields /opt/google-cloud-sdk, the path it always carried.
+    #
+    # rm first: $BIN_DIR/gcloud can be the image's symlink into the SDK, and a
+    # redirect writes THROUGH a symlink -- replacing the SDK's own gcloud with a
+    # wrapper that execs itself.
+    rm -f "$BIN_DIR/gcloud"
     sed "s#@GCLOUD_SDK@#$_sdk#g" > "$BIN_DIR/gcloud" << 'WRAPPER'
 #!/bin/sh
 # Installed by agentic-coding-config cloud/bootstrap.sh.
@@ -1231,7 +1254,9 @@ fi
 exec @GCLOUD_SDK@/bin/gcloud "$@"
 WRAPPER
     chmod 0755 "$BIN_DIR/gcloud" || true
-    ln -sf "$_sdk/bin/gsutil" "$BIN_DIR/gsutil" || true
+    # gsutil needs no wrapper; link it only where this run installed the SDK,
+    # and leave an image's own entry alone.
+    [ "$_fresh" -eq 0 ] || ln -sf "$_sdk/bin/gsutil" "$BIN_DIR/gsutil" || true
     log "gcloud  -> $(gcloud --version 2> /dev/null | head -1 || echo 'installed')"
 }
 
