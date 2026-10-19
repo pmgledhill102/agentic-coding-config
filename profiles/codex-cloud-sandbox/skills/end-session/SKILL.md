@@ -55,7 +55,7 @@ separate lane, and the proxy has both 403ed them
 allowed them, so the script's REST probe may pass and a `gh_*` section can then
 carry a raw GraphQL 403 body, even under `exit=0`
 ([#600](https://github.com/pmgledhill102/agentic-coding-config/issues/600)).
-Ignore those sections whatever they contain: the MCP server is the only route. Step 1 therefore issues the MCP queries as a
+Ignore those sections whatever they contain: the MCP server is the route for issues and PRs here (`gh api` REST works for repo-scoped reads and writes, but GraphQL-backed `gh` subcommands do not). Step 1 therefore issues the MCP queries as a
 matter of course rather than waiting to see a sentinel and recovering from it.
 Tool names below are Claude Code's spelling (`mcp__github__list_issues`); a
 client that namespaces MCP tools differently is naming the same server and the
@@ -113,12 +113,15 @@ Output is a sectioned stream. Each section starts with `===<name> (exit=<N>)===`
 ```text
 mcp__github__list_issues(owner, repo, state: "OPEN", perPage: 100,
                          fields: ["number", "title", "labels", "assignees", "state"])
-mcp__github__list_pull_requests(owner, repo, state: "open")
+mcp__github__list_pull_requests(owner, repo, state: "open", perPage: 20,
+                                fields: ["number", "title", "state", "draft", "mergeable_state",
+                                         "html_url", "user", "head"])
 ```
 
 `fields` on the issue call is what keeps it affordable — around 750 tokens for
 a 36-issue repo, against orders of magnitude more unfiltered. Do not omit it,
-and do not add `body`.
+and do not add `body`. The same holds for the PR call: one Dependabot group PR's
+body cost ~20K tokens, so never add `body` there either.
 
 - **Issues assigned to you** (step 10) — filter the issue response client-side
   to issues whose `assignees` include the authenticated login.
@@ -128,7 +131,7 @@ and do not add `body`.
   ([#277](https://github.com/pmgledhill102/agentic-coding-config/issues/277)).
 - **Open PRs** (step 8) — the PR response directly. One honest difference from
   the `gh` route: it filters to `--author @me` and `list_pull_requests` has no
-  author filter, so this lists **all** open PRs on the repo. Equivalent on a
+  author filter (`user` in `fields` allows a client-side one), so this lists **all** open PRs on the repo. Equivalent on a
   personal repo; worth a caveat line anywhere it is not.
 
 If the MCP server is unavailable too, both summary lines read `n/a (no GitHub

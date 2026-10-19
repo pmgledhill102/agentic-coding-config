@@ -47,7 +47,7 @@ lane, and the proxy has both 403ed them
 allowed them, so the script's REST probe may pass. The script probes GraphQL
 separately before the issue sections run, so here they return a
 `gh-unavailable` / `gh-unauthorized` sentinel and never usable data — the
-GitHub MCP server is the only route.
+GitHub MCP server is the route for issue data (`gh api` REST is repo-scoped and works, but the listing subcommands are GraphQL-backed).
 
 That is a settled property of the container, not a failure to detect. Step 1
 therefore issues the MCP queries as ordinary work of its own, rather than

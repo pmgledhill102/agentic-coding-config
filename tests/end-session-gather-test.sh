@@ -132,6 +132,39 @@ check "a failed fetch labels the count instead of clearing it" \
 check "a zero count is reported plainly, with no fetch to fail" \
     grep -q "^candidate=$WORK/parent/clean dirty=0 unpushed=0 stashes=0\$" "$out"
 
+# A green REST probe must not license the GraphQL-backed sections (#600). A repo
+# with a GitHub origin and a stub `gh` whose REST lane passes while GraphQL, and
+# so `pr list` / `issue list`, is blocked: the live Claude Code sandbox shape.
+# Both sections must say gh-unauthorized and exit non-zero, never pass a raw 403
+# body through as data.
+mkdir -p "$WORK/bin" "$WORK/single"
+cat >"$WORK/bin/gh" <<'STUB'
+#!/bin/sh
+case "$1 $2" in
+    "api repos/"*) echo false ;;
+    "api graphql" | "pr list" | "issue list")
+        echo "HTTP 403: GraphQL is not available" >&2
+        exit 1 ;;
+    *) exit 0 ;;
+esac
+STUB
+chmod +x "$WORK/bin/gh"
+(
+    cd "$WORK/single" || exit 1
+    git init -q
+    git commit -q --allow-empty -m init
+    git remote add origin https://github.com/example-owner/example-repo.git
+)
+(cd "$WORK/single" && PATH="$WORK/bin:$PATH" "$GATHER" 2>/dev/null) >"$out"
+for s in open_prs gh_assigned; do
+    check "graphql blocked: $s exits non-zero" \
+        grep -q "^===$s (exit=1)===" "$out"
+    check "graphql blocked: $s says gh-unauthorized" \
+        sh -c 'grep -A1 "^===$2 (exit=1)===" "$1" | grep -qx gh-unauthorized' _ "$out" "$s"
+    check "graphql blocked: $s carries no 403 body" \
+        sh -c '! grep -A3 "^===$2 (exit=" "$1" | grep -q 403' _ "$out" "$s"
+done
+
 [ "$fail" -eq 0 ] || cat "$out"
 echo "$pass passed, $fail failed"
 [ "$fail" -eq 0 ]

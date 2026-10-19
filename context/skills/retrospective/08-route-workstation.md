@@ -30,7 +30,7 @@ Where the answer is machine-local, the memory route is the memory row of step 5'
 
 Both routes satisfy this, because both take the repo as an argument rather than inferring it from the working directory: `mcp__github__issue_write` with an explicit `owner`/`repo`, or `gh issue create --repo pmgledhill102/<target>`. Either works identically from a sandbox or a laptop.
 
-Prefer MCP when it is connected, and fall back to `gh` where it is not and `gh` is present. Which of the two exists is a property of the surface: **`gh` is absent from Claude cloud sandboxes**, where MCP is the only route, so the `gh` forms here are for workstations and headless runs that have it. They are written out because the *operation* is what matters, not the tool.
+Prefer MCP when it is connected, and fall back to `gh` where it is not and `gh` is present. Which of the two exists is a property of the surface: **in Claude cloud sandboxes GraphQL-backed `gh` subcommands (`gh issue list`, `gh pr list`, `gh pr view`, search) are blocked, while `gh api repos/{owner}/{repo}/...` REST works for reads and writes on attached repos**, so prefer MCP there and treat the `gh` forms here as the operation to perform, not the command to type. They are written out because the *operation* is what matters, not the tool.
 
 #### 6b. Never edit settings.json — file an a-c-c Issue
 
