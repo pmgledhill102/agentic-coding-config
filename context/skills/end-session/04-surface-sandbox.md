@@ -19,7 +19,7 @@ separate lane, and the proxy has both 403ed them
 allowed them, so the script's REST probe may pass and a `gh_*` section can then
 carry a raw GraphQL 403 body, even under `exit=0`
 ([#600](https://github.com/pmgledhill102/agentic-coding-config/issues/600)).
-Ignore those sections whatever they contain: the MCP server is the only route. Step 1 therefore issues the MCP queries as a
+Ignore those sections whatever they contain: the MCP server is the route for issues and PRs here (`gh api` REST works for repo-scoped reads and writes, but GraphQL-backed `gh` subcommands do not). Step 1 therefore issues the MCP queries as a
 matter of course rather than waiting to see a sentinel and recovering from it.
 Tool names below are Claude Code's spelling (`mcp__github__list_issues`); a
 client that namespaces MCP tools differently is naming the same server and the

@@ -164,13 +164,22 @@ export REPO_SLUG
 # data (the Claude cloud sandbox proxy authenticates identity endpoints but
 # 403s every repo-scoped API path, #273), and one gh-unauthorized sentinel
 # beats three separate 403 dumps. Costs one API round-trip when healthy.
+#
+# The REST probe does not license `gh pr list` / `gh issue list`: those ride
+# GraphQL, a separate lane the Claude Code proxy blocks for every session while
+# repo-scoped REST can pass (#600). GH_ISSUES_API probes GraphQL itself, once,
+# and only after REST passed.
 GH_REPO_API=unavailable
+GH_ISSUES_API=unavailable
 if command -v gh >/dev/null 2>&1 && [ -n "$REPO_SLUG" ]; then
     if gh api "repos/$REPO_SLUG" --jq .id >/dev/null 2>&1; then
         GH_REPO_API=ok
+        if gh api graphql -f query='{viewer{login}}' >/dev/null 2>&1; then
+            GH_ISSUES_API=ok
+        fi
     fi
 fi
-export GH_REPO_API
+export GH_REPO_API GH_ISSUES_API
 
 # --- Phase 2: parallel fan-out of independent reads ---
 # Each helper runs the command, captures stdout+stderr into <name>.out and
@@ -228,7 +237,7 @@ run_sh open_prs '
         echo "gh-unavailable"
         exit 1
     fi
-    if [ "$GH_REPO_API" != "ok" ]; then
+    if [ "$GH_REPO_API" != "ok" ] || [ "$GH_ISSUES_API" != "ok" ]; then
         echo "gh-unauthorized"
         exit 1
     fi
@@ -251,7 +260,7 @@ run_sh gh_assigned '
         echo "gh-unavailable"
         exit 1
     fi
-    if [ "$GH_REPO_API" != "ok" ]; then
+    if [ "$GH_REPO_API" != "ok" ] || [ "$GH_ISSUES_API" != "ok" ]; then
         echo "gh-unauthorized"
         exit 1
     fi
@@ -259,9 +268,11 @@ run_sh gh_assigned '
         echo "jq-unavailable"
         exit 1
     fi
-    gh issue list ${REPO_SLUG:+-R "$REPO_SLUG"} --assignee @me --state open --limit 20 \
-        --json number,title \
-      | jq -r '\''.[] | "#\(.number) \(.title)"'\''
+    # Capture first: a pipe would report the exit status of jq, not gh, and
+    # turn a gh failure into exit=0 data.
+    issues=$(gh issue list ${REPO_SLUG:+-R "$REPO_SLUG"} --assignee @me --state open --limit 20 \
+        --json number,title) || exit 1
+    printf "%s\n" "$issues" | jq -r '\''.[] | "#\(.number) \(.title)"'\''
 '
 
 # shellcheck disable=SC2016
