@@ -55,9 +55,12 @@ jobs:
           prs="${RUNNER_TEMP}/prs.tsv"
           # number, head SHA, head repo ("-" when the fork is gone), armed.
           # No empty fields: tab is IFS whitespace, so read would collapse them.
-          gh api --paginate "repos/${R}/pulls?state=open&base=main&per_page=100" \
+          if ! gh api --paginate "repos/${R}/pulls?state=open&base=main&per_page=100" \
             --jq '.[] | [.number, .head.sha, (.head.repo.full_name // "-"), (.auto_merge != null)] | @tsv' \
-            > "${prs}"
+            > "${prs}"; then
+            echo "::error::Could not list pull requests with a non-empty AUTOMERGE_PAT. The most likely cause is that ${R} is not on the token's selected-repositories list -- a fine-grained PAT's scope cannot be read from outside the token, so this is where a missed repo surfaces. Add ${R} to the AUTOMERGE_PAT repository list."
+            exit 1
+          fi
 
           failed=0
           while IFS="$(printf '\t')" read -r n sha head_repo armed; do
@@ -83,7 +86,7 @@ jobs:
                  -f "expected_head_sha=${sha}" > /dev/null; then
               echo "#${n}: updated (was ${behind} behind main)"
             else
-              echo "::error::#${n}: update-branch failed (was ${behind} behind main at ${sha})"
+              echo "::error::#${n}: update-branch failed (was ${behind} behind main at ${sha}) (a 403/404 here can also mean ${R} is missing from the AUTOMERGE_PAT repository list, or the token lacks Workflows write when the PR touches .github/workflows/)"
               failed=$((failed + 1))
             fi
           done < "${prs}"

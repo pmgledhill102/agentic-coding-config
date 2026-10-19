@@ -315,12 +315,15 @@ Decided 2026-08-29. The auto-merge PAT is a **single shared fine-grained
 token**, whose selected-repositories list is exactly the set of repos
 running the auto-merge apparatus — no wider.
 
-- **Permissions: Contents read/write, Pull requests read/write, and the
-  forced Metadata read. Nothing else.** This is the floor, not an
-  over-grant: the approval needs the pull-requests half, and the merge
-  itself writes commits to the base branch — GitHub has no narrower
-  "may merge but not push" permission, so Contents write cannot be
-  trimmed away.
+- **Permissions: Contents read/write, Pull requests read/write, Workflows
+  read/write, and the forced Metadata read. Nothing else.** This is the
+  floor, not an over-grant: the approval needs the pull-requests half, and
+  the merge itself writes commits to the base branch — GitHub has no
+  narrower "may merge but not push" permission, so Contents write cannot be
+  trimmed away. Workflows write is needed because the branch-update
+  workflow pushes a merge commit into the PR head, and GitHub refuses any
+  push that touches `.github/workflows/` from a token without it, which
+  covers every Dependabot `github-actions` bump.
 - **Storage stays per-repo even though the token is shared, and each repo
   holds it twice.** A personal account has no organisation secrets, so the
   same token is stored under the same name in each repo's **Dependabot**
