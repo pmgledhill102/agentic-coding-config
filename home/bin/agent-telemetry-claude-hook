@@ -1,0 +1,76 @@
+#!/bin/sh
+# agent-telemetry-claude-hook — the Claude Code hooks that feed agent-telemetry.
+#
+#   session-start   record the session marker, then ship. Wired after
+#                   session-cache-verdict.
+#   stop            at most once every 5 minutes, ship and upload the
+#                   transcript tail. Wired to the Stop hook.
+#
+# The Claude-specific part is the payload: both events arrive as JSON on stdin,
+# and `stop` carries `transcript_path`. agent-telemetry itself stays
+# vendor-neutral, which is why this is a separate script.
+#
+# Exits 0 always and prints nothing: a SessionStart hook's stdout reaches the
+# agent's context, and instrumentation must never be why a session fails to
+# start or a turn fails to end. Every slow step is detached.
+
+set -u
+
+HELPER="$(dirname "$0")/agent-telemetry"
+STATE="${AGENT_TELEMETRY_HOME:-$HOME/.agents/telemetry}"
+MARKER="${AGENT_TELEMETRY_MARKER:-$HOME/.agents/.session-marker}"
+# Seconds between Stop-hook shipments. Stop fires after every turn; shipping on
+# each would be a process spawn and a request per turn for no gain.
+STOP_EVERY="${AGENT_TELEMETRY_STOP_EVERY:-300}"
+
+event=${1:-}
+
+# Drain stdin before anything can block; a hook that never reads it can leave
+# the harness writing into a full pipe. No stdin at all is legitimate.
+PAYLOAD=$(cat 2> /dev/null || true)
+
+field() { # field <key> — from the payload, or empty
+    [ -n "$PAYLOAD" ] || return 0
+    command -v jq > /dev/null 2>&1 || return 0
+    printf '%s' "$PAYLOAD" | jq -r --arg k "$1" '.[$k] // empty' 2> /dev/null || true
+}
+
+[ -x "$HELPER" ] || exit 0
+
+case "$event" in
+    session-start)
+        sid=$(field session_id)
+        # The marker is written by session-cache-verdict, a separate hook that
+        # runs alongside this one with no ordering guarantee. Wait for it in the
+        # background rather than here, so the session never waits on telemetry.
+        (
+            trap '' HUP
+            i=0
+            while [ "$i" -lt 25 ]; do
+                if [ -f "$MARKER" ] && { [ -z "$sid" ] || grep -q "^session_id=$sid\$" "$MARKER" 2> /dev/null; }; then
+                    break
+                fi
+                sleep 0.2
+                i=$((i + 1))
+            done
+            # A marker that never appeared is a workstation, or a container with no
+            # manifest: there is simply nothing to record.
+            [ -f "$MARKER" ] && "$HELPER" record session-marker "$MARKER"
+            "$HELPER" ship
+        ) < /dev/null > /dev/null 2>&1 &
+        ;;
+    stop)
+        mkdir -p "$STATE" 2> /dev/null || exit 0
+        stamp="$STATE/stop.last"
+        now=$(date +%s 2> /dev/null || echo 0)
+        last=$(cat "$stamp" 2> /dev/null || echo 0)
+        case "$last" in "" | *[!0-9]*) last=0 ;; esac
+        [ "$now" -gt 0 ] && [ $((now - last)) -ge "$STOP_EVERY" ] || exit 0
+        echo "$now" > "$stamp" 2> /dev/null || exit 0
+        "$HELPER" ship --background
+        transcript=$(field transcript_path)
+        [ -z "$transcript" ] || "$HELPER" upload-transcript "$transcript" --background
+        ;;
+    *) ;;
+esac
+exit 0

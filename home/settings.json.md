@@ -71,8 +71,8 @@ See `docs/end-session-design.md` for the full rationale.
 
 ### SessionStart: `session-cache-verdict`
 
-The one `SessionStart` hook, and it exists because the question it answers is
-**only true if asked at the start**.
+The first `SessionStart` hook (the second is `agent-telemetry-claude-hook`, below), and
+it exists because the question it answers is **only true if asked at the start**.
 
 A cloud environment runs its setup script once, snapshots the filesystem, and
 restores that snapshot for later sessions — so a container either rebuilt or
@@ -102,6 +102,29 @@ and [`docs/cloud-sandbox-design.md`](https://github.com/pmgledhill102/agentic-co
 §2 — the rebuild rate is what decides whether deferring a tool install buys
 anything. The full URL rather than a relative path because this file deploys to
 `~/.claude/`, where `docs/` does not exist.
+
+### Agent telemetry client
+
+- `Bash(~/.claude/bin/agent-telemetry event *)`
+- `Bash(~/.claude/bin/agent-telemetry session-end)`
+- `Bash(~/.claude/bin/agent-telemetry session-end *)`
+- `Bash(~/.claude/bin/agent-telemetry ship)`
+- `Bash(~/.claude/bin/agent-telemetry status)`
+
+The four subcommands an agent runs by hand: `event` (skill step records, #629),
+`session-end` (the end-session record), `ship` and `status`. All of them only
+append to, read, or send from a local spool, and none can print a secret: the
+write key travels in a mode-0600 curl config file and never in argv or output.
+`event` additionally drops any key not in the helper's metadata allowlist, so
+approving it unattended cannot be turned into a channel for session content.
+
+`record` and `upload-transcript` are deliberately not listed. Only the hooks
+below run them, and the hooks are executed by the harness, not proposed as tool
+calls, so no rule is needed; a human running one by hand can answer the prompt.
+
+With no `TELEMETRY_INGEST_URL` every one of these only spools and exits 0, which
+is why they are safe to allow before the ingest exists. See `cloud/README.md`
+("Telemetry") and ADR 026 in `pmgledhill102/gcp-org-management`.
 
 ### GCP credential broker client
 
@@ -984,6 +1007,28 @@ point at went away with the plugin in #312.
    installed. Only governs commands Claude runs via its Bash tool — manual
    terminal commits/pushes are CI-backed.
 
+### SessionStart and Stop: `agent-telemetry-claude-hook`
+
+Two entries that drive the telemetry helper (agentic-coding-config#431).
+
+1. **SessionStart** (`agent-telemetry-claude-hook session-start`), beside
+   `session-cache-verdict`. Records the session marker into the spool, then
+   ships. Hooks matching one event run side by side with no ordering guarantee,
+   so it cannot assume the marker is written yet: it waits for it (up to five
+   seconds) in a **detached** subshell, so the session never waits on telemetry.
+   Prints nothing, because a SessionStart hook's stdout reaches the agent's
+   context.
+2. **Stop**, throttled to once per five minutes by a timestamp file (Stop fires
+   after every turn). Ships the spool and uploads the transcript tail, both
+   detached. The transcript path comes from `transcript_path` in the hook
+   payload, which is why the Claude-specific parsing lives in a wrapper and the
+   helper itself stays vendor-neutral.
+
+Both exit 0 unconditionally: instrumentation must never be why a session fails
+to start or a turn fails to end. With no `TELEMETRY_INGEST_URL` they spool and
+do nothing else, so wiring them before the ingest exists is safe. 5 s timeouts,
+because nothing they do inline is slow.
+
 ### PostToolUse (Write|Edit)
 
 1. **terraform fmt** — Auto-formats `.tf` files after every Write or Edit.
@@ -1001,7 +1046,7 @@ likely to run these with; the `command -v` guard keeps a sandbox that edits a
 
 ### One set of hooks, two surfaces, one declaration
 
-This block is the only declaration of the six hooks, and both surfaces read it:
+This block is the only declaration of the hooks above, and both surfaces read it:
 
 - **workstation** — chezmoi deploys this file to `~/.claude/settings.json`
 - **cloud sandbox** — `cloud/bootstrap.sh --with-hooks` fetches *this* file and

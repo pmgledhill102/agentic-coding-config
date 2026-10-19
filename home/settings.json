@@ -283,6 +283,11 @@
       "Bash(~/.claude/bin/gh-pr-checks-wait *)",
       "Bash(~/.claude/bin/gcp-credentials status)",
       "Bash(~/.claude/bin/gcp-credentials release)",
+      "Bash(~/.claude/bin/agent-telemetry event *)",
+      "Bash(~/.claude/bin/agent-telemetry session-end)",
+      "Bash(~/.claude/bin/agent-telemetry session-end *)",
+      "Bash(~/.claude/bin/agent-telemetry ship)",
+      "Bash(~/.claude/bin/agent-telemetry status)",
       "Bash(~/.claude/bin/estate-report)",
       "Bash(~/.claude/bin/estate-report *)",
       "mcp__github__add_comment_to_pending_review",
@@ -338,6 +343,22 @@
           {
             "type": "command",
             "command": "~/.claude/bin/session-cache-verdict",
+            "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "~/.claude/bin/agent-telemetry-claude-hook session-start",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/bin/agent-telemetry-claude-hook stop",
             "timeout": 5
           }
         ]

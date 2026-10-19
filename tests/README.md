@@ -51,3 +51,17 @@ refresh loop outliving the test.
 `CREDENTIAL_BROKER_REFRESH_INTERVAL` exists so the refresh loop can be
 exercised without waiting 45 minutes. Nothing here uses it yet — the loop is
 the least covered part of the helper and the obvious next addition.
+
+## Telemetry
+
+`agent-telemetry-test.sh` drives `home/bin/agent-telemetry` and its Claude hook
+wrapper against `stub-ingest.py`, a stand-in for the telemetry ingest
+(`gcp-org-management` ADR 026). It covers the spool format, the metadata
+allowlist, offset advance on 2xx only, `Retry-After`, no auth header when the key
+is proxy-injected, an idempotent transcript tail, and the unset-URL case (spool
+only, exit 0, no request).
+
+A fake `curl` on `PATH` records every argument the helper passes, which is what
+"the key never appears in argv" is checked against: the key and the signed upload
+URL both travel in mode-0600 curl config files. Runs in a few seconds, makes no
+network calls beyond loopback.

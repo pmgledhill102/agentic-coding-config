@@ -315,6 +315,18 @@ HOME="$H" sh "$BOOTSTRAP_FULL" "$BOOTSTRAP_TEST_REF" --no-gcloud --no-precommit 
     > "$LOG" 2>&1
 check "a toolkit-only run succeeds" "0" "$?"
 
+# The telemetry helper arrives with the toolkit and is handed the manifest, so a
+# run is on the spool before any ingest exists. Spool-first is the whole point:
+# the setup phase cannot authenticate to one (#431).
+# Wherever the manifest says the bin dir is: a root run installs system-wide.
+TELEM_BIN=$(sed -n 's/^bin_dir=//p' "$H/.agents/.bootstrap-manifest" 2> /dev/null)
+check "the telemetry helper is installed" "1" \
+    "$([ -x "$TELEM_BIN/agent-telemetry" ] && echo 1 || echo 0)"
+check "  and reachable at the path the hooks use" "1" \
+    "$([ -x "$H/.claude/bin/agent-telemetry" ] && echo 1 || echo 0)"
+check "  and the manifest is on the spool as a bootstrap record" "bootstrap ok" \
+    "$(jq -r '.kind + " " + .fields.status' "$H/.agents/telemetry/spool.jsonl" 2> /dev/null | head -1)"
+
 first_line_of() { grep -n "$1" "$LOG" 2> /dev/null | head -1 | cut -d: -f1; }
 skills_at=$(first_line_of 'skill   -> .*start-session')
 policy_at=$(first_line_of 'policy  ->')
