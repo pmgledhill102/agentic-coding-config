@@ -4,7 +4,11 @@
 
 Confirm the scope *here*, at the top, rather than at the point of the first write. A cheap read is enough — listing that repo's Issues either works or is denied. Discovering the denial in step 8 means the whole session has been analysed with nowhere to put the output.
 
-If the repo is out of scope, the remedy is to **attach it** (`add_repo`, on surfaces that have it) — and **that is the user's call, not yours**. Say which repo is missing and what it blocks, and ask. Do not attach repos unilaterally, and do not silently continue as though the history were empty: a retro that cannot reach `paul-context` can still analyse the session, but it must say up front that the journal draft and the cross-repo Issues have no destination.
+If the repo is out of scope, the remedy is to **attach it** (`add_repo`, on surfaces that have it). Who decides depends on the repo:
+
+- **`pmgledhill102/paul-context` only:** if the scope probe (listing its `journal-draft` Issues) is denied and `add_repo` is available, call `add_repo(owner: "pmgledhill102", repo: "paul-context", access: "push")`, re-run the probe, and say in one line that it was attached. Do not ask. Push access is needed because step 8 creates the journal-draft Issue there. A surface's own confirmation prompt on `add_repo` does not count as the skill asking.
+- **Every other repo:** attaching is the user's call, not yours. Say which repo is missing and what it blocks, and ask. Do not attach repos unilaterally.
+- **If `add_repo` is absent or the attach fails:** do not silently continue as though the history were empty. A retro that cannot reach `paul-context` can still analyse the session, but it must say up front that the journal draft and the cross-repo Issues have no destination.
 
 With scope confirmed, read what the last few retros produced and what became of it:
 
