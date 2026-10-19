@@ -84,8 +84,10 @@
 # durable. Nothing here edits PATH for the caller; a bin dir that is not on it
 # is logged loudly and recorded in the manifest.
 #
-# <REF> is what everything else is fetched from, and should match the ref this
-# script was itself fetched from, so a run cannot straddle two versions. Pin it
+# <REF> is what everything else is fetched from. It is resolved to one commit at
+# the start and every file comes from that commit; a branch or tag run whose own
+# copy differs from that commit's hands over to the commit's copy once, so a run
+# cannot straddle two versions (#610). Pin it
 # to a tag or commit in anything durable — a branch means
 # any compromise of this repo reaches every sandbox that starts afterwards.
 #
@@ -283,6 +285,14 @@ record_failure() {
     done
     return 0
 }
+
+# The arguments as given, quoted for eval, so the self-check below can replay
+# them into a fresh copy of this script after the loop has shifted them away.
+ORIG_ARGS=
+for _a in "$@"; do
+    _q=$(printf '%s' "$_a" | sed "s/'/'\\\\''/g")
+    ORIG_ARGS="$ORIG_ARGS '$_q'"
+done
 
 # The ref is positional and first. A leading flag is left for the argument loop
 # rather than taken as the ref, so omitting the ref reports the real problem.
@@ -502,7 +512,35 @@ case ":$PATH:" in
         ;;
 esac
 
-RAW="https://raw.githubusercontent.com/pmgledhill102/agentic-coding-config/${REF}"
+# Resolve REF to one commit now, and fetch everything from that commit. A branch
+# URL on the raw CDN can lag a merge by minutes, and a run that reads some files
+# before the lag clears and some after straddles two versions (#610).
+#
+# `git ls-remote` rather than the GitHub API: no token, no JSON parsing, and git
+# is already required to be here. A REF that is already a commit SHA will not
+# match a ref name, which is not a failure -- it is a pin, and pinned is the
+# recommended state. Recorded in the manifest as `pin` so a reader can tell
+# "pinned" from "could not resolve". An annotated tag lists its tag object and,
+# on a `^{}` line, the commit it points at; only the commit is addressable under
+# raw.githubusercontent, so that line wins when present.
+resolved=$(git ls-remote "https://github.com/pmgledhill102/agentic-coding-config" "$REF" "$REF^{}" 2>/dev/null |
+    awk '{ if ($2 ~ /\^\{\}$/) peeled = $1; else if (first == "") first = $1 }
+         END { print (peeled != "" ? peeled : first) }')
+if [ -z "$resolved" ]; then
+    case "$REF" in
+        [0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]*) resolved="$REF" ; kind=pin ;;
+        *) resolved="unresolved" ; kind=unresolved ;;
+    esac
+else
+    kind=ref
+fi
+
+# An unresolved ref keeps today's behaviour and fetches by name. A harness may
+# preset RAW to serve the files from disk.
+case "$kind" in
+    unresolved) RAW="${RAW:-https://raw.githubusercontent.com/pmgledhill102/agentic-coding-config/${REF}}" ;;
+    *) RAW="${RAW:-https://raw.githubusercontent.com/pmgledhill102/agentic-coding-config/${resolved}}" ;;
+esac
 
 command -v curl > /dev/null 2>&1 || die "curl is required"
 
@@ -545,6 +583,36 @@ fetch() {
         --connect-timeout 15 --speed-limit 1024 --speed-time 30 --max-time 600 \
         "$1" -o "$2"
 }
+
+# --- self-check: is this the script the ref resolves to? -------------------
+#
+# Fetching everything else by sha does not help if the copy that is running was
+# itself fetched from a lagging branch URL. Compare it with the sha-addressed
+# copy and, if they differ, hand over to that one with the original arguments.
+# Only a branch or tag can be stale: a pin is already exact, and an unresolved
+# ref has nothing to compare against. BOOTSTRAP_REEXEC is the guard that stops a
+# second hand-over; it holds the fetched copy's path so the new run removes it.
+# A fetch failure here is logged and skipped -- the run still has its own copy.
+case "${BOOTSTRAP_REEXEC:-}" in
+    /*) rm -f "$BOOTSTRAP_REEXEC" 2> /dev/null || true ;;
+esac
+if [ "$kind" = ref ] && [ -z "${BOOTSTRAP_REEXEC:-}" ] && [ -f "$0" ]; then
+    _fresh=$(mktemp)
+    if fetch "$RAW/cloud/bootstrap.sh" "$_fresh" 2> /dev/null; then
+        if ! cmp -s "$0" "$_fresh"; then
+            log "ref     : /tmp copy is stale for $REF; re-running $(echo "$resolved" | cut -c1-12)"
+            BOOTSTRAP_REEXEC="$_fresh"
+            export BOOTSTRAP_REEXEC
+            rm -rf "$TMP"
+            TMP=
+            eval "set -- $ORIG_ARGS"
+            exec sh "$_fresh" "$@"
+        fi
+    else
+        log "ref     : could not fetch $REF to compare with this copy; carrying on"
+    fi
+    rm -f "$_fresh"
+fi
 
 # --- pip_install: PyPI, whatever this image calls pip ----------------------
 #
@@ -1714,7 +1782,8 @@ cap_precommit_warm() {
     # warming those would be this container inventing hooks nobody asked for.
     _found="$TMP/warm-configs"
     : > "$_found"
-    for _root in "$PWD" "$HOME" /home/user /workspace /workspaces; do
+    # WARM_ROOTS is a test seam. It is word-split, so no root may hold a space.
+    for _root in ${WARM_ROOTS:-"$PWD" "$HOME" /home/user /workspace /workspaces}; do
         [ -d "$_root" ] || continue
         find "$_root" -maxdepth 3 \
             \( -name .cache -o -name node_modules -o -name .venv -o -name .git \) -prune -o \
@@ -1947,28 +2016,15 @@ capability 1 golangci cap_golangci
 # stale client the way the credential helper's broker can (#182), so the skew is
 # silent unless something writes down what it did.
 #
-# `git ls-remote` rather than the GitHub API: no token, no JSON parsing, and git
-# is already required to be here. A REF that is already a commit SHA will not
-# match a ref name, which is not a failure -- it is a pin, and pinned is the
-# recommended state. Recorded as `pin` so a reader can tell "pinned" from
-# "could not resolve".
+# `resolved` and `kind` (ref | pin | unresolved) were worked out at the top of
+# the run, because everything is fetched from that commit; the manifest records
+# them.
 
 MANIFEST="$HOME/.agents/.bootstrap-manifest"
 mkdir -p "$HOME/.agents"
 
 TOTAL_SECS=$((  $(now_s) - BOOT_START ))
 record_timing total "$TOTAL_SECS"
-
-resolved=$(git ls-remote "https://github.com/pmgledhill102/agentic-coding-config" "$REF" 2>/dev/null |
-    awk 'NR==1 {print $1}')
-if [ -z "$resolved" ]; then
-    case "$REF" in
-        [0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]*) resolved="$REF" ; kind=pin ;;
-        *) resolved="unresolved" ; kind=unresolved ;;
-    esac
-else
-    kind=ref
-fi
 
 # ok vs degraded is the Tier 2 verdict: the toolkit is present either way --
 # a missing one is fatal and never reaches here -- and `degraded` says some
