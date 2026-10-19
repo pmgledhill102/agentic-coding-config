@@ -74,8 +74,7 @@
           "06-4-read-the-subtraction-instruments", "07-propose-workstation",
           "08-route-workstation", "09-7-propose-to-the-user", "10-8-execute",
           "11-9-do-not-write-to-retros-md", "12-10-brief-summary",
-          "13-first-run-dispositions-carried-from-263", "14-guidelines",
-          "15-what-changed-from-the-previous-versions"
+          "14-guidelines"
         ],
         "profiles/claude-cloud-sandbox/skills/retrospective/SKILL.md": [
           "00-head-skill", "01-shape-of-this-retro", "02-steps", "03-1-close-the-loop",
@@ -83,8 +82,7 @@
           "06-4-read-the-subtraction-instruments", "07-propose-sandbox",
           "08-route-sandbox", "09-7-propose-to-the-user", "10-8-execute",
           "11-9-do-not-write-to-retros-md", "12-10-brief-summary",
-          "13-first-run-dispositions-carried-from-263", "14-guidelines",
-          "15-what-changed-from-the-previous-versions"
+          "14-guidelines"
         ],
         "profiles/codex-cloud-sandbox/skills/retrospective/SKILL.md": [
           "00-head-skill", "01-shape-of-this-retro", "02-steps", "03-1-close-the-loop",
@@ -92,8 +90,7 @@
           "06-4-read-the-subtraction-instruments", "07-propose-sandbox",
           "08-route-sandbox", "09-7-propose-to-the-user", "10-8-execute",
           "11-9-do-not-write-to-retros-md", "12-10-brief-summary",
-          "13-first-run-dispositions-carried-from-263", "14-guidelines",
-          "15-what-changed-from-the-previous-versions"
+          "14-guidelines"
         ]
       }
     },
