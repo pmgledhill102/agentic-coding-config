@@ -141,12 +141,23 @@ Say what they are approving:
 
 This blocks until the human answers, then installs the token and starts refresh.
 
-**Never collapse these two steps into one.** `request --wait` exists for a human
-at an interactive terminal and is wrong for you: a blocked command cannot
-produce a reply, so the phrase would sit unread in the output of something still
-running while the human is asked to match it against nothing. The phrase is only
-a session binding if it reaches the person *before* they answer the card. Run
-them as two turns, with your message carrying the phrase in between.
+**Run it in the background, in the same turn as the phrase message.** Write the
+message carrying the phrase first, then start `wait` with the Bash tool's
+`run_in_background: true`. The text reaches the human before the command starts,
+and the harness re-invokes you when `wait` exits, so you carry on the moment the
+card is answered with no second prompt from the user. End the turn after
+starting it; do not poll, and do not wait with `sleep`.
+
+**Never run `request --wait`, and never run `wait` in the foreground.**
+`request --wait` exists for a human at an interactive terminal. A blocked
+foreground command cannot produce a reply, so the phrase would sit unread in the
+output of something still running while the human is asked to match it against
+nothing. The phrase is only a session binding if it reaches the person *before*
+they answer the card, so the order is fixed: phrase text, then the backgrounded
+`wait`.
+
+Read the result as in [Reading the outcome](#reading-the-outcome) when the
+background command reports back.
 
 If the session scrolls or you lose track, `status` reports the outstanding
 request and its phrase.
