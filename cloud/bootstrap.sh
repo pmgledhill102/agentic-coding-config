@@ -1152,15 +1152,17 @@ if [ "$WITH_HOOKS" -eq 1 ]; then
         log "hooks   -> $SETTINGS (created)"
     fi
 
-    # prepush-guard needs gh, which these containers lack unless gh was enabled
-    # (#257), so without it it exits 0 here. precommit-claude-hook needs the
+    # prepush-guard needs gh on PATH, and exits 0 without it. --with-gh governs
+    # only this script's own install: the platform may preinstall gh, and the
+    # guard looks PRs up through REST, which a sandbox allows. So gate the note
+    # on gh being there, not on the flag. precommit-claude-hook needs the
     # pre-commit framework and is a no-op without it. Both degrade rather than
     # failing, which is why hooks have no hard dependency on those -- but the
     # trio is what makes them worth having.
     #
     # Report the resolved state rather than naming flags: either capability can
     # arrive from the profile with no flag typed.
-    if [ "$WITH_GH" -eq 1 ]; then gh_note=""; else gh_note=" (inactive: no gh)"; fi
+    if [ "$WITH_GH" -eq 1 ] || command -v gh >/dev/null 2>&1; then gh_note=""; else gh_note=" (inactive: no gh)"; fi
     if [ "$WITH_PRECOMMIT" -eq 1 ]; then pc_note=""; else pc_note=" (inactive: no pre-commit)"; fi
     log "hooks   :  prchecks-wait, prepush-guard$gh_note, precommit$pc_note"
 fi
