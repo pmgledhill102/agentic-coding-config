@@ -55,6 +55,13 @@ sed 's/^capability 1 golangci cap_golangci$/capability 0 golangci cap_golangci/'
     "$BOOTSTRAP" > "$BOOTSTRAP_FULL"
 trap 'rm -f "$BOOTSTRAP_FULL"' EXIT
 
+# Every full run below takes the copy under test as it is. Without this the
+# self-check would find the remote's copy of the script different from the
+# local one and run that instead, which tests nothing about the change. Section
+# 6b unsets it where the hand-over itself is the subject.
+BOOTSTRAP_REEXEC=1
+export BOOTSTRAP_REEXEC
+
 PASS=0
 FAIL=0
 
@@ -371,6 +378,61 @@ check "  and writes no ~/.claude.json" "0" \
     "$([ -f "$H/.claude.json" ] && echo 1 || echo 0)"
 rm -rf "$H"
 
+# --- 6b. one resolved commit per run (#610) --------------------------------
+#
+# The run resolves its ref to a sha before the first fetch, and a branch or tag
+# run whose own copy differs from the sha-addressed one hands over to that copy
+# exactly once. BOOTSTRAP_REEXEC is the guard, and it is set for every other
+# case in this file so that a full run here tests the copy under test rather
+# than whatever the branch carries on the remote.
+H=$(mktemp -d)
+mkdir -p "$H/stub"
+cat > "$H/stub/git" << EOF
+#!/bin/sh
+# Fails the one subcommand the resolution uses and passes the rest through.
+[ "\${1:-}" = ls-remote ] && exit 128
+exec $(command -v git) "\$@"
+EOF
+chmod +x "$H/stub/git"
+HOME="$H" PATH="$H/stub:$PATH" sh "$BOOTSTRAP_FULL" "$BOOTSTRAP_TEST_REF" \
+    --no-gcloud --no-precommit --no-hooks --no-terraform > "$H/run.log" 2>&1
+check "an unresolvable ref still completes the run" "0" "$?"
+check "  and the manifest says unresolved" "ref_kind=unresolved sha=unresolved" \
+    "$(sed -n -e 's/^\(ref_kind=.*\)$/\1/p' -e 's/^\(sha=.*\)$/\1/p' "$H/.agents/.bootstrap-manifest" | tr '\n' ' ' | sed 's/ $//')"
+rm -rf "$H"
+
+# A sha-addressed copy that differs from the running one is handed the original
+# arguments. The "fresh" copy here is a marker, so nothing else of the run
+# happens; RAW is the harness seam that points the self-check at it.
+H=$(mktemp -d)
+mkdir -p "$H/raw/cloud"
+cat > "$H/raw/cloud/bootstrap.sh" << 'EOF'
+#!/bin/sh
+echo "REEXEC-RAN guard=${BOOTSTRAP_REEXEC:+set} args=$*"
+EOF
+(
+    unset BOOTSTRAP_REEXEC
+    HOME="$H" RAW="file://$H/raw" sh "$BOOTSTRAP_FULL" "$BOOTSTRAP_TEST_REF" \
+        --no-gcloud --no-precommit --profile codex-cloud-sandbox
+) > "$H/run.log" 2>&1
+check "a stale copy re-runs the sha-addressed one once" "1" "$(count '^REEXEC-RAN ' "$H/run.log")"
+check "  with the guard set, so the next run cannot re-exec again" "1" \
+    "$(count '^REEXEC-RAN guard=set ' "$H/run.log")"
+check "  and with the original arguments, in order" "1" \
+    "$(count "args=$BOOTSTRAP_TEST_REF --no-gcloud --no-precommit --profile codex-cloud-sandbox\$" "$H/run.log")"
+check "  and says so" "1" "$(count 're-running' "$H/run.log")"
+
+# With the guard already set the same difference is ignored.
+(
+    BOOTSTRAP_REEXEC=1
+    export BOOTSTRAP_REEXEC
+    HOME="$H" RAW="file://$H/raw" sh "$BOOTSTRAP_FULL" "$BOOTSTRAP_TEST_REF" \
+        --no-gcloud --no-precommit --profile codex-cloud-sandbox
+) > "$H/guarded.log" 2>&1
+check "a run that was already handed over does not re-exec" "0" \
+    "$(count 'REEXEC-RAN\|re-running' "$H/guarded.log")"
+rm -rf "$H"
+
 # --- 7. a capability that cannot install degrades, it does not abort -------
 #
 # The whole point of the tier split. gh is the cheapest capability to fail on
@@ -542,8 +604,11 @@ if command -v pre-commit > /dev/null 2>&1; then
     cp "$H/raw/cloud/precommit-warm.yaml" "$H/notarepo/repo-a/.pre-commit-config.yaml"
 
     log8b="$H/t8b.log"
+    # WARM_ROOTS bounds the scan to the planted checkout. Without it the scan
+    # also walks /home/user and $HOME, and a container holding five clones fills
+    # the warm's 5-checkout cap before it reaches repo-a.
     ( cd "$H/notarepo" && TMP="$H/t8b" FAIL_FILE="$H/t8b.fail" RAW="file://$H/raw" \
-        REF=test FNS="$H/fn.sh" PRE_COMMIT_HOME="$H/cache" \
+        REF=test FNS="$H/fn.sh" PRE_COMMIT_HOME="$H/cache" WARM_ROOTS="$H/notarepo" \
         sh -c '. "$0"; cap_precommit_warm' "$H/harness.sh" ) > "$log8b" 2>&1
     warm_rc=$?
     check "a warm from a non-checkout cwd succeeds" "0" "$warm_rc"
@@ -553,6 +618,10 @@ if command -v pre-commit > /dev/null 2>&1; then
     if [ "$warm_rc" -ne 0 ]; then
         printf '        --- warm output ---\n'
         sed 's/^/        /' "$log8b"
+    fi
+    if grep -q 'more than 5 checkouts found' "$log8b"; then
+        printf '        the warm hit its 5-checkout cap: %s\n' \
+            "$(grep 'more than 5 checkouts found' "$log8b" | head -1)"
     fi
     check "  it warmed the estate hook set" "1" \
         "$(count 'warm    -> estate hook set' "$log8b")"
