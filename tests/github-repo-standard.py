@@ -332,6 +332,25 @@ def main():
         print(f"FAIL validator does not catch: {', '.join(missed)}")
         return 1
     print(f"ok   validator catches all {len(broken)} planted faults")
+
+    # Content matching runs in paul-context, so prove here that the cooldown
+    # pattern can speak: it must hit a real key and miss a comment.
+    cooldown = next(
+        m["pattern"]
+        for m in spec["tiers"]["automerge"]["files"][".github/dependabot.yml"]["must_match"]
+        if m["id"] == "has-a-cooldown"
+    )
+    updates = "version: 2\nupdates:\n  - package-ecosystem: npm\n    directory: /\n"
+    fixtures = {
+        "cooldown key": (updates + "    cooldown:\n      default-days: 7\n", True),
+        "no cooldown": (updates, False),
+        "cooldown only in a comment": (updates + "  # cooldown: default-days 7\n", False),
+    }
+    wrong = [n for n, (text, want) in fixtures.items() if bool(re.search(cooldown, text)) != want]
+    if wrong:
+        print(f"FAIL cooldown rule: positive control fails for {', '.join(wrong)}")
+        return 1
+    print("ok   cooldown rule: positive control holds")
     return 0
 
 

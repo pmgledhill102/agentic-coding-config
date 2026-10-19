@@ -165,6 +165,11 @@
               "why": "a missing PAT must fail the run, not fall back to GITHUB_TOKEN, or every armed PR stalls with nothing red anywhere."
             },
             {
+              "id": "names-the-missing-repo-cause",
+              "pattern": "selected-repositories list",
+              "why": "a PR listing that fails with a non-empty AUTOMERGE_PAT is almost always the repo missing from the token's selected repositories; without this guard the run ends in a bare 'gh: Not Found (HTTP 404)' (agentic-coding-config#618)."
+            },
+            {
               "id": "runs-when-a-pr-is-armed",
               "pattern": "auto_merge_enabled",
               "why": "without it, a PR armed while already behind waits for the next push to the default branch before anything updates it."
@@ -200,6 +205,21 @@
               "id": "rebases-the-branch",
               "pattern": "update-branch[^\\n]*--rebase",
               "why": "merge commits only (agentic-coding-config#348): a rebase rewrites the author's commits and invalidates their checkout."
+            }
+          ]
+        },
+        ".github/dependabot.yml": {
+          "why": "the automerge tier re-declares this glob, so baseline's rule is repeated here (the fold replaces per glob); see agentic-coding-config#547.",
+          "must_match": [
+            {
+              "id": "assigns-a-human",
+              "pattern": "assignees:",
+              "why": "Dependabot pull requests are authored by app/dependabot and match none of the GitHub mobile app's filters (created/assigned/mentions/review-requested/involved), so an unassigned one is invisible until somebody reconstructs an author: search by hand. paul-claw#24 was a patch bump on an automerge-tier repo, open five months, with nothing surfacing it. Note reviewers is not the key: GitHub removed it from the Dependabot options reference, while assignees is documented for both version and security updates."
+            },
+            {
+              "id": "has-a-cooldown",
+              "pattern": "(?m)^\\s+cooldown:",
+              "why": "auto-merge without a cooldown ships a compromised release as soon as CI is green (paul-context registry/dependabot-standard.md rule 4). Anchored and multiline because the content check is re.search(pattern, content) with no flags and repos carry comments mentioning cooldown. Limit: passes a file with a cooldown on only some ecosystems; it catches the no-cooldown case all five 2026-10-03 repos had (agentic-coding-config#547)."
             }
           ]
         }

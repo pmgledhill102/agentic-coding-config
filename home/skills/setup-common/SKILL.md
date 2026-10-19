@@ -454,6 +454,8 @@ jobs:
 
 Restating those reasons here is what produced the failure the spec exists to end: prose cannot be diffed, so four of five `automerge` repos ran a superseded copy of this workflow while reporting zero settings drift. **The half of the loop the sweep cannot close is this one** — a property added to the spec does not propagate into the sample above. Change both in the same PR.
 
+If the repo has a `cspell.json`, add `ltrimstr` to its `words` list in the same change. The sample text above uses it and is byte-compared, so do not reword it.
+
 #### 8d. The `AUTOMERGE_PAT` — do this when installing 8c and 8e
 
 **One shared fine-grained token serves the whole estate**; installing the workflow means adding this repo to its list, not minting a new token. Both steps, in order:
@@ -474,7 +476,7 @@ The token goes in on stdin rather than `--body`: `--body` puts the secret in `ar
 
 **In this estate the token is not kept anywhere after it is distributed**, so step 2 cannot be done for one repo on its own. Getting a value means regenerating the token, and regenerating invalidates every other repo's copy. Adding a repo is therefore a tier-wide redistribution: assign the repo to `automerge` in `paul-context`'s `registry/repo-tiers.json`, add it to the token's repository list, regenerate, and run `paul-context`'s `tools/set-automerge-pat.sh`. That script derives the repo list from the registry and writes every repo in the tier. The single-repo loop above is for an estate that does keep the token.
 
-Permissions are Contents read/write plus Pull requests read/write, and no more. Contents write is the floor, not an over-grant: the merge writes to the base branch, and GitHub has no narrower "may merge but not push" permission.
+Permissions are Contents, Pull requests and Workflows (all read/write), and no more. Contents write is the floor, not an over-grant: the merge writes to the base branch, and GitHub has no narrower "may merge but not push" permission. Workflows write is needed because 8e pushes a merge commit into the PR head, and GitHub refuses any push touching `.github/workflows/` without it, which covers every Dependabot `github-actions` bump.
 
 Also enable **Allow auto-merge** in Settings → General (`/setup-repo` does this).
 
@@ -542,9 +544,12 @@ jobs:
           prs="${RUNNER_TEMP}/prs.tsv"
           # number, head SHA, head repo ("-" when the fork is gone), armed.
           # No empty fields: tab is IFS whitespace, so read would collapse them.
-          gh api --paginate "repos/${R}/pulls?state=open&base=main&per_page=100" \
+          if ! gh api --paginate "repos/${R}/pulls?state=open&base=main&per_page=100" \
             --jq '.[] | [.number, .head.sha, (.head.repo.full_name // "-"), (.auto_merge != null)] | @tsv' \
-            > "${prs}"
+            > "${prs}"; then
+            echo "::error::Could not list pull requests with a non-empty AUTOMERGE_PAT. The most likely cause is that ${R} is not on the token's selected-repositories list -- a fine-grained PAT's scope cannot be read from outside the token, so this is where a missed repo surfaces. Add ${R} to the AUTOMERGE_PAT repository list."
+            exit 1
+          fi
 
           failed=0
           while IFS="$(printf '\t')" read -r n sha head_repo armed; do
@@ -570,7 +575,7 @@ jobs:
                  -f "expected_head_sha=${sha}" > /dev/null; then
               echo "#${n}: updated (was ${behind} behind main)"
             else
-              echo "::error::#${n}: update-branch failed (was ${behind} behind main at ${sha})"
+              echo "::error::#${n}: update-branch failed (was ${behind} behind main at ${sha}) (a 403/404 here can also mean ${R} is missing from the AUTOMERGE_PAT repository list, or the token lacks Workflows write when the PR touches .github/workflows/)"
               failed=$((failed + 1))
             fi
           done < "${prs}"
@@ -580,6 +585,8 @@ jobs:
             exit 1
           fi
 ```
+
+If the repo has a `cspell.json`, add `agentic` to its `words` list in the same change. The sample text uses it and is byte-compared, so do not reword it.
 
 It needs the Actions copy of the `AUTOMERGE_PAT` from 8d. It uses only the runner's preinstalled `gh`, so there is no action to pin. If the repo's default branch is not `main`, change the two `branches:` filters, the `base=` query and the `compare/` base. The comments and log messages say `main` too, but changing them is cosmetic.
 
