@@ -106,7 +106,7 @@
           "09-ci-on-demand", "10-uncommitted-work", "11-return-to-main", "12-prune-branches-workstation",
           "13-push-main", "13a-config-reach", "14-open-prs-workstation", "15-stashes", "16-assigned-issues-workstation",
           "17-stale-claude-files-workstation", "18-worktrees-workstation", "19-background-processes", "19a-gcp-projects", "19b-armed-triggers",
-          "20-summary-workstation", "21-phase-2", "22-guardrails-workstation"
+          "20-summary-workstation", "20a-telemetry-record", "21-phase-2", "22-guardrails-workstation"
         ],
         "profiles/claude-cloud-sandbox/skills/end-session/SKILL.md": [
           "00-head-skill", "01-intro", "02-action-tiers", "03-pre-flight", "04-surface-sandbox",
@@ -114,7 +114,7 @@
           "09-ci-on-demand", "10-uncommitted-work", "11-return-to-main", "12-prune-branches-sandbox",
           "13-push-main", "13a-config-reach", "14-open-prs-sandbox", "15-stashes", "16-assigned-issues-sandbox",
           "17-stale-claude-files-sandbox", "18-worktrees-sandbox", "19-background-processes", "19a-gcp-projects", "19b-armed-triggers",
-          "20-summary-sandbox", "21-phase-2", "22-guardrails-sandbox"
+          "20-summary-sandbox", "20a-telemetry-record", "21-phase-2", "22-guardrails-sandbox"
         ],
         "profiles/codex-cloud-sandbox/skills/end-session/SKILL.md": [
           "00-head-skill", "01-intro", "02-action-tiers", "03-pre-flight", "04-surface-sandbox",
@@ -122,7 +122,7 @@
           "09-ci-on-demand", "10-uncommitted-work", "11-return-to-main", "12-prune-branches-sandbox",
           "13-push-main", "13a-config-reach", "14-open-prs-sandbox", "15-stashes", "16-assigned-issues-sandbox",
           "17-stale-claude-files-sandbox", "18-worktrees-sandbox", "19-background-processes", "19a-gcp-projects", "19b-armed-triggers",
-          "20-summary-sandbox", "21-phase-2", "22-guardrails-sandbox"
+          "20-summary-sandbox", "20a-telemetry-record", "21-phase-2", "22-guardrails-sandbox"
         ]
       }
     }

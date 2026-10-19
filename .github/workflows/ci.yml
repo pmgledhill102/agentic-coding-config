@@ -77,6 +77,11 @@ jobs:
       # and needs no token.
       - name: Run the end-session gather multi-repo probe tests
         run: sh tests/end-session-gather-test.sh
+      # The telemetry helper runs from SessionStart and Stop hooks and from
+      # end-session, so it must never fail or slow its caller, and no key or
+      # signed URL may reach argv or output. Stub ingest on loopback; no token.
+      - name: Run the agent-telemetry tests
+        run: sh tests/agent-telemetry-test.sh
       # A SessionStart hook: a non-zero exit is a session that will not start.
       - name: Run the session-cache verdict tests
         run: sh tests/session-cache-verdict-test.sh

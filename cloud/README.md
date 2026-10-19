@@ -425,6 +425,126 @@ Two things observed on 2026-09-30:
   returns 200 with no key in the command. That is also the fallback when the
   MCP tools are absent.
 
+### 5. Telemetry (optional)
+
+Agent sessions can ship metadata about themselves to the telemetry ingest
+(`gcp-org-management` ADR 026, #631): bootstrap manifest and timings, the
+cache-hit marker, skill step records, an end-of-session record, the transcript
+as it grows, and Claude Code's own OpenTelemetry metrics and logs. **Until you
+set the pieces below nothing leaves the container**: `agent-telemetry` spools to
+`~/.agents/telemetry/` and `ship` does nothing, silently. `agent-telemetry
+status` says which state a session is in, and prints no secret.
+
+**What is a secret and what is not.** The ingest key is. The URL is not.
+
+| Where | Name | Value |
+| --- | --- | --- |
+| Environment variables | `TELEMETRY_INGEST_URL` | the ingest's base URL, with scheme |
+| Environment variables | `TELEMETRY_INGEST_KEY` | the literal `proxy-injected` |
+| API credentials (step 4) | `Telemetry ingest` | below |
+
+The credential, for the `claude-cloud` key (issued with
+`gcp-org-management`'s `tools/telemetry-key create claude-cloud …`, which prints
+it once):
+
+| Field | Value |
+| --- | --- |
+| Name | `Telemetry ingest` |
+| Credential type | Bearer (the default) |
+| Allowed websites | the ingest's host, **exactly** |
+| Custom header name | `Authorization` |
+| Prefix | `Bearer` (the default) |
+| Value | the `claude-cloud` key |
+
+The helper then sends no key of its own. The ingest also accepts the bare key in
+`X-Telemetry-Key`, for a credential form that cannot set `Authorization`; that
+fallback exists, and nothing here needs it.
+
+**Which requests get the key.** The proxy attaches it to commands the session
+runs, which is everything `agent-telemetry` does from the `SessionStart` and
+`Stop` hooks and from end-session. It does **not** reach:
+
+- **Setup-script requests.** Claude Code connects to the proxy after the setup
+  script has run. This is the answer to the injection probe in #260: a `ship`
+  from the bootstrap would be unauthenticated. The bootstrap therefore only
+  spools its manifest (`agent-telemetry record bootstrap …`), and the
+  `SessionStart` hook ships it once the session is up.
+- **Claude Code's own OpenTelemetry export.** The documentation says so
+  directly: "Claude Code's own telemetry export is one of the requests that
+  never get the secret", because the exporter sends its own requests rather than
+  going through the agent proxy
+  ([cloud environments](https://code.claude.com/docs/en/cloud-environments#requests-that-never-get-the-credential),
+  [monitoring](https://code.claude.com/docs/en/monitoring-usage#telemetry-from-cloud-sessions-and-claude-tag)).
+  **So the exporter cannot authenticate to the ingest through this credential.**
+
+  **Decision (owner):** the exporter carries its own key in
+  `OTEL_EXPORTER_OTLP_HEADERS`. The documentation advises against a collector
+  credential there, because anyone who uses the environment can read its
+  variables; the credential-safe route, server-managed settings, needs a Team or
+  Enterprise plan. The exposure is accepted on these terms: the key is
+  write-only, so the worst a reader can do is write junk under its own prefix,
+  and a **separate** key, `claude-cloud-otlp`, with a small daily quota, keeps
+  that off the proxy-held `claude-cloud` key. Create it with
+  `tools/telemetry-key create claude-cloud-otlp --quota-bytes N --quota-requests N`
+  and rotate by creating a new one, updating the variable and disabling the old.
+
+**Exporter configuration** (checked against the
+[monitoring docs](https://code.claude.com/docs/en/monitoring-usage) on
+2026-10-19; all but the last row hold no secret):
+
+| Variable | Value | Why |
+| --- | --- | --- |
+| `CLAUDE_CODE_ENABLE_TELEMETRY` | `1` | required; telemetry is off without it |
+| `OTEL_METRICS_EXPORTER` | `otlp` | |
+| `OTEL_LOGS_EXPORTER` | `otlp` | logs carry the events |
+| `OTEL_EXPORTER_OTLP_PROTOCOL` | `http/protobuf` | has no default, so it must be set |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | the ingest's base URL | the exporter appends `/v1/metrics` and `/v1/logs` itself |
+| `OTEL_EXPORTER_OTLP_HEADERS` | `Authorization=Bearer <claude-cloud-otlp key>` | **a secret, readable by anyone who uses the environment**; see the decision above |
+| `OTEL_METRIC_EXPORT_INTERVAL` | `30000` | default is 60000 ms |
+| `OTEL_LOGS_EXPORT_INTERVAL` | `5000` | already the default; a short interval is the point, because what is lost when a container is reclaimed is the batch still pending |
+
+Trade-off on the intervals: shorter loses less at reclamation and sends more
+requests, and the ingest caps requests per day (ADR 026), so do not go below the
+defaults without reading its cost model.
+
+**Leave every content opt-in unset:** `OTEL_LOG_USER_PROMPTS`,
+`OTEL_LOG_ASSISTANT_RESPONSES`, `OTEL_LOG_TOOL_DETAILS`, `OTEL_LOG_TOOL_CONTENT`,
+`OTEL_LOG_RAW_API_BODIES`, `OTEL_LOG_MANAGED_SETTINGS`. They put prompts, tool
+input or whole API bodies into telemetry. Traces
+(`OTEL_TRACES_EXPORTER`, `CLAUDE_CODE_ENHANCED_TELEMETRY_BETA`) are beta and
+are not configured here. `otelHeadersHelper` is not used: the key is static.
+
+Exporter writes carry no `X-Session-Id` (the exporter's headers are fixed at
+launch, before a session id exists), so they land under `_nosession/` in the
+bucket; each payload carries `session.id` inside it and the offline reader joins
+on that.
+
+**Allowed domains.** The exporter uses the session's own network, so if you turn
+it on the ingest's host must be in step 2's list. Commands the session runs
+reach the credential's host through the proxy regardless; that is a different
+path.
+
+**Check it worked**, from a session, once the environment is configured:
+
+```sh
+agent-telemetry event setup verify
+agent-telemetry ship
+agent-telemetry status
+```
+
+`status` should show the endpoint configured, the credential as `proxy`, and a
+last ship ending `204`. A `401` is a missing or wrong key or a source address the
+key does not allow; `429` and `503` are the ingest's quota and its closed state
+(see ADR 026). This writes one small record to the bucket.
+
+**After changing any of this**, bump the setup script's `Rev:` line, for the same
+reason as everything else in step 1.
+
+Owner steps, in order: create the keys; add the credential; add the host to the
+allowed domains; set the two variables and the exporter ones (including
+`OTEL_EXPORTER_OTLP_HEADERS` with the separate `claude-cloud-otlp` key); bump
+`Rev:`.
+
 ## Codex
 
 **Status: blocked.** Codex Cloud can use the credential broker, but it can't
@@ -506,6 +626,15 @@ points at itself:
 
 Not this. `~/.claude` is chezmoi-managed from `home/`; the bootstrap is for
 containers that start empty.
+
+Telemetry on a local machine is the exception worth knowing: chezmoi deploys
+`agent-telemetry` with the rest of `home/bin`, it spools under
+`~/.agents/telemetry/`, and
+sends nothing until `TELEMETRY_INGEST_URL` (or `~/.config/claude/telemetry/url`)
+is set. The key is a `local-<machine>` key in `~/.config/claude/telemetry/key`,
+mode 0600, issued with `tools/telemetry-key`. A Codex cloud environment holds its
+`codex-cloud` key as an environment secret in `TELEMETRY_INGEST_KEY` instead, so
+that key is inside the container; give it the tighter quota.
 
 ## Ending access, and incident response
 

@@ -241,6 +241,11 @@ record_failure() {
         echo "profile=$PROFILE"
         echo "log=$BOOTSTRAP_LOG"
     } > "$HOME/.agents/.bootstrap-manifest" 2> /dev/null || true
+    # Spooled too, if the helper got installed before the failure: a bootstrap
+    # that died is the run most worth seeing.
+    if [ -x "${BIN_DIR:-/nonexistent}/agent-telemetry" ]; then
+        "$BIN_DIR/agent-telemetry" record bootstrap "$HOME/.agents/.bootstrap-manifest" > /dev/null 2>&1 || true
+    fi
 
     # AGENTS.md always; CLAUDE.md only for the profiles that install one, or a
     # codex container would keep a banner nothing there ever overwrites.
@@ -713,6 +718,21 @@ head -1 "$TMP/gcp-credentials" | grep -q '^#!' ||
 install -m 0755 "$TMP/gcp-credentials" "$BIN_DIR/gcp-credentials"
 log "helper  -> $BIN_DIR/gcp-credentials"
 
+# agent-telemetry, the same shape: spools session metadata locally and ships it
+# to the telemetry ingest when TELEMETRY_INGEST_URL is set (gcp-org-management
+# ADR 026). Tier 1 because it is what records THIS run -- the manifest below is
+# handed to it -- and because it is inert until an environment configures an
+# ingest: with no URL it only spools. It is installed for every profile; the
+# Claude hooks that drive it are wired separately, under --with-hooks.
+fetch "$RAW/home/bin/agent-telemetry" "$TMP/agent-telemetry" ||
+    die "could not fetch the telemetry helper from $REF"
+head -1 "$TMP/agent-telemetry" | grep -q '^#!' ||
+    die "fetched telemetry helper is not a script — check that $REF exists"
+install -m 0755 "$TMP/agent-telemetry" "$BIN_DIR/agent-telemetry"
+log "helper  -> $BIN_DIR/agent-telemetry"
+mkdir -p "$HOME/.claude/bin"
+ln -sf "$BIN_DIR/agent-telemetry" "$HOME/.claude/bin/agent-telemetry"
+
 # The skill still spells its invocations ~/.claude/bin/gcp-credentials, because
 # that is where chezmoi puts the helper on a laptop. Nothing here creates that
 # path, so an agent following the documented command would hit "no such file"
@@ -1022,7 +1042,7 @@ if [ "$WITH_HOOKS" -eq 1 ]; then
     # script this container never fetched. credguard is the one that matters
     # most, because permissions.deny does not travel to a sandbox at all --
     # this hook is the only credential guard that reaches this surface (#440).
-    for script in credguard-claude-hook prchecks-wait-claude-hook prepush-guard-claude-hook precommit-claude-hook; do
+    for script in credguard-claude-hook prchecks-wait-claude-hook prepush-guard-claude-hook precommit-claude-hook agent-telemetry-claude-hook; do
         fetch "$RAW/home/bin/$script" "$TMP/$script" ||
             die "could not fetch hook script $script from $REF"
         head -1 "$TMP/$script" | grep -q '^#!' || die "fetched $script is not a script"
@@ -2006,6 +2026,13 @@ fi
     echo "built_in_session=$BOOTSTRAP_SESSION"
 } > "$MANIFEST"
 log "manifst -> $MANIFEST ($kind $(echo "$resolved" | cut -c1-12))"
+
+# Hand the manifest to the telemetry spool. Spool-first on purpose: the setup
+# phase runs before Claude Code launches, and the vendor documents that setup
+# script requests never receive a network secret, so a ship from here would be
+# unauthenticated in a proxy-injected environment. The spool is shipped later, by
+# the SessionStart hook. Best effort: telemetry is never why a bootstrap fails.
+"$BIN_DIR/agent-telemetry" record bootstrap "$MANIFEST" > /dev/null 2>&1 || true
 
 # --- report -------------------------------------------------------------------
 #
