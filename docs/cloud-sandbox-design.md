@@ -312,8 +312,12 @@ the probes in §3 confirm it exports from a sandbox.
 
 The sink is
 [`gcp-org-management#630`](https://github.com/pmgledhill102/gcp-org-management/issues/630):
-an ingest service in `org-services`, a bucket in `org-data`, and write-only
-tokens issued by the broker under policy rather than a card. Its governing
+an ingest service in `org-services`, a bucket in `org-data`, and static
+write-only keys per surface
+([`gcp-org-management#735`](https://github.com/pmgledhill102/gcp-org-management/issues/735)).
+In a Claude sandbox the egress proxy injects the key, so nothing has to be
+minted before the first byte is written and the broker is not in the path.
+Its governing
 property is that **the identity that writes cannot read** —
 `roles/storage.objectCreator` alone, which also makes the bucket append-only,
 since replacing an object needs delete.
