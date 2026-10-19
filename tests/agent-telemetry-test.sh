@@ -618,6 +618,38 @@ expect "stop with an empty payload exits 0" 0 "$RC"
 OUT=$("$HOOK" nonsense < /dev/null 2>&1) && RC=0 || RC=$?
 expect "an unknown hook event exits 0" 0 "$RC"
 
+# --- a whole session with no ingest configured ---------------------------------
+
+echo "a full session with TELEMETRY_INGEST_URL unset"
+reset
+write_marker
+printf 'status=ok\nref=main\n' > "$MANIFEST"
+"$HELPER" record bootstrap "$MANIFEST"
+OUT=$(printf '{"session_id":"sess-abc-123","source":"startup"}' | "$HOOK" session-start 2>&1) && RC=0 || RC=$?
+printf '%s\n' "$OUT" >> "$ALL_OUTPUT"
+expect "session-start exits 0 with no URL" 0 "$RC"
+expect "session-start prints nothing with no URL" "" "$OUT"
+i=0
+while [ "$i" -lt 50 ] && [ "$(spool_lines)" -lt 2 ]; do
+    sleep 0.2
+    i=$((i + 1))
+done
+run event skill step-done step=1 outcome=ok
+printf '{"n":1}\n' > "$T"
+OUT=$(printf '{"session_id":"s","transcript_path":"%s"}' "$T" | "$HOOK" stop 2>&1) && RC=0 || RC=$?
+printf '%s\n' "$OUT" >> "$ALL_OUTPUT"
+expect "stop exits 0 with no URL" 0 "$RC"
+expect "stop prints nothing with no URL" "" "$OUT"
+run session-end repo=example/repo branch=main
+expect_rc "session-end exits 0 with no URL" 0
+expect "session-end prints nothing with no URL" "" "$OUT"
+sleep 1
+expect "the bootstrap manifest, the marker, the event and the session record are all spooled" "bootstrap event session session-marker" \
+    "$(jq -r .kind "$SPOOL" | sort | tr '\n' ' ' | sed 's/ $//')"
+expect "nothing was shipped" 0 "$(offset)"
+expect "no request was made" 0 "$(requests)"
+if [ -f "$ARGV_LOG" ]; then bad "curl ran with no URL configured"; else ok "curl never ran"; fi
+
 # --- the secret sweep -----------------------------------------------------------
 
 echo "secret sweep"
