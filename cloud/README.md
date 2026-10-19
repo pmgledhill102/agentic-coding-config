@@ -476,16 +476,21 @@ runs, which is everything `agent-telemetry` does from the `SessionStart` and
   ([cloud environments](https://code.claude.com/docs/en/cloud-environments#requests-that-never-get-the-credential),
   [monitoring](https://code.claude.com/docs/en/monitoring-usage#telemetry-from-cloud-sessions-and-claude-tag)).
   **So the exporter cannot authenticate to the ingest through this credential.**
-  The documentation also says not to put a collector credential in
-  `OTEL_EXPORTER_OTLP_HEADERS` in an environment's variables, which anyone who
-  uses the environment can read, and offers server-managed settings as the
-  credential-safe route. Which of those to use, or whether to leave the exporter
-  off in cloud and rely on the helper's records, is a decision this file does not
-  make. The variables below are what to set **if** the exporter is turned on.
+
+  **Decision (owner):** the exporter carries its own key in
+  `OTEL_EXPORTER_OTLP_HEADERS`. The documentation advises against a collector
+  credential there, because anyone who uses the environment can read its
+  variables; the credential-safe route, server-managed settings, needs a Team or
+  Enterprise plan. The exposure is accepted on these terms: the key is
+  write-only, so the worst a reader can do is write junk under its own prefix,
+  and a **separate** key, `claude-cloud-otlp`, with a small daily quota, keeps
+  that off the proxy-held `claude-cloud` key. Create it with
+  `tools/telemetry-key create claude-cloud-otlp --quota-bytes N --quota-requests N`
+  and rotate by creating a new one, updating the variable and disabling the old.
 
 **Exporter configuration** (checked against the
 [monitoring docs](https://code.claude.com/docs/en/monitoring-usage) on
-2026-10-19; none of these hold a secret):
+2026-10-19; all but the last row hold no secret):
 
 | Variable | Value | Why |
 | --- | --- | --- |
@@ -494,6 +499,7 @@ runs, which is everything `agent-telemetry` does from the `SessionStart` and
 | `OTEL_LOGS_EXPORTER` | `otlp` | logs carry the events |
 | `OTEL_EXPORTER_OTLP_PROTOCOL` | `http/protobuf` | has no default, so it must be set |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | the ingest's base URL | the exporter appends `/v1/metrics` and `/v1/logs` itself |
+| `OTEL_EXPORTER_OTLP_HEADERS` | `Authorization=Bearer <claude-cloud-otlp key>` | **a secret, readable by anyone who uses the environment**; see the decision above |
 | `OTEL_METRIC_EXPORT_INTERVAL` | `30000` | default is 60000 ms |
 | `OTEL_LOGS_EXPORT_INTERVAL` | `5000` | already the default; a short interval is the point, because what is lost when a container is reclaimed is the batch still pending |
 
@@ -506,7 +512,7 @@ defaults without reading its cost model.
 `OTEL_LOG_RAW_API_BODIES`, `OTEL_LOG_MANAGED_SETTINGS`. They put prompts, tool
 input or whole API bodies into telemetry. Traces
 (`OTEL_TRACES_EXPORTER`, `CLAUDE_CODE_ENHANCED_TELEMETRY_BETA`) are beta and
-are not configured here. `otelHeadersHelper` is not used.
+are not configured here. `otelHeadersHelper` is not used: the key is static.
 
 Exporter writes carry no `X-Session-Id` (the exporter's headers are fixed at
 launch, before a session id exists), so they land under `_nosession/` in the
@@ -535,7 +541,8 @@ key does not allow; `429` and `503` are the ingest's quota and its closed state
 reason as everything else in step 1.
 
 Owner steps, in order: create the keys; add the credential; add the host to the
-allowed domains; set the two variables (and the exporter ones if wanted); bump
+allowed domains; set the two variables and the exporter ones (including
+`OTEL_EXPORTER_OTLP_HEADERS` with the separate `claude-cloud-otlp` key); bump
 `Rev:`.
 
 ## Codex
