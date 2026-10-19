@@ -266,10 +266,10 @@ next session. What must survive belongs in the repo or the setup script.
 
 ### `gh` is a property of the setup line
 
-GitHub work goes through the MCP tools. `gh` is present only when the setup
-line passes `--with-gh`, and GraphQL is blocked for every Claude Code session
-whatever the binary's state, so `gh pr view`, `gh pr list` and review-thread
-commands fail; REST reads have been seen to work. Verify, never assume. Helpers
+GitHub work prefers the MCP tools. Otherwise `gh api repos/{owner}/{repo}/...`
+(REST) works for reads and writes on repos attached with `add_repo`;
+GraphQL-backed subcommands (`gh issue list`, `gh pr list`, `gh pr view`,
+search) are blocked, as are `/user/*` and `/orgs/*`. Verify, never assume. Helpers
 that shell out to `gh` report `gh-unavailable` or `gh-unauthorized`: say what
 could not be gathered rather than reporting a clean result, and treat a `gh`
 command written into a skill as naming the *operation* — reach for the MCP
