@@ -141,6 +141,25 @@ by. `refresh` is started by `request` and is not meant to be invoked directly.
 See `home/commands/gcp-credentials.md` for the flow, and ADR 021 in
 `pmgledhill102/gcp-org-management` for the design.
 
+### Environment conformance
+
+- `Bash(~/.claude/bin/env-conformance)`
+- `Bash(~/.claude/bin/env-conformance *)`
+
+The same two-rule shape as the estate report below, for the same reason: the
+bare command is the full run, and `env-conformance *` needs an argument.
+
+Approved unattended because the runner only reads. Every probe is an HTTP
+`GET` (a one-byte ranged request, or `gh api` with no method override), a
+`command -v`, an environment-variable test or a file read, and
+`tests/env-conformance-test.sh` asserts a full run leaves `HOME` and cwd
+unchanged. No flag can make it write. `--matrix` names a file to read,
+`--answer` carries the agent's own observations into a comparison, and the
+rest only select entries or the output format. `env_set` prints only whether
+a variable is set, never its value, which matters because the variable it
+exists for holds a bearer token. That read-only property is what this rule
+relies on, so re-check it whenever a probe function is added.
+
 ### Estate report
 
 - `Bash(~/.claude/bin/estate-report)`

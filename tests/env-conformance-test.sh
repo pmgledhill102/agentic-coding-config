@@ -210,6 +210,66 @@ rc=$(CLAUDE_CODE_SESSION_ID='' run "$M" --brief)
 eq "hook: no session id is unknown" "$rc" 0
 has "hook: state=unknown" "state=unknown"
 
+# --- agent observations -------------------------------------------------------
+#
+# The agent quotes from its context; the probe compares the quote with the file
+# it should have come from. The control names a heading or skill that exists
+# nowhere, so the only honest answer to it is `absent`.
+
+# shellcheck disable=SC2016 # literal backticks: policy markdown, not a substitution
+printf '# Policy\n\n## Some heading\n\nThe first paragraph, with `code` and a comma,\ncontinues on a second line.\n\nA later paragraph.\n' \
+    > "$WORK/policy.md"
+mkdir -p "$WORK/skill"
+printf -- "---\nname: demo\ndescription: 'Do the demo thing cleanly: tidy every part of it.'\n---\n\n# Demo\n" \
+    > "$WORK/skill/SKILL.md"
+{
+    entry pol agent "agent policy pol $WORK/policy.md Some heading" present \
+        "agent policy pol-ctl $WORK/policy.md No such heading"
+    entry skl agent "agent skill skl $WORK/skill/SKILL.md" present \
+        "agent skill skl-ctl $WORK/no-skill/SKILL.md"
+} > "$M"
+
+rc=$(run "$M" --agent --answer 'pol=The first paragraph, with code and a comma continues' \
+    --answer pol-ctl=absent --answer 'skl=Do the demo thing cleanly' --answer skl-ctl=absent)
+eq "agent: true quotes with absent controls pass" "$rc" 0
+has "agent: both pass" "pass=2 fail=0"
+
+rc=$(run "$M" --agent --answer 'pol=THE FIRST PARAGRAPH WITH CODE AND A' \
+    --answer pol-ctl=Absent --answer 'skl=do the demo thing, cleanly' --answer skl-ctl=ABSENT --brief)
+eq "agent: case and punctuation are ignored" "$rc" 0
+
+# The negative control for the control: an agent that quotes text for a
+# heading that does not exist is answering from expectation.
+rc=$(run "$M" --agent --answer 'pol=The first paragraph, with code and a comma' \
+    --answer 'pol-ctl=There is some text under this heading' \
+    --answer 'skl=Do the demo thing cleanly' --answer skl-ctl=absent)
+eq "agent: a quote for the absent control is unproven, exit 2" "$rc" 2
+has "agent: the policy check is unproven, not pass" "unproven pol "
+rc=$(run "$M" --agent --answer 'pol=The first paragraph, with code and a comma' --answer pol-ctl=absent \
+    --answer 'skl=Do a different thing entirely now' --answer skl-ctl=absent)
+eq "agent: a wrong quote is a FAIL" "$rc" 1
+has "agent: observed wrong" "observed=wrong expected=present"
+rc=$(run "$M" --agent --answer pol=absent --answer pol-ctl=absent \
+    --answer 'skl=Do the demo thing cleanly' --answer skl-ctl=absent)
+eq "agent: policy reported absent is a FAIL" "$rc" 1
+has "agent: observed absent" "observed=absent expected=present"
+rc=$(run "$M" --agent --answer 'pol=The first paragraph' --answer pol-ctl=absent \
+    --answer 'skl=Do the demo thing cleanly' --answer skl-ctl=absent)
+eq "agent: a quote under five words cannot pass" "$rc" 1
+rc=$(run "$M" --agent --answer 'pol=A later paragraph is here now' --answer pol-ctl=absent \
+    --answer 'skl=Do the demo thing cleanly' --answer skl-ctl=absent)
+eq "agent: only the first paragraph under the heading counts" "$rc" 1
+
+rc=$(run "$M" --agent --brief)
+eq "agent: no answers is unknown, exit 0" "$rc" 0
+has "agent: state=unknown" "state=unknown"
+rc=$(run "$M" --brief)
+eq "agent: entries are skipped without --agent" "$rc" 0
+has "agent: both skipped" "skipped=2"
+
+rc=$( (sh "$SCRIPT" --answer 'no-equals-sign') > "$WORK/out" 2>&1; echo $?)
+eq "agent: a malformed --answer exits 64" "$rc" 64
+
 # --- selection ----------------------------------------------------------------
 
 {

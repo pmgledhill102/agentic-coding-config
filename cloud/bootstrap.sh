@@ -983,7 +983,7 @@ esac
 # the same change (see home/retired-paths): once the Bundle Issue carries the
 # files, the gates and the stop rule, working one is ordinary session work.
 
-SKILLS="promote-journal-inbox bundle-issues"
+SKILLS="promote-journal-inbox bundle-issues env-conformance"
 COMPOSED_SKILLS="retrospective start-session end-session"
 
 # Helper scripts the session skills shell out to. They are NOT optional: the
