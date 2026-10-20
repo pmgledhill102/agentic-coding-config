@@ -659,7 +659,8 @@ then also land in `<prefix>/bin`. The manifest's `bin_dir=` names which.
 | `~/.claude/skills/<name>` | symlink to the above, for Claude Code |
 | `~/.claude/CLAUDE.md` | the composed policy profile (Claude profiles) |
 | `~/.agents/AGENTS.md` | the composed policy profile (Codex profiles) |
-| `~/.claude/bin/<script>` | the five session helper scripts |
+| `~/.claude/bin/<script>` | the session helper scripts (`BIN_SCRIPTS` in `bootstrap.sh`) |
+| `~/.claude/conformance/matrix.conf` | the capability matrix `env-conformance` probes |
 | `~/.agents/.bootstrap-manifest` | what this run installed: ref, SHA, profile, skills, helpers, and `bin_dir=` (where the commands went) |
 | `~/.config/git/hooks/pre-commit` | global git hook, with `--with-precommit` |
 | `~/.cache/pre-commit/` | the warmed hook environments, with `--with-precommit` (~126 MB) |

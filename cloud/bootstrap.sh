@@ -1006,7 +1006,8 @@ COMPOSED_SKILLS="retrospective start-session end-session"
 #
 # env-conformance is start-session's too: its gather runs the fast subset, and
 # reads the matrix from ../conformance/ beside it, installed just below.
-BIN_SCRIPTS="start-session-gather-state start-session-claude-drift session-repo-resolve end-session-gather-state end-session-squash-merged session-cache-verdict env-conformance"
+# env-conformance-stamp is the env-conformance skill's, for its scheduled mode.
+BIN_SCRIPTS="start-session-gather-state start-session-claude-drift session-repo-resolve end-session-gather-state end-session-squash-merged session-cache-verdict env-conformance env-conformance-stamp"
 
 # Defensive: the credential-helper section above already creates this, but the
 # dependency is invisible from here and a reordering would break it silently.

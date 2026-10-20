@@ -75,5 +75,7 @@ reached offline. It also validates the real `home/conformance/matrix.conf`
 (complete stanzas, controls through their probe's own function, unique ids) and
 asserts a full run leaves `HOME` and cwd untouched. The agent probe is driven
 with `--answer` against fixture policy and skill files, including a quote
-offered for a control that cannot exist, which must read `unproven`. The runner's real job is in
+offered for a control that cannot exist, which must read `unproven`. `env-conformance-stamp`, the suite's one writer, is held to
+changing only the named stanzas' `measured=` lines, and to writing nothing when
+any id is unknown. The runner's real job is in
 a sandbox; see `docs/environment-conformance.md`.

@@ -79,6 +79,62 @@ Give one summary that combines both runs:
 On this surface, `unknown` and `not-applicable` are not failures. Say what
 went unchecked and stop there.
 
+## 5. Scheduled mode: only when invoked as `/env-conformance scheduled`
+
+A weekly scheduled task invokes this skill in a fresh session
+(`docs/runbooks/env-conformance-scheduled.md` holds its prompt and schedule).
+A fresh session is the cleanest place for step 1, because nothing has read a
+file yet. Do steps 1–4 exactly as above, then the following, all against
+`pmgledhill102/agentic-coding-config` through the GitHub MCP tools.
+
+**a. One issue per broken assertion, never two.** List the open issues once,
+paging to the end (`list_issues` with `state: "OPEN"` and
+`fields: ["number", "title"]`). Never use issue search: it is eventually
+consistent, so it can miss an issue filed by last week's run. For each entry
+that did not pass, look for an open issue with exactly this title:
+
+| Status | Title | Labels |
+| --- | --- | --- |
+| `FAIL` | `Conformance drift: <id>` | `P1`, `type: bug` |
+| `invalid` | `Conformance matrix invalid: <id>` | `P2`, `type: bug` |
+| `unproven` | `Conformance unproven: <id>` | `P3`, `type: task` |
+
+- **If one is open**, comment on it with this run's environment header and
+  the entry's lines from the report.
+- **If none is open**, create it, as a sub-issue of #260. The body holds the
+  observed and expected values, the claim, the `invalidates:` line verbatim,
+  the environment header, and one sentence on what the dependants mean for
+  someone relying on them today.
+- `unknown` and `not-applicable` file nothing.
+
+**b. Log the run on #260.** Post one comment on #260, even if it is closed.
+It holds the environment header, both `state=` lines, and either the issues
+from (a) as links or the word `clean`. That comment is the dated record of
+the last run, whatever happens to `measured=`.
+
+**c. Refresh `measured=` once a month, and only after a clean run.** A clean
+run means both runs report `state=ok`, with no `FAIL`, `unproven` or
+`invalid`. Stamp only the ids that printed `pass`: an `unknown` entry was not
+observed, so its date stays put. If the clean run qualifies, check whether
+any passing entry's `measured=` is earlier than the current month (compare
+`YYYY-MM`). If one is, and no open PR is titled
+`Conformance: refresh measured= dates (<YYYY-MM>)`, then:
+
+```sh
+~/.claude/bin/env-conformance-stamp home/conformance/matrix.conf <YYYY-MM-DD> <passing ids...>
+```
+
+Run it in the `agentic-coding-config` checkout, on the branch this session
+was assigned, or else on `claude/conformance-stamp-<YYYY-MM>` cut from
+`main`. Commit only `home/conformance/matrix.conf`, push, and open that PR
+with `Refs #260` and the environment header in the body. **Never merge it.**
+If no checkout is available, skip this step and say so in (b) rather than
+editing anything else.
+
+**d. End with a summary**: the two `state=` lines, the issues filed or
+commented on, and whether a stamp PR was opened. Someone reading the run
+later should not have to open the issues to know whether anything broke.
+
 ## Guardrails
 
 - **Never edit the matrix, the runner or the deployed files to make a check
@@ -86,6 +142,9 @@ went unchecked and stop there.
   claim, the matrix or what depends on it changes is for a human to decide.
   If the user asks for follow-up, file it as an issue on
   `pmgledhill102/agentic-coding-config` naming the failing entry ids.
+  Scheduled mode files those issues itself (step 5a). Its date stamp (5c)
+  is the one matrix write allowed: it changes only `measured=` on entries
+  that just passed, and it goes through a PR a human merges.
 - **Never retry step 1 after seeing a result.** A second answer, given
   after the runner said the first was wrong, is no longer an observation.
 - On a workstation, or any surface other than a Claude cloud sandbox, both

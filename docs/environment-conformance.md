@@ -92,9 +92,19 @@ error without a status is not.
   needs no human and no approvals. `/start-session` runs it on every session
   (`--fast --brief`), and each `FAIL` becomes a "Needs attention" line naming
   what it invalidates.
-- **Full** (the default): every stanza, about 6 seconds. Run it by hand
-  (`~/.claude/bin/env-conformance`), or let the scheduled run do it
+- **Full** (the default): every non-agent stanza, about 6 seconds. Run it by
+  hand (`~/.claude/bin/env-conformance`).
+- **Scheduled**: a weekly scheduled task starts a fresh session that runs
+  `/env-conformance scheduled`, which is both runs plus filing
   ([#655](https://github.com/pmgledhill102/agentic-coding-config/issues/655)).
+  The task's settings and exact prompt are in
+  [`runbooks/env-conformance-scheduled.md`](runbooks/env-conformance-scheduled.md).
+  - Every run comments on #260.
+  - Each entry that fails gets one open issue. A later run comments on it
+    rather than filing a duplicate.
+  - The first clean run in a month opens a PR that refreshes `measured=` on
+    the entries that passed, via `env-conformance-stamp`. That helper is the
+    suite's only writer, and it touches nothing but those lines.
 
 Every probe is read-only: an HTTP request, a command lookup or a file read.
 The test suite checks that a full run leaves `HOME` and cwd unchanged. A probe
@@ -132,10 +142,9 @@ a file read is not evidence of delivery, so the skill reports such a session
 
 - **Skill-body caching.** Is an already-invoked skill's body served from
   cache rather than re-read? Observing it means changing a `SKILL.md`
-  mid-session, which breaks the write-nothing rule, so it belongs to the
-  scheduled run if anywhere.
-- **Scheduled run and filing an issue on mismatch.** That is
-  [#655](https://github.com/pmgledhill102/agentic-coding-config/issues/655).
+  mid-session, which breaks the write-nothing rule, so even the scheduled
+  run does not try. A probe for it would plant a changed skill in a throwaway
+  session and check which version the second invocation is served.
 
 ## Baseline
 
