@@ -51,6 +51,7 @@ sh tests/estate-report-test.sh           # estate flag thresholds and bucketing 
 sh tests/credguard-test.sh               # credential-printing guard classification  <1s
 sh tests/prepush-guard-test.sh           # push guard judges the repo the push targets  ~1s
 sh tests/session-cache-verdict-test.sh   # rebuild-vs-cache verdict, and it never fails a session  <1s
+sh tests/env-conformance-test.sh         # every conformance status reachable; the runner writes nothing  ~1s
 sh tests/agent-telemetry-test.sh         # telemetry helper never fails/slows its caller; no key in argv  ~5s
 sh tests/start-session-gather-test.sh    # a gh failure never reaches the brief as exit=0 data  ~3s
 sh tests/end-session-gather-test.sh      # a merged branch never reads as unpushed; a real one does  ~1s

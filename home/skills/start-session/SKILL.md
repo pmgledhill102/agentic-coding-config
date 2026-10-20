@@ -113,6 +113,7 @@ Output is a sectioned stream. Each section starts with `===<name> (exit=<N>)===`
 | `gcloud_auth` | 7 | `state=absent` (gcloud not on PATH) = reported as n/a, no noise. `state=live` = silent. `state=expired` = a "Needs attention" line with the `! gcloud auth login` remedy, because an agent has no tty to reauth on. Never prompts. |
 | `claude_drift` | 5b, 7 | `state=no-source` (not in an a-c-c checkout) = silent skip. `state=compared` gives `behind=<n>` and `modified=<n>`, then one `behind: <path>` / `modified: <path>` line each, plus `remedy_behind=` / `remedy_modified=` when non-zero. Both zero = silent. |
 | `bootstrap_currency` | — | `state=not-a-container` on this surface, every time. Silent skip; it is the sandbox composition's check. |
+| `conformance` | — | `state=not-applicable` on this surface: the capability matrix records sandbox behaviours only. Silent skip. |
 
 Rules for interpreting exit codes:
 

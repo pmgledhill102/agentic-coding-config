@@ -85,6 +85,10 @@ jobs:
       # A SessionStart hook: a non-zero exit is a session that will not start.
       - name: Run the session-cache verdict tests
         run: sh tests/session-cache-verdict-test.sh
+      # curl and gh are stubbed on PATH, so every status is driven offline.
+      # The runner's real job is in a sandbox; this proves it can fail.
+      - name: Run the environment-conformance tests
+        run: sh tests/env-conformance-test.sh
       # The warm assertions in that suite build a real hook environment and
       # read the cache back, which needs the framework here. Without it the
       # suite would report the warm as untested rather than passing — but a

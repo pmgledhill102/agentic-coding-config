@@ -65,3 +65,13 @@ A fake `curl` on `PATH` records every argument the helper passes, which is what
 "the key never appears in argv" is checked against: the key and the signed upload
 URL both travel in mode-0600 curl config files. Runs in a few seconds, makes no
 network calls beyond loopback.
+
+## Environment conformance
+
+`env-conformance-test.sh` drives `home/bin/env-conformance` with stubbed `curl`
+and `gh` on `PATH` and fixture matrices, so every status (`pass`, `FAIL`,
+`unproven`, `unknown`, `not-applicable`, `invalid`) and every exit code is
+reached offline. It also validates the real `home/conformance/matrix.conf`
+(complete stanzas, controls through their probe's own function, unique ids) and
+asserts a full run leaves `HOME` and cwd untouched. The runner's real job is in
+a sandbox; see `docs/environment-conformance.md`.

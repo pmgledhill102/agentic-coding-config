@@ -49,6 +49,9 @@ Needs attention:
                                                (omit unless a degraded= line is present)
   • installed tools are off PATH: <bin_dir_off_path> — add it to the environment
                                                (omit unless a bin_dir_off_path= line is present)
+  • platform drift: <id> observed <x>, expected <y> — invalidates <dependants>
+                                               (one per FAIL; omit unless conformance state=mismatch)
+  • conformance unproven/invalid: <id> — <reason>   (omit unless that state; step 5d)
 ───────────────────────────────────────────────
 ```
 
