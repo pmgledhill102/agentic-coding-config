@@ -6,6 +6,7 @@
   "fragment_dir": "context/fragments",
   "skill_fragment_dir": "context/skills",
   "//environment": "Environment fragments follow ADR-0020's two content axes: one OS fragment and one persistence fragment per profile, composed in that order between the portable core and the provider fragment. compose-context.py rejects an illegal pair (persist-ephemeral with os-macos) and any os-windows, since no Windows profile exists (#417). Skill variants keep their -workstation/-sandbox names: their split is persistence-shaped, so -workstation reads as persist-durable and -sandbox as persist-ephemeral.",
+  "//agents-md": "Every policy output composes core, ephemeral-first, its profile's OS and persistence fragments, and its provider fragment, in that order, and compose-context.py fails one that omits either environment fragment. Claude profiles compose CLAUDE.md only. A neutral AGENTS.md beside it was retired (#310): in ~/.claude/ no other agent reads it, in a sandbox's ~/.agents/ nothing does, and Claude Code may now load it as well as CLAUDE.md, carrying the portable core twice (#596). A non-Claude agent is served by its own profile (codex-*), environment included.",
   "os_fragments": ["os-macos", "os-ubuntu"],
   "persistence_fragments": ["persist-durable", "persist-ephemeral"],
   "profiles": {
@@ -13,7 +14,6 @@
       "title": "Agent context — Claude Code on a workstation",
       "os": "os-macos", "persistence": "persist-durable",
       "outputs": {
-        "home/AGENTS.md": { "budget": 238, "fragments": ["core", "ephemeral-first"] },
         "home/CLAUDE.md": { "budget": 361, "fragments": ["core", "ephemeral-first", "os-macos", "persist-durable", "provider-claude"] }
       }
     },
@@ -36,7 +36,6 @@
       "title": "Agent context — Claude Code in a cloud sandbox",
       "os": "os-ubuntu", "persistence": "persist-ephemeral",
       "outputs": {
-        "profiles/claude-cloud-sandbox/AGENTS.md": { "budget": 238, "fragments": ["core", "ephemeral-first"] },
         "profiles/claude-cloud-sandbox/CLAUDE.md": { "budget": 325, "fragments": ["core", "ephemeral-first", "os-ubuntu", "persist-ephemeral", "provider-claude"] }
       }
     }

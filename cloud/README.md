@@ -657,8 +657,8 @@ then also land in `<prefix>/bin`. The manifest's `bin_dir=` names which.
 | `/usr/local/bin/gcloud` | wrapper: prefers the broker token, renews it when stale |
 | `~/.agents/skills/<name>/SKILL.md` | each whitelisted skill, canonical — the sandbox body for a composed one |
 | `~/.claude/skills/<name>` | symlink to the above, for Claude Code |
-| `~/.agents/AGENTS.md` | the composed policy profile |
-| `~/.claude/CLAUDE.md` | the Claude adapter profile (Claude profiles only) |
+| `~/.claude/CLAUDE.md` | the composed policy profile (Claude profiles) |
+| `~/.agents/AGENTS.md` | the composed policy profile (Codex profiles) |
 | `~/.claude/bin/<script>` | the five session helper scripts |
 | `~/.agents/.bootstrap-manifest` | what this run installed: ref, SHA, profile, skills, helpers, and `bin_dir=` (where the commands went) |
 | `~/.config/git/hooks/pre-commit` | global git hook, with `--with-precommit` |
@@ -926,9 +926,10 @@ refuses to compose a sandbox profile that includes a workstation fragment. That
 is what stops "run `chezmoi apply`" reaching a container with no chezmoi, so
 this script does not have to check.
 
-Claude profiles ship two files, because Claude Code reads `CLAUDE.md` and not
-`AGENTS.md`. Codex profiles ship `AGENTS.md` only, and it lands in
-`~/.agents/`. **On Codex Cloud nothing reads it there (#495).** Codex's home is
+Each profile ships one policy file, where its agent reads it. Claude profiles
+ship `CLAUDE.md` to `~/.claude/`; the neutral `AGENTS.md` they also used to
+ship was read by nothing and is retired (#310). Codex profiles ship `AGENTS.md`,
+and it lands in `~/.agents/`. **On Codex Cloud nothing reads it there (#495).** Codex's home is
 a managed `CODEX_HOME`, `$HOME` is read-only inside a task, and Codex reported
 loading no user-level `AGENTS.md` at all. The failure is the silent kind: the
 file could be present and correct and still never be seen. Which channel

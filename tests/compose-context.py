@@ -37,8 +37,8 @@ failures into quiet ones, so the build is what catches them:
 
 1. every committed output matches what the fragments currently produce
 2. every profile names one OS and one persistence fragment, as a pair that
-   exists (ADR-0020 §5); no output includes another surface's fragment; and
-   no portable fragment carries a string that marks a surface fact
+   exists (ADR-0020 §5); every output includes both, and no other surface's;
+   and no portable fragment carries a string that marks a surface fact
 3. every policy output has exactly one H1, so markdownlint MD025 holds
 4. every always-loaded output is within its own budget (a ratchet, in the
    manifest beside the output it governs)
@@ -277,6 +277,16 @@ def main():
                     f"{profile} -> {output}: includes environment fragment(s) "
                     f"{foreign} but its surface is {own_os} + {own_persist}"
                 )
+                continue
+
+            # Check 2d. The mirror image: an output that omits its environment
+            # tells an agent the policy but not the machine, and core's
+            # pointers into "the environment fragment composed into this
+            # file" then dangle (#310).
+            missing = [f for f in (own_os, own_persist) if f not in fragments]
+            if missing:
+                failures.append(
+                    f"{profile} -> {output}: omits its environment fragment(s) {missing}")
                 continue
 
             expected = compose(manifest, profile, output, fragments)

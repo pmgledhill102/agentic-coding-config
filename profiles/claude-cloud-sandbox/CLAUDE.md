@@ -305,9 +305,9 @@ Anything portable belongs in the core fragment, not here.
 
 #### How the portable rules map to these tools
 
-`AGENTS.md` states the policy; these are the calls that carry it out here.
+The agent policy states the rule; these are the calls that carry it out here.
 
-| Policy (AGENTS.md) | Claude Code |
+| Policy | Claude Code |
 | --- | --- |
 | Open a PR, delete the branch on merge | `create_pull_request`; `merge_pull_request` with `delete_branch: true` |
 | Check the PR is still open before pushing follow-ups | `pull_request_read` (method: `get`) |

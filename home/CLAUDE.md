@@ -290,14 +290,14 @@ apply and the change is lost. That covers `~/.claude/settings.json`, slash
 commands under `~/.claude/commands/`, hooks, and scripts under
 `~/.claude/bin/` — everything sourced from the `home/` directory of that repo.
 
-`~/.claude/CLAUDE.md` and `~/.claude/AGENTS.md`, including the text you are
-reading, are worse than merely deployed: they are **generated**, composed from
-fragments in `context/fragments/` by `tests/compose-context.py`. Editing one
-loses the change twice — chezmoi overwrites the file, and CI would have
+The policy file you are reading (`~/.claude/CLAUDE.md`, for Claude) is worse
+than merely deployed: it is **generated**, composed from fragments in
+`context/fragments/` by `tests/compose-context.py`. Editing it loses the
+change twice — chezmoi overwrites the file, and CI would have
 rejected it anyway for not matching its fragments. Edit the fragment.
 
 To change any of it, open an issue against `agentic-coding-config`; see
-"Changing agent config" in `AGENTS.md`. The same applies in reverse — an
+"Changing agent config" in the policy above. The same applies in reverse — an
 `agentic-coding-config` session doesn't get to edit `dotfiles` either.
 
 A merge to that repo does **not** reach this machine immediately. The
@@ -341,9 +341,9 @@ Anything portable belongs in the core fragment, not here.
 
 #### How the portable rules map to these tools
 
-`AGENTS.md` states the policy; these are the calls that carry it out here.
+The agent policy states the rule; these are the calls that carry it out here.
 
-| Policy (AGENTS.md) | Claude Code |
+| Policy | Claude Code |
 | --- | --- |
 | Open a PR, delete the branch on merge | `create_pull_request`; `merge_pull_request` with `delete_branch: true` |
 | Check the PR is still open before pushing follow-ups | `pull_request_read` (method: `get`) |

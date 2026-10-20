@@ -249,11 +249,11 @@ record_failure() {
         "$BIN_DIR/agent-telemetry" record bootstrap "$HOME/.agents/.bootstrap-manifest" > /dev/null 2>&1 || true
     fi
 
-    # AGENTS.md always; CLAUDE.md only for the profiles that install one, or a
-    # codex container would keep a banner nothing there ever overwrites.
-    _targets="$HOME/.agents/AGENTS.md"
+    # The one policy file this profile's agent reads: a banner anywhere else is
+    # one nothing ever overwrites, or one nobody reads.
     case "$PROFILE" in
-        claude-*) _targets="$_targets $HOME/.claude/CLAUDE.md" ;;
+        claude-*) _targets="$HOME/.claude/CLAUDE.md" ;;
+        *) _targets="$HOME/.agents/AGENTS.md" ;;
     esac
 
     for _t in $_targets; do
@@ -873,35 +873,20 @@ rm -f "$HOME/.claude/commands/gcp-credentials.md"
 #
 # What lands here is a COMPOSED PROFILE, not the raw fragments. ADR-0018
 # resolves surface differences at delivery: the sandbox profile is built from
-# the portable core, the sandbox environment fragment, and the provider
-# fragment, and it deliberately excludes the workstation fragment. That is what
+# the portable core, the os-ubuntu and persist-ephemeral fragments, and the
+# provider fragment, and it deliberately excludes persist-durable. That is what
 # stops "run chezmoi apply" reaching a container with no chezmoi -- confidently
-# wrong policy, which is worse than none. CI fails the build if a workstation
-# fragment ever reaches a sandbox profile, so this fetch does not have to
-# check.
+# wrong policy, which is worse than none. CI fails the build if a durable-machine
+# fragment ever reaches a sandbox profile (ADR-0020), so this fetch does not
+# have to check.
 #
 # The file is complete, with no @imports to resolve. That matters for Codex,
 # which rejects @file templating: an import here would arrive as literal text
 # and the content it named would be lost silently.
 
-PROFILE_DIR="$HOME/.agents"
-mkdir -p "$PROFILE_DIR"
-
-fetch "$RAW/profiles/$PROFILE/AGENTS.md" "$TMP/AGENTS.md" ||
-    die "could not fetch profile '$PROFILE' from $REF — check the name against profiles/ in the repo"
-
-# Same 404-as-content guard as everything else here: a bad ref or a mistyped
-# profile can return an HTML error page with a 200 from some proxies, and
-# policy whose first line is <!DOCTYPE reads as a broken agent rather than a
-# broken fetch.
-head -1 "$TMP/AGENTS.md" | grep -q "^<!-- GENERATED" ||
-    die "fetched profile is not a composed artefact — check that $REF and profile '$PROFILE' exist"
-
-cp "$TMP/AGENTS.md" "$PROFILE_DIR/AGENTS.md"
-log "policy  -> $PROFILE_DIR/AGENTS.md (profile: $PROFILE)"
-
-# Claude Code reads CLAUDE.md and does not read AGENTS.md, so the Claude
-# profiles ship a second composed file for it. A container-created
+# One composed file per profile, placed where that profile's agent reads it.
+#
+# Claude profiles ship CLAUDE.md to ~/.claude/. A container-created
 # ~/.claude/CLAUDE.md is read: verified 2026-08-18 by planting a marker
 # mid-session and finding it in context on resume, announced as the user's
 # global instructions. The cloud docs list user-scope CLAUDE.md as
@@ -909,19 +894,38 @@ log "policy  -> $PROFILE_DIR/AGENTS.md (profile: $PROFILE)"
 # which is a different claim -- the same distinction ADR-0016 already
 # established for ~/.claude/skills.
 #
-# Codex profiles ship AGENTS.md only, to ~/.agents/. Codex Cloud does not read
-# it there: its home is a managed CODEX_HOME and $HOME is read-only inside a
-# task (#495). Which channel replaces it is open in #575.
+# Codex profiles ship AGENTS.md to ~/.agents/. Codex Cloud does not read it
+# there: its home is a managed CODEX_HOME and $HOME is read-only inside a task
+# (#495). Which channel replaces it is open in #575.
+#
+# Claude profiles used to ship a neutral AGENTS.md to ~/.agents/ as well. Nothing
+# read it, and it carried no environment fragment (#310), so it is no longer
+# composed, and a copy an older run left in a resumed container is removed.
+
+PROFILE_DIR="$HOME/.agents"
+mkdir -p "$PROFILE_DIR"
+
 case "$PROFILE" in
-    claude-*)
-        fetch "$RAW/profiles/$PROFILE/CLAUDE.md" "$TMP/CLAUDE.md" ||
-            die "could not fetch the Claude adapter for profile '$PROFILE' from $REF"
-        head -1 "$TMP/CLAUDE.md" | grep -q "^<!-- GENERATED" ||
-            die "fetched Claude adapter is not a composed artefact"
-        mkdir -p "$HOME/.claude"
-        cp "$TMP/CLAUDE.md" "$HOME/.claude/CLAUDE.md"
-        log "adapter -> $HOME/.claude/CLAUDE.md"
-        ;;
+    claude-*) POLICY_FILE=CLAUDE.md POLICY_DEST="$HOME/.claude/CLAUDE.md" ;;
+    *) POLICY_FILE=AGENTS.md POLICY_DEST="$PROFILE_DIR/AGENTS.md" ;;
+esac
+
+fetch "$RAW/profiles/$PROFILE/$POLICY_FILE" "$TMP/$POLICY_FILE" ||
+    die "could not fetch profile '$PROFILE' ($POLICY_FILE) from $REF — check the name against profiles/ in the repo"
+
+# Same 404-as-content guard as everything else here: a bad ref or a mistyped
+# profile can return an HTML error page with a 200 from some proxies, and
+# policy whose first line is <!DOCTYPE reads as a broken agent rather than a
+# broken fetch.
+head -1 "$TMP/$POLICY_FILE" | grep -q "^<!-- GENERATED" ||
+    die "fetched profile is not a composed artefact — check that $REF and profile '$PROFILE' exist"
+
+mkdir -p "$(dirname "$POLICY_DEST")"
+cp "$TMP/$POLICY_FILE" "$POLICY_DEST"
+log "policy  -> $POLICY_DEST (profile: $PROFILE)"
+
+case "$PROFILE" in
+    claude-*) rm -f "$PROFILE_DIR/AGENTS.md" ;;
 esac
 
 # --- the workflow skills ------------------------------------------------------
