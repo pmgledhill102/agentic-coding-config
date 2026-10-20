@@ -428,6 +428,24 @@ run_sh bootstrap_currency '
 '
 
 
+# Platform conformance: do the behaviours this repo's decisions rest on still
+# hold here? The fast subset of the capability matrix, a few seconds with no
+# human and no approvals (#260, #653). The content carries the verdict on its
+# state= line, so the section always exits 0: a mismatch is information for the
+# brief, not a gather error.
+conformance_brief() {
+    helper="$(dirname "$0")/env-conformance"
+    if [ ! -x "$helper" ]; then
+        # A container bootstrapped before the helper existed. Saying so beats
+        # silence, which would read as "conformance checked and clean".
+        echo "state=absent reason=env-conformance not installed; container predates it"
+        return 0
+    fi
+    "$helper" --fast --brief
+    return 0
+}
+run_section conformance conformance_brief
+
 export PRE_FETCH_DEFAULT_SHA
 
 # shellcheck disable=SC2016
@@ -572,6 +590,6 @@ printf '===repo_archived (exit=0)===\n'
 printf 'state=%s\n' "$REPO_ARCHIVED"
 printf '\n'
 
-for s in local_state recent_main_commits unmerged_branches gh_ready gh_assigned gh_bundles gcloud_auth claude_drift bootstrap_currency; do
+for s in local_state recent_main_commits unmerged_branches gh_ready gh_assigned gh_bundles gcloud_auth claude_drift bootstrap_currency conformance; do
     [ -f "$TMP/$s.exit" ] && emit "$s"
 done

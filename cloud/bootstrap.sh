@@ -1003,7 +1003,10 @@ COMPOSED_SKILLS="retrospective start-session end-session"
 # start-session reads its marker whether or not hooks were installed -- and a
 # container with the reader but not the writer reports "no marker" honestly,
 # which beats a missing script failing at the point of use.
-BIN_SCRIPTS="start-session-gather-state start-session-claude-drift session-repo-resolve end-session-gather-state end-session-squash-merged session-cache-verdict"
+#
+# env-conformance is start-session's too: its gather runs the fast subset, and
+# reads the matrix from ../conformance/ beside it, installed just below.
+BIN_SCRIPTS="start-session-gather-state start-session-claude-drift session-repo-resolve end-session-gather-state end-session-squash-merged session-cache-verdict env-conformance"
 
 # Defensive: the credential-helper section above already creates this, but the
 # dependency is invisible from here and a reordering would break it silently.
@@ -1017,6 +1020,17 @@ for script in $BIN_SCRIPTS; do
     install -m 0755 "$TMP/$script" "$HOME/.claude/bin/$script"
 done
 log "helpers -> $HOME/.claude/bin/ ($(echo "$BIN_SCRIPTS" | wc -w | tr -d ' ') session scripts)"
+
+# The capability matrix env-conformance probes. Data, not a script, so the
+# shebang guard above does not fit; a stanza header is what a bad ref's HTML
+# error page will not have.
+mkdir -p "$HOME/.claude/conformance"
+fetch "$RAW/home/conformance/matrix.conf" "$TMP/matrix.conf" ||
+    die "could not fetch the capability matrix from $REF"
+grep -q '^\[[a-z0-9-]*\]$' "$TMP/matrix.conf" ||
+    die "fetched matrix.conf has no stanzas — check that $REF exists"
+install -m 0644 "$TMP/matrix.conf" "$HOME/.claude/conformance/matrix.conf"
+log "matrix  -> $HOME/.claude/conformance/matrix.conf"
 
 # --- the standards ------------------------------------------------------------
 #
