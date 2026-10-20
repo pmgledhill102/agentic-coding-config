@@ -10,9 +10,11 @@ measured once, in a vendor environment that changes without notice:
 When one of them changes, the mechanism built on it stops working, the session
 still looks normal, and nobody notices.
 [#260](https://github.com/pmgledhill102/agentic-coding-config/issues/260) is
-the response. This page covers the part that is built: the script-checkable
+the response. This page covers the parts that are built: the script-checkable
 assertions and the per-session fast run
-([#653](https://github.com/pmgledhill102/agentic-coding-config/issues/653)).
+([#653](https://github.com/pmgledhill102/agentic-coding-config/issues/653)),
+and the checks only the agent can make
+([#654](https://github.com/pmgledhill102/agentic-coding-config/issues/654)).
 
 ## Pieces
 
@@ -21,6 +23,7 @@ assertions and the per-session fast run
 | Capability matrix, as data | `home/conformance/matrix.conf` | `~/.claude/conformance/matrix.conf` |
 | Probe runner | `home/bin/env-conformance` | `~/.claude/bin/env-conformance` |
 | Per-session fast run | `conformance` section of `start-session-gather-state` | runs in `/start-session` (step 5d) |
+| Agent-observable checks | `home/skills/env-conformance/SKILL.md` | `/env-conformance` |
 | Behaviour tests | `tests/env-conformance-test.sh` | CI only |
 
 The bootstrap installs the runner and matrix in a sandbox, and chezmoi
@@ -98,12 +101,39 @@ The test suite checks that a full run leaves `HOME` and cwd unchanged. A probe
 that needs a human, or must plant something to observe it, belongs only in the
 scheduled suite, never in this matrix.
 
+## Agent-observable checks
+
+Two load-bearing claims can only be checked from inside the agent's context:
+is the container-written `~/.claude/CLAUDE.md` loaded (#245), and do
+container-written skills appear in the skill list (ADR-0016). They are
+`mode=agent` stanzas, run only with `--agent`, and the `env-conformance` skill
+drives them.
+
+**The agent quotes rather than answers yes or no.** "Do you have policy?"
+invites a confident yes. Instead the skill asks for the opening words of the
+paragraph under a named heading in the policy, and of a named skill's
+description in the skill list. The answers are passed in with `--answer`, and
+the probe compares them with the deployed file: case and punctuation are
+ignored, at least five words are required, and the quote must come from the
+first paragraph. Nothing is added to the policy for this, because existing
+text works as the sentinel. That matters because the cloud profile is at its
+line budget.
+
+**The controls name a heading and a skill that exist nowhere.** The only
+honest answer to them is `absent`. An agent that quotes something for one is
+answering from expectation, so the probe reports that as `present`, and the
+runner calls the whole check `unproven`.
+
+**A session that read the file first cannot take part.** A quote copied from
+a file read is not evidence of delivery, so the skill reports such a session
+`unknown`, never `pass`.
+
 ## Not covered here
 
-- **Agent-observable claims.** These are: is the composed policy in context;
-  are the skills listed; is an invoked skill's body cached. No script can see
-  any of them; [#654](https://github.com/pmgledhill102/agentic-coding-config/issues/654)
-  is the skill for them.
+- **Skill-body caching.** Is an already-invoked skill's body served from
+  cache rather than re-read? Observing it means changing a `SKILL.md`
+  mid-session, which breaks the write-nothing rule, so it belongs to the
+  scheduled run if anywhere.
 - **Scheduled run and filing an issue on mismatch.** That is
   [#655](https://github.com/pmgledhill102/agentic-coding-config/issues/655).
 

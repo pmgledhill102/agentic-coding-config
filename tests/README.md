@@ -73,5 +73,7 @@ and `gh` on `PATH` and fixture matrices, so every status (`pass`, `FAIL`,
 `unproven`, `unknown`, `not-applicable`, `invalid`) and every exit code is
 reached offline. It also validates the real `home/conformance/matrix.conf`
 (complete stanzas, controls through their probe's own function, unique ids) and
-asserts a full run leaves `HOME` and cwd untouched. The runner's real job is in
+asserts a full run leaves `HOME` and cwd untouched. The agent probe is driven
+with `--answer` against fixture policy and skill files, including a quote
+offered for a control that cannot exist, which must read `unproven`. The runner's real job is in
 a sandbox; see `docs/environment-conformance.md`.

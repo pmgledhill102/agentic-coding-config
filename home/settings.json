@@ -290,6 +290,8 @@
       "Bash(~/.claude/bin/agent-telemetry status)",
       "Bash(~/.claude/bin/estate-report)",
       "Bash(~/.claude/bin/estate-report *)",
+      "Bash(~/.claude/bin/env-conformance)",
+      "Bash(~/.claude/bin/env-conformance *)",
       "mcp__github__add_comment_to_pending_review",
       "mcp__github__add_issue_comment",
       "mcp__github__add_reply_to_pull_request_comment",

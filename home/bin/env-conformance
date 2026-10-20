@@ -8,9 +8,15 @@
 # and each one fails silently when it does. This reads the capability matrix,
 # probes each entry, and says which claims still hold (#260, #653).
 #
-# Usage: env-conformance [--fast] [--brief] [--matrix FILE]
+# Usage: env-conformance [--fast | --agent [--answer KEY=VALUE]...] [--brief] [--matrix FILE]
 #
 #   --fast    only mode=fast entries: a few seconds, no human, no approvals
+#   --agent   only mode=agent entries: claims no script can see, such as "is
+#             the composed policy in my context". The agent reports what it
+#             observed with --answer, and this compares that against the file
+#             on disk. Driven by the env-conformance skill
+#   --answer  KEY=VALUE, one per agent observation; KEY is the one the probe
+#             names. VALUE `absent` means "not in my context"
 #   --brief   the start-session gather format: one state= line, then only
 #             the entries that did not pass
 #   --matrix  defaults to ../conformance/matrix.conf beside this script, which
@@ -41,11 +47,24 @@ set -u
 set -f # probe arguments are URLs and paths, never globs
 
 FAST=0
+AGENT=0
 BRIEF=0
+ANSWERS=
 MATRIX=
 while [ $# -gt 0 ]; do
     case "$1" in
         --fast) FAST=1 ;;
+        --agent) AGENT=1 ;;
+        --answer)
+            [ $# -ge 2 ] || { echo "env-conformance: --answer needs KEY=VALUE" >&2; exit 64; }
+            case "$2" in
+                [a-z]*=*) ;;
+                *) echo "env-conformance: --answer wants KEY=VALUE, got: $2" >&2; exit 64 ;;
+            esac
+            ANSWERS="$ANSWERS$2
+"
+            shift
+            ;;
         --brief) BRIEF=1 ;;
         --matrix)
             [ $# -ge 2 ] || { echo "env-conformance: --matrix needs a file" >&2; exit 64; }
@@ -185,7 +204,84 @@ probe_hook_fired() { # hook_fired <marker> <settings.json> <hook> -> this-sessio
     if [ "$_sid" = "$CLAUDE_CODE_SESSION_ID" ]; then echo this-session; else echo other-session; fi
 }
 
-KNOWN_PROBES=" os sh_impl tool env_set egress gh_lane hook_fired "
+# --- agent observations -------------------------------------------------------
+#
+# Some claims only the agent can check: whether a container-written policy file
+# reached its context, whether container-written skills reached its skill list.
+# The agent quotes the opening words of something it can see, without reading
+# any file, and the quote is compared with the file it should have come from.
+# Opening words rather than a yes/no, because "do you have policy?" invites a
+# confident yes; a verbatim quote of text the agent was not otherwise shown
+# cannot be produced from expectation.
+
+answer_for() { # answer_for <key> -> "=<value>" if answered, nothing if not
+    printf '%s' "$ANSWERS" | while IFS= read -r _l; do
+        case "$_l" in
+            "$1="*) printf '=%s' "${_l#*=}"; break ;;
+        esac
+    done
+}
+
+normalise() { # lowercase, no punctuation, single spaces: a quote may drop a comma
+    printf '%s' "$1" | tr -d '[:punct:]' | tr '[:upper:]' '[:lower:]' |
+        tr -s '[:space:]' ' ' | sed 's/^ //; s/ $//'
+}
+
+heading_paragraph() { # heading_paragraph <file> <heading text> -> first paragraph under it
+    [ -r "$1" ] || return 0
+    awk -v want="$2" '
+        found && /^[[:space:]]*$/ { if (para != "") exit; next }
+        found { para = para (para == "" ? "" : " ") $0; next }
+        /^#+[[:space:]]/ { h = $0; sub(/^#+[[:space:]]+/, "", h); sub(/[[:space:]]+$/, "", h); if (h == want) found = 1 }
+        END { print para }
+    ' "$1"
+}
+
+skill_description() { # skill_description <SKILL.md> -> its frontmatter description
+    [ -r "$1" ] || return 0
+    sed -n '2,/^---$/s/^description:[[:space:]]*//p' "$1" | head -1 |
+        sed "s/^['\"]//; s/['\"]\$//"
+}
+
+probe_agent() { # agent policy <key> <file> <heading...> | agent skill <key> <SKILL.md>
+    #  -> present | absent | wrong | unknown
+    _kind=${1:-}
+    _key=${2:-}
+    _file=${3:-}
+    shift 3 2> /dev/null || { echo unknown; return; }
+    _got=$(answer_for "$_key")
+    [ -n "$_got" ] || { echo unknown; return; }
+    _got=${_got#=}
+    case "$_kind" in
+        policy) _truth=$(heading_paragraph "$_file" "$*") ;;
+        skill) _truth=$(skill_description "$_file") ;;
+        *) echo unknown; return ;;
+    esac
+    _na=$(normalise "$_got")
+    if [ "$_na" = absent ]; then
+        echo absent
+        return
+    fi
+    # Nothing on disk to compare with, yet the agent quoted something: a claim
+    # of presence that cannot be true. Reported as present so that, on a
+    # negative control, the runner calls the whole check unproven -- an agent
+    # that sees what is not there cannot be trusted when it sees what is.
+    [ -n "$_truth" ] || { echo present; return; }
+    _nt=$(normalise "$_truth")
+    # Five words is past what a lucky guess gets right, and short enough that
+    # a listing which truncates a description still shows it.
+    # shellcheck disable=SC2086 # splitting into words is the point: count them
+    set -- $_na
+    _prefix=no
+    case "$_nt " in "$_na "*) _prefix=yes ;; esac
+    if [ $# -ge 5 ] && [ "$_prefix" = yes ]; then
+        echo present
+    else
+        echo wrong
+    fi
+}
+
+KNOWN_PROBES=" os sh_impl tool env_set egress gh_lane hook_fired agent "
 
 # run_probe <probe expression> -- split, expand ~/, dispatch.
 run_probe() {
@@ -271,7 +367,12 @@ while IFS=$US read -r id mode surface probe expect control measured claim depend
         note "invalid  $id  control uses '$cfn', probe uses '$pfn'; they must match"
         continue
     fi
-    if [ "$surface" != "$SURFACE" ] || { [ "$FAST" -eq 1 ] && [ "$mode" != fast ]; }; then
+    # Agent entries need answers, so they run only when asked for, and then
+    # alone; a plain run would report every one of them unknown.
+    if [ "$surface" != "$SURFACE" ] ||
+        { [ "$AGENT" -eq 1 ] && [ "$mode" != agent ]; } ||
+        { [ "$AGENT" -eq 0 ] && [ "$mode" = agent ]; } ||
+        { [ "$FAST" -eq 1 ] && [ "$mode" != fast ]; }; then
         SKIPPED=$((SKIPPED + 1))
         continue
     fi
@@ -338,7 +439,8 @@ echo "env-conformance $(date -u +%Y-%m-%dT%H:%M:%SZ 2> /dev/null)"
 echo "surface=$SURFACE os=$(probe_os /etc/os-release) kernel=$(uname -r 2> /dev/null)" \
     "claude_code=${CLAUDE_CODE_VERSION:-unknown}" \
     "bootstrap_sha=$(sed -n 's/^sha=//p' "$manifest" 2> /dev/null | head -1)"
-echo "matrix=$MATRIX mode=$([ "$FAST" -eq 1 ] && echo fast || echo full)"
+if [ "$AGENT" -eq 1 ]; then RUN_MODE=agent; elif [ "$FAST" -eq 1 ]; then RUN_MODE=fast; else RUN_MODE=full; fi
+echo "matrix=$MATRIX mode=$RUN_MODE"
 echo
 printf '%s' "$REPORT"
 echo
