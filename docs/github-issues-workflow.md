@@ -10,9 +10,41 @@ states the current conventions only.
 | --- | --- | --- |
 | Epic → Feature → Task | Sub-issues (`--parent`) | Nests up to 8 levels; 100 children per parent |
 | Type | Labels `type: epic\|feature\|task\|bug` | Issue *types* are org-only; labels work everywhere |
-| Priority | Labels `P0`–`P4` | P0 critical … P2 medium … P4 backlog |
+| Priority | Labels `P0`–`P4` | P0 critical … P2 medium … P4 lowest priority, but intended |
 | Dependencies | Native blocked-by (`--blocked-by`) | Max 50 per relationship type; blocked icon in lists |
 | History | Issue timeline | Automatic; includes label/state/relationship events |
+
+## Ideas are not issues
+
+**An issue means "I will do this".** It reads as a commitment and counts
+toward the backlog, and every triage session re-reads it. An idea (a design, a
+capability, a "worth doing one day") is a file instead. `P4` is the lowest
+priority of work that is intended; an idea-shaped item never gets an issue at
+`P4` or at any other priority.
+
+- **Location:** a top-level `ideas/` directory, the same name in every repo.
+  Create it when the first idea lands, never in advance.
+- **Home rule:** an idea lives in the repo that would implement it. One that
+  spans repos, or has no home yet, goes in `paul-context/ideas/`.
+- **Shape:** one idea per file, `ideas/<slug>.md`, beginning:
+
+  ```markdown
+  # <title>
+
+  Status: parked (YYYY-MM-DD)
+  Trigger: <the concrete event that would make this work>
+  From: <owner/repo#n, if it was an issue>
+  ```
+
+  Then the original issue body, carried over unchanged so no reasoning is
+  lost. Comments stay reachable through the `From:` link.
+- **A trigger is required.** "A second project needs model access" is one;
+  "when it becomes a problem" is not.
+- **Promotion:** when the trigger fires, open an issue that links the file and
+  set `Status: promoted → #<n>`. The file stays as the record.
+- **Parking an existing issue:** move the body into the file, then close the
+  issue as not planned with "Parked as an idea: `ideas/<slug>.md`". The
+  `bundle-issues` skill does this in bulk with its `PARK` verdict.
 
 ## Everyday commands
 

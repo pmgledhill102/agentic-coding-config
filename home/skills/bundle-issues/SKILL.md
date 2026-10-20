@@ -37,8 +37,8 @@ threads that correct them. Concretely:
 
 - **Tier 1 — auto-act**: reading issues, verifying claims, writing the notes
   file.
-- **Tier 2 — one batched confirmation**: closing the already-fixed issues, and
-  creating the Bundle Issues. Both are taken together, once, at step 7.
+- **Tier 2 — one batched confirmation**: closing the already-fixed issues,
+  creating the Bundle Issues, and parking ideas. Both are taken together, once, at step 7.
 - **Tier 3 — surface only**: anything that needs a decision, including every
   deferred issue and every cluster finding.
 
@@ -129,9 +129,19 @@ Verdicts:
 | --- | --- |
 | `FIXED` | The defect is not in the tree any more. Step 7 closes it. |
 | `ELIGIBLE` | Named fix, small blast radius, verifiable here, no unanswered questions, still live, unclaimed. |
-| `DEFER` | Fails the bar. The reason goes in the last column, and it is always specific: "needs a decision about X", not "too big". |
+| `DEFER` | Real work blocked on a named decision. The reason goes in the last column, and it is always specific: "needs a decision about X", not "too big". |
+| `PARK` | An idea, not a commitment: nothing is broken, and the item adds or redesigns a capability that no current work needs. The last column carries the proposed trigger (below). |
 | `CLAIMED` | An open PR or a branch already addresses it. |
 | `BLOCKED` | A blocked-by dependency is still open. |
+
+`PARK` is not a softer `DEFER`. `DEFER` stays on the backlog because someone
+will do the work once a question is answered; `PARK` leaves it, because nobody
+has said they will. **A park needs a trigger**: the concrete event that would
+make this work, such as "a second project needs model access". "When it becomes
+a problem" is not one. Take the trigger from the issue's own text where it
+names one; otherwise propose one in the notes and the plan. If no concrete
+trigger can be proposed, the issue is not a `PARK` — rule it `DEFER`, or
+`ELIGIBLE` if it qualifies.
 
 The bar for `ELIGIBLE` is **no unanswered questions, and an answer path that
 exists**. An issue that asks the user something, or whose first step is deciding
@@ -278,14 +288,29 @@ step 10 summaries). Tables and bullets survive wrapping; a label gutter does not
 >
 > - #`<n>`, #`<n>`, #`<n>` — `<the shared cause>`
 >
+> **Park as ideas:** `<p>`
+>
+> | Issue | Idea file | Trigger |
+> | --- | --- | --- |
+> | #`<n>` | `ideas/<slug>.md` | `<the concrete event, proposed from the issue's text>` |
+>
 > **Eligible but unbundled:** `<u>` · **Deferred:** `<d>`
 >
-> Create `<b>` Bundle Issues and close `<k>` fixed issues? (y/n)
+> Create `<b>` Bundle Issues, close `<k>` fixed issues and park `<p>` ideas? (y/n)
 
 On yes:
 
 **Close the already-fixed issues**, each with a comment naming what fixed it.
 These are the cheapest count reduction available — no branch, no CI, no review.
+
+**Park the ideas.** Write one `ideas/<slug>.md` per parked issue, creating
+`ideas/` only now that the first one lands, in the shape
+[`docs/github-issues-workflow.md`](../../../docs/github-issues-workflow.md)
+gives: title, `Status: parked (<today>)`, the confirmed `Trigger:`, `From:
+<owner>/<repo>#<n>`, then the issue body **unchanged**. Commit them on one
+branch and open one PR. Once the PR is open, close each issue as **not
+planned** with "Parked as an idea: `ideas/<slug>.md`". Comments stay reachable
+through the `From:` link, so do not copy them.
 
 **Create one Issue per bundle**, titled `Bundle: <shared concern>`. One per
 bundle, not one combined plan: each is then independently claimable, closeable
@@ -392,10 +417,12 @@ Same rule as the plan: markdown, never a gutter-aligned fence.
 >
 > - Clusters reported: `<c>`
 > - Eligible but unbundled: `<u>`
+> - Parked as ideas: `<p>` — #`<n>` (`ideas/<slug>.md`), counted apart from
+>   deferred: parked items need no decision, deferred ones do
 > - Deferred: `<d>` — the backlog that actually needs you; checked against
 >   commits and named blockers to depth `<commits searched>`
-> - Backlog: `<N>` open before, `<N-k+b>` now with the bundle issues,
->   `<N-k-closed-by-bundles>` once the bundle PRs merge
+> - Backlog: `<N>` open before, `<N-k-p+b>` now with the bundle issues,
+>   `<N-k-p-closed-by-bundles>` once the bundle PRs merge
 
 Link each bundle number to its issue, since the report is what the user clicks
 from.
