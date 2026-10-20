@@ -36,7 +36,9 @@ Checks, per ADR-0018 principle 7 — deterministic delivery converts loud
 failures into quiet ones, so the build is what catches them:
 
 1. every committed output matches what the fragments currently produce
-2. no non-workstation profile includes a workstation-only fragment
+2. every profile names one OS and one persistence fragment, as a pair that
+   exists (ADR-0020 §5); every output includes both, and no other surface's;
+   and no portable fragment carries a string that marks a surface fact
 3. every policy output has exactly one H1, so markdownlint MD025 holds
 4. every always-loaded output is within its own budget (a ratchet, in the
    manifest beside the output it governs)
@@ -51,6 +53,15 @@ import sys
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 MANIFEST = ROOT / "context" / "manifest.json"
+
+# ADR-0020 §5. An ephemeral Mac does not exist, and a profile that claimed one
+# would compose chezmoi-free policy onto a BSD userland.
+ILLEGAL_PAIRS = {("os-macos", "persist-ephemeral")}
+
+# Strings only an os-* or persist-* fragment has reason to contain. Short on
+# purpose: each is a surface fact that is false somewhere, not a topic.
+SURFACE_MARKERS = ("dotup", "/private/tmp", "refreshPeriod", ".bootstrap-manifest",
+                   "--break-system-packages")
 
 HEADING = re.compile(r"^(#{1,5})(\s+\S)", re.M)
 FENCE = re.compile(r"^(```|~~~)")
@@ -213,23 +224,69 @@ def emit(output, expected, write, failures, wrote):
 def main():
     write = "--write" in sys.argv
     manifest = json.loads(MANIFEST.read_text())
-    env_fragments = set(manifest["environment_fragments"])
+    os_fragments = set(manifest["os_fragments"])
+    persistence_fragments = set(manifest["persistence_fragments"])
+    env_fragments = os_fragments | persistence_fragments
 
     failures, wrote = [], []
+
+    # Check 2c. A surface fact in a portable fragment reaches every surface,
+    # including the ones it is false on. The strings are ones only a surface
+    # fragment has reason to carry; words like "chezmoi" or "apt-get" are
+    # deliberately absent, because core names them portably (#354).
+    frag_dir = ROOT / manifest["fragment_dir"]
+    for path in sorted(frag_dir.glob("*.md")):
+        if path.stem in env_fragments:
+            continue
+        text = path.read_text()
+        for marker in SURFACE_MARKERS:
+            if marker in text:
+                failures.append(
+                    f"{path.relative_to(ROOT)}: contains {marker!r}, a surface fact; "
+                    f"move it to an os-* or persist-* fragment (ADR-0020 §5)"
+                )
+
     for profile, spec in manifest["profiles"].items():
-        own_env = spec["environment"]
+        own_os, own_persist = spec.get("os"), spec.get("persistence")
+
+        # Check 2a. One of each axis, and a pair that exists.
+        if own_os == "os-windows":
+            failures.append(
+                f"{profile}: os-windows has no profile yet (ADR-0020 §3, #417)")
+            continue
+        if own_os not in os_fragments or own_persist not in persistence_fragments:
+            failures.append(
+                f"{profile}: must name one of {sorted(os_fragments)} as 'os' and one of "
+                f"{sorted(persistence_fragments)} as 'persistence'")
+            continue
+        if (own_os, own_persist) in ILLEGAL_PAIRS:
+            failures.append(
+                f"{profile}: {own_os} with {own_persist} is not a surface that exists")
+            continue
+
         for output, decl in spec["outputs"].items():
             fragments, budget = decl["fragments"], decl["budget"]
 
-            # Check 2. The failure this prevents is shipping "run chezmoi
+            # Check 2b. The failure this prevents is shipping "run chezmoi
             # apply" to a surface with no chezmoi — wrong policy stated with
             # full confidence, which is worse than no policy.
-            foreign = [f for f in fragments if f in env_fragments and f != own_env]
+            foreign = [f for f in fragments
+                       if f in env_fragments and f not in (own_os, own_persist)]
             if foreign:
                 failures.append(
                     f"{profile} -> {output}: includes environment fragment(s) "
-                    f"{foreign} but its environment is '{own_env}'"
+                    f"{foreign} but its surface is {own_os} + {own_persist}"
                 )
+                continue
+
+            # Check 2d. The mirror image: an output that omits its environment
+            # tells an agent the policy but not the machine, and core's
+            # pointers into "the environment fragment composed into this
+            # file" then dangle (#310).
+            missing = [f for f in (own_os, own_persist) if f not in fragments]
+            if missing:
+                failures.append(
+                    f"{profile} -> {output}: omits its environment fragment(s) {missing}")
                 continue
 
             expected = compose(manifest, profile, output, fragments)

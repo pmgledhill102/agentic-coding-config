@@ -1,7 +1,7 @@
 # Cloud sandbox
 
-True only in an ephemeral cloud sandbox; the workstation fragment is never
-composed into one — see ADR-0018 principle 5.
+True only in an **ephemeral cloud sandbox**; the durable-machine fragment is
+never composed into one — see ADR-0018 principle 5 and ADR-0020.
 
 ## This container is the whole environment
 

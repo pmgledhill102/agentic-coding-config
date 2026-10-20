@@ -133,6 +133,15 @@ bin/bd-migrate-to-github
 # turns out to be wanted repeatedly, it comes back on evidence (#446).
 skills/start-sweep-session/SKILL.md
 
+# 2026-10-20 — the neutral AGENTS.md beside CLAUDE.md retired (#310)
+#
+# It was core + ephemeral-first with no environment fragment, so it told a
+# reader the policy but not the machine. In ~/.claude/ no agent but Claude
+# reads it, and Claude reads the complete CLAUDE.md — possibly this file as
+# well, loading the portable core twice (#596). A non-Claude agent is served
+# by its own composed profile instead.
+AGENTS.md
+
 # === UNDEPLOYED: still in home/, no longer deployed to ~/.claude/ ===
 #
 # WHY A SECOND SECTION: a path can need to stay in home/ for some reason other

@@ -5,37 +5,38 @@
   "//skills": "Skill bodies compose the same way, one tier down (#265). A fragment is one section of the skill; a section whose content differs by surface has a -workstation and a -sandbox variant, and every output names exactly one of the pair. The first fragment is the head: head-skill carries the frontmatter and the H1. There used to be a head-command beside it, carrying the one-line description a home/commands/ twin needs instead of frontmatter; the twins were retired (#313) and it went with them. Both cloud profiles take the same sandbox fragments — what varies for these skills is the environment (no usable gh), not the provider.",
   "fragment_dir": "context/fragments",
   "skill_fragment_dir": "context/skills",
-  "environment_fragments": ["env-workstation", "env-cloud-sandbox"],
+  "//environment": "Environment fragments follow ADR-0020's two content axes: one OS fragment and one persistence fragment per profile, composed in that order between the portable core and the provider fragment. compose-context.py rejects an illegal pair (persist-ephemeral with os-macos) and any os-windows, since no Windows profile exists (#417). Skill variants keep their -workstation/-sandbox names: their split is persistence-shaped, so -workstation reads as persist-durable and -sandbox as persist-ephemeral.",
+  "//agents-md": "Every policy output composes core, ephemeral-first, its profile's OS and persistence fragments, and its provider fragment, in that order, and compose-context.py fails one that omits either environment fragment. Claude profiles compose CLAUDE.md only. A neutral AGENTS.md beside it was retired (#310): in ~/.claude/ no other agent reads it, in a sandbox's ~/.agents/ nothing does, and Claude Code may now load it as well as CLAUDE.md, carrying the portable core twice (#596). A non-Claude agent is served by its own profile (codex-*), environment included.",
+  "os_fragments": ["os-macos", "os-ubuntu"],
+  "persistence_fragments": ["persist-durable", "persist-ephemeral"],
   "profiles": {
     "claude-workstation": {
       "title": "Agent context — Claude Code on a workstation",
-      "environment": "env-workstation",
+      "os": "os-macos", "persistence": "persist-durable",
       "outputs": {
-        "home/AGENTS.md": { "budget": 238, "fragments": ["core", "ephemeral-first"] },
-        "home/CLAUDE.md": { "budget": 378, "fragments": ["core", "ephemeral-first", "env-workstation", "provider-claude"] }
+        "home/CLAUDE.md": { "budget": 361, "fragments": ["core", "ephemeral-first", "os-macos", "persist-durable", "provider-claude"] }
       }
     },
     "codex-workstation": {
       "//": "Output path is provisional. Codex's user-level AGENTS.md location is not yet established (#176), so nothing delivers these yet — the profiles exist so CI composes them and the provider axis stays honest.",
       "title": "Agent context — Codex on a workstation",
-      "environment": "env-workstation",
+      "os": "os-macos", "persistence": "persist-durable",
       "outputs": {
-        "profiles/codex-workstation/AGENTS.md": { "budget": 378, "fragments": ["core", "ephemeral-first", "env-workstation", "provider-codex"] }
+        "profiles/codex-workstation/AGENTS.md": { "budget": 361, "fragments": ["core", "ephemeral-first", "os-macos", "persist-durable", "provider-codex"] }
       }
     },
     "codex-cloud-sandbox": {
       "title": "Agent context — Codex in a cloud sandbox",
-      "environment": "env-cloud-sandbox",
+      "os": "os-ubuntu", "persistence": "persist-ephemeral",
       "outputs": {
-        "profiles/codex-cloud-sandbox/AGENTS.md": { "budget": 315, "fragments": ["core", "ephemeral-first", "env-cloud-sandbox", "provider-codex"] }
+        "profiles/codex-cloud-sandbox/AGENTS.md": { "budget": 325, "fragments": ["core", "ephemeral-first", "os-ubuntu", "persist-ephemeral", "provider-codex"] }
       }
     },
     "claude-cloud-sandbox": {
       "title": "Agent context — Claude Code in a cloud sandbox",
-      "environment": "env-cloud-sandbox",
+      "os": "os-ubuntu", "persistence": "persist-ephemeral",
       "outputs": {
-        "profiles/claude-cloud-sandbox/AGENTS.md": { "budget": 238, "fragments": ["core", "ephemeral-first"] },
-        "profiles/claude-cloud-sandbox/CLAUDE.md": { "budget": 315, "fragments": ["core", "ephemeral-first", "env-cloud-sandbox", "provider-claude"] }
+        "profiles/claude-cloud-sandbox/CLAUDE.md": { "budget": 325, "fragments": ["core", "ephemeral-first", "os-ubuntu", "persist-ephemeral", "provider-claude"] }
       }
     }
   },

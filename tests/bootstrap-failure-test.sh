@@ -121,17 +121,17 @@ rm -rf "$H"
 
 # --- 2. the banner ---------------------------------------------------------
 #
-# Claude reads ~/.claude/CLAUDE.md and Codex reads AGENTS.md, and neither knows
-# to look for the other's file, so a claude-* profile writes both.
+# The banner goes in the one policy file the profile's agent reads: CLAUDE.md
+# for a claude-* profile, which no longer ships an AGENTS.md at all (#310).
 H=$(mktemp -d)
 run_failing_bootstrap "$H" > /dev/null
-for f in "$H/.claude/CLAUDE.md" "$H/.agents/AGENTS.md"; do
-    if grep -q 'acc:bootstrap-failed:start' "$f" 2> /dev/null; then
-        ok "banner reaches $(basename "$(dirname "$f")")/$(basename "$f")"
-    else
-        no "banner reaches $(basename "$(dirname "$f")")/$(basename "$f")"
-    fi
-done
+check "banner reaches .claude/CLAUDE.md" "1" \
+    "$(count 'acc:bootstrap-failed:start' "$H/.claude/CLAUDE.md")"
+if [ -f "$H/.agents/AGENTS.md" ]; then
+    no "claude profile writes no .agents/AGENTS.md"
+else
+    ok "claude profile writes no .agents/AGENTS.md"
+fi
 rm -rf "$H"
 
 # A codex container has nothing that ever rewrites ~/.claude/CLAUDE.md, so a
@@ -318,9 +318,16 @@ rm -rf "$H"
 # Asserted on the log's own ordering rather than on line numbers, which drift.
 H=$(mktemp -d)
 LOG="$H/run.log"
+# A resumed container keeps the neutral AGENTS.md an older run wrote (#310).
+mkdir -p "$H/.agents"
+printf 'STALE-NEUTRAL-POLICY\n' > "$H/.agents/AGENTS.md"
 HOME="$H" sh "$BOOTSTRAP_FULL" "$BOOTSTRAP_TEST_REF" --no-gcloud --no-precommit --no-hooks --no-terraform \
     > "$LOG" 2>&1
 check "a toolkit-only run succeeds" "0" "$?"
+check "  the claude profile's policy is a composed CLAUDE.md" "1" \
+    "$(head -1 "$H/.claude/CLAUDE.md" 2> /dev/null | grep -c '^<!-- GENERATED')"
+check "  and an older run's .agents/AGENTS.md is removed" "0" \
+    "$([ -e "$H/.agents/AGENTS.md" ] && echo 1 || echo 0)"
 
 # The telemetry helper arrives with the toolkit and is handed the manifest, so a
 # run is on the spool before any ingest exists. Spool-first is the whole point:

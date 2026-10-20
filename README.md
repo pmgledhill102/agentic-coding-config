@@ -128,7 +128,6 @@ restructure that introduced `home/` is on top of that history.
 │   ├── bootstrap.sh           #   installs the helper + skill into a container
 │   └── README.md              #   per-environment setup (script, domains, vars)
 └── home/                      # ← mounts at ~/.claude/
-    ├── AGENTS.md              → ~/.claude/AGENTS.md  (GENERATED — composed from context/fragments/)
     ├── CLAUDE.md              → ~/.claude/CLAUDE.md  (GENERATED — composed from context/fragments/)
     ├── settings.json          → ~/.claude/settings.json
     ├── settings.json.md       → ~/.claude/settings.json.md  (annotated companion, kept alongside)

@@ -273,6 +273,11 @@ running it:
   scripts here target POSIX `sh` with BSD fallbacks rather than one
   vendor's tools.
 
+  *Note, 2026-10-20:* "Windows scoped to WSL Ubuntu" is true of this
+  repo's agent content and scripts, not of the estate. Native Windows
+  gets a best-effort dotfiles install; see
+  [ADR-0020](0020-surface-matrix.md) §3.
+
 Two vendors, one mechanism, nothing committed to the repo being worked
 on. That is principle 1 demonstrated rather than asserted, and it is why
 this ADR is Accepted rather than Proposed.

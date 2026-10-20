@@ -289,8 +289,9 @@ That second limit bites hardest on `state=failed`, because this skill is
 installed near the end of the bootstrap: a failure early enough takes the
 reporting away with everything else, and there is no `start-session` left to
 run. That case is covered outside this skill — the same trap that writes the
-manifest prepends a banner to `~/.claude/CLAUDE.md` and `~/.agents/AGENTS.md`,
-which are read whether or not any skill survived. So a banner and this section
+manifest prepends a banner to the profile's policy file (`~/.claude/CLAUDE.md`,
+or `~/.agents/AGENTS.md` for Codex), which is read whether or not any skill
+survived. So a banner and this section
 are two views of one event: if you have already seen the banner, do not report
 it twice.
 
