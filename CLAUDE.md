@@ -113,8 +113,8 @@ is repo-meta and never deploys.
   the commit, the issue and the PR — all durable, all linked. The distinction
   that is easy to get wrong: a *surprising fact* stays, because it stops someone
   "correcting" the design back into a bug; the experiment that established it
-  goes. Keep "`github.com` 403s this sandbox's curl while its release assets
-  resolve fine"; drop "measured 2026-08-18 by planting one and watching a hook
+  goes. Keep "the egress proxy refuses a host at CONNECT, so curl reports the
+  block in `%{http_connect}`, not `%{http_code}`"; drop "measured 2026-08-18 by planting one and watching a hook
   fire eight seconds later"
 - **Anything with a `GENERATED` banner is composed — edit the fragment.**
   `context/manifest.json` says which fragments build which output;
