@@ -16,8 +16,16 @@ so the task can be recreated from here rather than from memory.
 | Schedule | `CRON_TZ=Europe/London 51 7 * * 1` (Mondays 07:51 UK) | Weekly matches the snapshot cache's roughly 7-day expiry, so most runs see a freshly built container. 07:51 avoids the on-the-hour scheduling queue. |
 | Session | a fresh session per run | Step 1 of the skill is evidence only in a session that has read nothing. A resumed session has always read something. |
 | Environment | the `agentic-coding-config` cloud environment, the one whose setup script runs `cloud/bootstrap.sh --with-hooks` | The run tests what that bootstrap delivers. A bare environment fails every agent check, correctly but uselessly. |
-| Connectors | none beyond the session's own GitHub access | It files issues and opens one PR, both on this repo. |
+| Repository | `pmgledhill102/agentic-coding-config`, attached to the task | Repo-scoped `gh api` works only for an attached repo, and the monthly stamp PR needs a checkout. |
+| Connectors | GitHub | It files issues, comments on #260 and opens the stamp PR, all on this repo. |
 | Notifications | push and email | A run that filed an issue is the one worth hearing about. |
+
+**Create it from the claude.ai scheduled-tasks UI, not from inside a
+session.** A task created by an agent from a session stores no repository and
+no connectors. Its sessions still run every check, but they cannot file,
+comment or open a PR: the GitHub MCP tools are absent, and `gh api` returns
+403 for a repo that isn't attached. The run then reports only through its
+push and email notifications.
 
 ## The prompt
 
