@@ -966,8 +966,8 @@ point at went away with the plugin in #312.
    Before any `git push` Claude makes, asks GitHub (`gh api
    repos/<owner>/<repo>/pulls?head=<owner>:<branch>&state=all`, REST because
    cloud sandboxes refuse the GraphQL behind `gh pr view`) whether the pushed branch's PR is already `MERGED`/`CLOSED`, and if so
-   **blocks** with `exit 2` and instructions to start a fresh branch. 30s
-   timeout.
+   **blocks** with `exit 2` and instructions to restart the branch from the
+   latest default branch. 30s timeout.
 
    This enforces mechanically what the CLAUDE.md prose rule ("check the PR is
    still open before pushing follow-up commits") failed to: the user merges a
@@ -979,15 +979,30 @@ point at went away with the plugin in #312.
 
    **Fail-open by design** — the guard stops one specific silent mistake
    without making pushing fragile. It allows the push when: the command isn't
-   a `git push`; `--no-verify` is present (escape hatch, e.g. deliberately
-   recreating a branch); the push is `--delete`/`-d` or `--tags`; `gh` or
+   a `git push`; `--no-verify` is present (still honoured, but never
+   suggested: an auto-mode classifier denies it as weakening a safeguard, so
+   advice to use it strands an agent); the push is `--delete`/`-d` or `--tags`; `gh` or
    `jq` is missing; HEAD is detached; the branch is the default branch; the
    branch has no PR; the PR is open; or the lookup fails for any reason
    (offline, auth, a proxy 403), or origin is not a github.com remote; each
    of those prints a `not checked` line rather than passing silently. An open
-   PR for the branch wins over older closed ones, so re-using a branch name under a new PR is not a false positive. Limitation:
-   it inspects the **current** branch — a push naming a different refspec is
-   waved through.
+   PR for the branch wins over older closed ones, so re-using a branch name under a new PR is not a false positive.
+
+   **A merged PR's branch name may be reused for new work** — the cloud
+   harness instructs exactly that — so a branch **restarted from the up-to-date
+   default branch** is allowed, with one notice line (#651). The test is two
+   `merge-base` calls: the merged PR's head is already in `origin/<base>`, and
+   the pushed tip forks from `origin/<base>` somewhere the old head does not
+   reach. What stays blocked is the orphan shape — new commits stacked on the
+   merged PR's own history — and a branch whose PR closed unmerged. No fetch:
+   an `origin/<base>` older than the merge fails the first test, which errs
+   towards blocking, and the block message says to fetch.
+
+   **It judges the branch the push targets**: each refspec's destination
+   (`origin x`, `HEAD`, `src:dst`, `refs/heads/` stripped, deletions skipped),
+   or the checked-out branch when none is named. A refspec-less push after a
+   `checkout`/`switch` in the same command stands down as not checked, because
+   the hook runs before the checkout does.
 
    **Which repo it judges is the whole of #404.** A PreToolUse hook fires
    before the command runs, so the payload's `cwd` is where the shell already
