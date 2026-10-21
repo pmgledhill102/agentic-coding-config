@@ -13,7 +13,7 @@ so the task can be recreated from here rather than from memory.
 | Setting | Value | Why |
 | --- | --- | --- |
 | Name | `Weekly environment conformance` | |
-| Schedule | `CRON_TZ=Europe/London 51 7 * * 1` (Mondays 07:51 UK) | Weekly matches the snapshot cache's roughly 7-day expiry, so most runs see a freshly built container. 07:51 avoids the on-the-hour scheduling queue. |
+| Schedule | `CRON_TZ=Europe/London 51 7 * * 5` (Fridays 07:51 UK) | Weekly matches the snapshot cache's roughly 7-day expiry, so most runs see a freshly built container. Friday puts a drift finding just before the weekend, when there's time to fix it. 07:51 avoids the on-the-hour scheduling queue. |
 | Session | a fresh session per run | Step 1 of the skill is evidence only in a session that has read nothing. A resumed session has always read something. |
 | Environment | the `agentic-coding-config` cloud environment, the one whose setup script runs `cloud/bootstrap.sh --with-hooks` | The run tests what that bootstrap delivers. A bare environment fails every agent check, correctly but uselessly. |
 | Repository | `pmgledhill102/agentic-coding-config`, attached to the task | Repo-scoped `gh api` works only for an attached repo, and the monthly stamp PR needs a checkout. |
