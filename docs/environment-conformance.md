@@ -159,12 +159,16 @@ mode=full
 state=ok pass=19 fail=0 unproven=0 unknown=0 skipped=0
 ```
 
-Four of the measurements contradict what was recorded earlier. Each is now a
+Two of the measurements contradict what was recorded earlier. Each is now a
 stanza, so the next change gets caught instead of rediscovered:
 
 | Recorded | Measured 2026-10-20 | Stanza |
 | --- | --- | --- |
 | `gh` absent (#260) | present, and preconfigured for the proxy | `tool-gh` |
-| `docs.cloud.google.com` 403 (#241) | reached | `egress-docs-cloud-google` |
-| `registry.terraform.io` blocked (#241) | reached (first seen 2026-09-13) | `egress-terraform-registry` |
 | `github.com` 403 to curl | reached; release assets download | `egress-github-release-assets` |
+
+Two more look like drift and are not. `docs.cloud.google.com` and
+`registry.terraform.io` are reached because this environment's custom
+allowlist adds them (`cloud/README.md` §2), not because the platform changed
+what #241 recorded about the Trusted default list. Their stanzas test that
+setting, so a `FAIL` on either means the allowlist lost a host.
