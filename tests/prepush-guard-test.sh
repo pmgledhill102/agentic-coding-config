@@ -73,6 +73,9 @@ case "${GH_STUB_MODE:-}" in
         ;;
 esac
 [ "$1" = api ] || { echo "stub: unexpected gh $*" >&2; exit 1; }
+# A canned response per head, for fixtures whose answer carries real SHAs.
+canned="$GH_STUB_DIR/$(printf '%s' "$2" | sed 's/.*head=//; s/&.*//')"
+[ -f "$canned" ] && { cat "$canned"; exit 0; }
 case "$2" in
     repos/o/r/pulls\?head=o%3Aclaude%2Fmerged-pr\&state=all*)
         printf '[{"number":170,"state":"closed","merged_at":"2026-01-01T00:00:00Z","html_url":"https://example.invalid/pr/170"}]\n' ;;
@@ -88,7 +91,56 @@ esac
 STUB
 chmod +x "$WORK/bin/gh"
 PATH="$WORK/bin:$PATH"
-export PATH
+GH_STUB_DIR="$WORK/canned"
+mkdir -p "$GH_STUB_DIR"
+export PATH GH_STUB_DIR
+
+# --- History fixture for the restart rule (#651) ---------------------------
+# main: A, then M merging the old PR (head P), then M2. Branches built from it:
+#   restart  cut from origin/main at M, plus a new commit   -> allowed
+#   stacked  the old head P plus a new commit               -> blocked (orphan)
+#   stale    an old head Q that origin/main does not hold   -> blocked
+#   closed   restarted like `restart`, but its PR closed unmerged -> blocked
+H="$WORK/hist"
+mkdir -p "$H"
+(
+    cd "$H" || exit 1
+    git init -q -b main .
+    git config user.email t@example.com
+    git config user.name t
+    git remote add origin git@github.com:o/r.git
+    git commit -q --allow-empty -m A
+    git checkout -q -b old
+    git commit -q --allow-empty -m P
+    git checkout -q main
+    git merge -q --no-ff old -m M
+    git update-ref refs/remotes/origin/main main
+    git checkout -q -b claude/hist-restart origin/main
+    git commit -q --allow-empty -m N
+    git checkout -q -b claude/hist-closed origin/main
+    git commit -q --allow-empty -m N3
+    git checkout -q -b claude/hist-stacked old
+    git commit -q --allow-empty -m N2
+    git checkout -q -b q main~1
+    git commit -q --allow-empty -m Q
+    git checkout -q -b claude/hist-stale origin/main
+    git commit -q --allow-empty -m N4
+    git checkout -q main
+    git commit -q --allow-empty -m M2
+    git update-ref refs/remotes/origin/main main
+) >/dev/null 2>&1 || { echo "history fixture setup failed"; exit 1; }
+P=$(git -C "$H" rev-parse old)
+Q=$(git -C "$H" rev-parse q)
+canned() { # canned <branch> <state: merged|closed> <head-sha>
+    _m=null
+    [ "$2" = merged ] && _m='"2026-01-01T00:00:00Z"'
+    printf '[{"number":190,"state":"closed","merged_at":%s,"html_url":"https://example.invalid/pr/190","head":{"sha":"%s"},"base":{"ref":"main"}}]\n' \
+        "$_m" "$3" > "$GH_STUB_DIR/o%3A$(printf '%s' "$1" | sed 's#/#%2F#g')"
+}
+canned claude/hist-restart merged "$P"
+canned claude/hist-stacked merged "$P"
+canned claude/hist-stale merged "$Q"
+canned claude/hist-closed closed "$P"
 
 PASS=0
 FAIL=0
@@ -246,6 +298,53 @@ expect_err "a block still blocks, with its own message" \
     "$HOOK" "$PATH" "" "$WORK/merged" 'git push' 2 'push blocked: PR #170 for branch claude/merged-pr is already MERGED'
 expect_err "a closed PR names its state" \
     "$HOOK" "$PATH" "" "$WORK/closed" 'git push' 2 'is already CLOSED'
+
+echo "--- the restart rule: a merged PR's branch reused for new work (#651) ---"
+(cd "$H" && git checkout -q claude/hist-restart)
+expect_err "restarted from origin/main: allowed, with a notice" \
+    "$HOOK" "$PATH" "" "$H" 'git push -u origin claude/hist-restart' 0 'restarted from origin/main -- allowing'
+expect "  ...also with no refspec" \
+    "$H" "git push" 0
+expect "  ...after main moved on past the restart" \
+    "$H" "git push origin HEAD" 0
+(cd "$H" && git checkout -q claude/hist-stacked)
+expect_err "stacked on the merged head: blocked" \
+    "$HOOK" "$PATH" "" "$H" 'git push' 2 'restart it from the latest main'
+(cd "$H" && git checkout -q claude/hist-stale)
+expect "old head missing from origin/main: blocked" \
+    "$H" "git push" 2
+(cd "$H" && git checkout -q claude/hist-closed)
+expect "restarted, but the PR closed unmerged: blocked" \
+    "$H" "git push" 2
+
+echo "--- the target is the refspec, not the checked-out branch ---"
+expect "checkout -b new && push new, from a merged branch" \
+    "$WORK/merged" "git checkout -b claude/brand-new && git push -u origin claude/brand-new" 0
+expect_err "checkout && refspec-less push: not checked" \
+    "$HOOK" "$PATH" "" "$WORK/merged" 'git checkout claude/live-pr && git push' 0 'not checked -- branch changes earlier'
+expect "pushing a merged branch by name from elsewhere" \
+    "$WORK/live" "git push origin claude/merged-pr" 2
+expect "HEAD:<live branch> from a merged checkout" \
+    "$WORK/merged" "git push origin HEAD:claude/live-pr" 0
+expect "HEAD resolves to the checked-out branch" \
+    "$WORK/merged" "git push origin HEAD" 2
+expect "refs/heads/ prefix is stripped" \
+    "$WORK/live" "git push origin HEAD:refs/heads/claude/merged-pr" 2
+expect "two refspecs, one merged: blocked" \
+    "$WORK/live" "git push origin claude/live-pr claude/merged-pr" 2
+expect "a :deletion refspec is not judged" \
+    "$WORK/merged" "git push origin :claude/merged-pr" 0
+expect_err "a variable refspec: not checked" \
+    "$HOOK" "$PATH" "" "$WORK/merged" 'git push origin "$B"' 0 'not checked -- unresolvable refspec'
+
+echo "--- the block message never suggests --no-verify ---"
+_msg=$(printf '{"tool_input":{"command":"git push"},"cwd":%s}\n' "$(printf '%s' "$WORK/merged" | jq -Rs .)" |
+    sh "$HOOK" 2>&1 >/dev/null)
+if printf '%s' "$_msg" | grep -q -- '--no-verify'; then
+    FAIL=$((FAIL + 1)); printf 'FAIL  %-46s\n' "block message mentions --no-verify"
+else
+    PASS=$((PASS + 1)); printf 'ok    %-46s\n' "block message omits --no-verify"
+fi
 
 printf '\n%s passed, %s failed\n' "$PASS" "$FAIL"
 [ "$FAIL" -eq 0 ]
