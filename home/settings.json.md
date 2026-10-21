@@ -160,6 +160,15 @@ a variable is set, never its value, which matters because the variable it
 exists for holds a bearer token. That read-only property is what this rule
 relies on, so re-check it whenever a probe function is added.
 
+- `Bash(~/.claude/bin/env-conformance-stamp *)`
+
+The one tool in the suite that writes, approved because of how little it can
+write. It rewrites `measured=` lines, only in the stanzas it is named, only in
+the matrix file it is given, and it does all or nothing: an unknown id writes
+nothing. A single prefix rule is enough because the bare command is a usage
+error. The scheduled run uses it on the repo checkout, and the result reaches
+`main` only through a PR a human merges.
+
 ### Estate report
 
 - `Bash(~/.claude/bin/estate-report)`

@@ -330,6 +330,48 @@ n=$(grep -c '^\[' "$REAL_MATRIX")
 nfast=$(grep -c '^mode=fast$' "$REAL_MATRIX")
 if [ "$n" -gt 0 ] && [ "$nfast" -gt 0 ]; then ok "real matrix: has entries ($n, $nfast fast)"; else no "real matrix: empty or no fast subset"; fi
 
+# --- env-conformance-stamp ----------------------------------------------------
+#
+# The suite's one writer. It must change measured= in the named stanzas and
+# nothing else, and write nothing at all when any id is wrong.
+
+STAMP="$ROOT/home/bin/env-conformance-stamp"
+SM="$WORK/stamp.conf"
+{
+    printf '# header comment, kept\n\n'
+    entry one fast 'tool sh' present 'tool conformance-no-such-tool'
+    entry two fast 'tool sh' present 'tool conformance-no-such-tool'
+    entry three full 'tool sh' present 'tool conformance-no-such-tool'
+} > "$SM"
+cp "$SM" "$WORK/stamp.orig"
+
+rc=$( (sh "$STAMP" "$SM" 2026-11-02 one three) > "$WORK/out" 2>&1; echo $?)
+eq "stamp: named entries exit 0" "$rc" 0
+has "stamp: reports what it stamped" "stamped three measured=2026-11-02"
+eq "stamp: exactly the two named measured= lines changed" \
+    "$(diff "$WORK/stamp.orig" "$SM" | grep -c '^>')" 2
+eq "stamp: and to the new date" "$(grep -c '^measured=2026-11-02$' "$SM")" 2
+eq "stamp: the unnamed entry keeps its date" \
+    "$(sed -n '/^\[two\]/,/^$/s/^measured=//p' "$SM")" 2026-10-20
+eq "stamp: comments and other keys untouched" \
+    "$(diff "$WORK/stamp.orig" "$SM" | grep '^[<>]' | grep -vc 'measured=')" 0
+
+cp "$SM" "$WORK/stamp.before"
+rc=$( (sh "$STAMP" "$SM" 2026-12-01 two no-such-id) > "$WORK/out" 2>&1; echo $?)
+eq "stamp: an unknown id exits 1" "$rc" 1
+has "stamp: names it" "no such entries: no-such-id"
+eq "stamp: and writes nothing, not even the known id" "$(cmp -s "$WORK/stamp.before" "$SM" && echo same)" same
+
+rc=$( (sh "$STAMP" "$SM" 'next week' one) > "$WORK/out" 2>&1; echo $?)
+eq "stamp: a malformed date exits 64" "$rc" 64
+rc=$( (sh "$STAMP" "$SM" 2026-12-01) > "$WORK/out" 2>&1; echo $?)
+eq "stamp: no ids exits 64" "$rc" 64
+eq "stamp: leaves no temp file beside the matrix" "$(find "$WORK" -name 'stamp.conf.stamp.*' | wc -l | tr -d ' ')" 0
+
+# The stamped matrix is still one the runner accepts.
+rc=$(env CONFORMANCE_SURFACE=no-such-surface sh "$SCRIPT" --matrix "$SM" --brief > "$WORK/out" 2>&1; echo $?)
+eq "stamp: the result still validates" "$rc" 0
+
 # --- writes nothing -----------------------------------------------------------
 
 # The real matrix under the stubs, as the real surface, in full mode: every
