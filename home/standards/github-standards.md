@@ -445,6 +445,24 @@ rather than conventions:
   contexts key on the job's `name:` when set, otherwise the job id; and
   `on: [push, pull_request]` is unfiltered and fine, so a checker that
   looks only for a `pull_request:` mapping raises a false positive on it.
+- **A CI workflow's `pull_request` trigger must not be branch-filtered.**
+  Same family as the rule above, different failure: a path filter makes a
+  *required* check pend forever, while `branches: [main]` on
+  `pull_request` makes a stacked PR, whose base is another feature
+  branch, silently skip *every* check in that workflow. The PR then shows
+  all checks passing, which is true of what ran and says nothing about
+  what did not. Agent sessions stack PRs often, so the extra Actions
+  minutes (a push to a branch that is also another PR's base runs
+  twice) are the accepted price. A `branches:` filter on **`push`** is
+  fine: it limits post-merge runs and affects no PR. The rule covers CI
+  and check workflows only, and `setup-common`'s "Update auto-merge PRs"
+  workflow is exempt by design: its `pull_request: branches: [main],
+  types: [auto_merge_enabled]` trigger acts only on PRs armed to merge
+  into `main`, and it is not a check, so a sweep must not "fix" it. The
+  spec in `github-repo.json` does not assert this rule, because a
+  per-file pattern cannot tell a check workflow from that exemption;
+  detection lives in the estate sweep, and each repo drops the filter in
+  its own PR.
 
 Deferred until after the migration, recorded so the discussion has a home:
 

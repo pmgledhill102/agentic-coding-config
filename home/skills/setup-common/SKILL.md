@@ -237,9 +237,17 @@ Read any existing `.gitignore` first and only add lines that are missing.
 
 Create or update CI workflows. Gitleaks, cspell, and semgrep run on all files (no path filter). Actionlint only needs to run when workflow files change.
 
-Add to `.github/workflows/ci.yml` (or create if needed):
+Add to `.github/workflows/ci.yml` (or create if needed). The trigger below is part of the snippet, not a placeholder: if the repo's existing `ci.yml` carries `branches:` under `pull_request`, drop it. A branch filter on `pull_request` gives a stacked PR (one whose base is another feature branch) no run at all, while GitHub still reports every check passing (the standard's Checks and CI section carries the rule). The `branches:` filter on `push` stays, because it only limits post-merge runs:
 
 ```yaml
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
   gitleaks:
     name: Gitleaks
     runs-on: ubuntu-latest
