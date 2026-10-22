@@ -1980,6 +1980,41 @@ cap_golangci() {
     log "golangci-> $(command -v golangci-lint) ${GCL_VER} (was ${_gcl_have:-absent})"
 }
 
+# --- shims: timing wrappers for the toolchain (#625) ---------------------------
+#
+# One script, agent-shim, and a symlink to it per tool in ~/.claude/bin/shims/.
+# The SessionStart telemetry hook puts that directory ahead on the Bash tool's
+# PATH; nothing here edits PATH. Each call is timed and spooled through
+# agent-telemetry, which is what says how long a watching user waits on these
+# tools. git is shimmed only to see a session's first commit.
+#
+# Only for tools that resolve now. A shim for a tool that is not installed
+# would make `command -v` lie to every script that asks whether it is there,
+# precommit-claude-hook's missing-binary check among them. Rebuilt from empty
+# each run, so a tool that has gone stops being shimmed.
+#
+# Runs after every other capability so the tools it looks for are installed,
+# and only with --with-hooks, because the hook is what makes the shims reachable.
+SHIM_TOOLS="semgrep markdownlint-cli2 cspell checkov terraform tflint shellcheck gitleaks actionlint pre-commit git"
+
+cap_shims() {
+    fetch "$RAW/home/bin/agent-shim" "$TMP/agent-shim" ||
+        die "could not fetch agent-shim from $REF"
+    head -1 "$TMP/agent-shim" | grep -q '^#!' || die "fetched agent-shim is not a script"
+    install -m 0755 "$TMP/agent-shim" "$HOME/.claude/bin/agent-shim" ||
+        die "could not install agent-shim"
+    _sd="$HOME/.claude/bin/shims"
+    rm -rf "$_sd" || die "could not clear $_sd"
+    mkdir -p "$_sd" || die "could not create $_sd"
+    _made=""
+    for _t in $SHIM_TOOLS; do
+        command -v "$_t" > /dev/null 2>&1 || continue
+        ln -s ../agent-shim "$_sd/$_t" || die "could not create the $_t shim"
+        _made="${_made:+$_made }$_t"
+    done
+    log "shims   -> $_sd (${_made:-none})"
+}
+
 DEGRADED=
 
 capability() {
@@ -2025,6 +2060,7 @@ capability "$WITH_PRECOMMIT" precommit-warm cap_precommit_warm
 capability "$WITH_GH" gh cap_gh
 capability "$WITH_DEVKNOWLEDGE" devknowledge cap_devknowledge
 capability 1 golangci cap_golangci
+capability "$WITH_HOOKS" shims cap_shims
 
 # --- the manifest -------------------------------------------------------------
 #

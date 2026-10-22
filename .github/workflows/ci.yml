@@ -81,6 +81,11 @@ jobs:
       # signed URL may reach argv or output. Stub ingest on loopback; no token.
       - name: Run the agent-telemetry tests
         run: sh tests/agent-telemetry-test.sh
+      # The toolchain shims sit in front of every linter and git: arguments,
+      # stdin, output and exit code must survive them unchanged, with the
+      # helper absent or broken, at under 10 ms a call. Needs git and jq only.
+      - name: Run the agent-shim tests
+        run: sh tests/agent-shim-test.sh
       # A SessionStart hook: a non-zero exit is a session that will not start.
       - name: Run the session-cache verdict tests
         run: sh tests/session-cache-verdict-test.sh
