@@ -20,6 +20,12 @@
   workstation-composed context. See
   [ADR-0018](0018-composing-agent-context-per-surface.md) for the
   per-surface composition that turned that from a detail into a defect.
+- **Amended**: 2026-10-22 by [ADR-0023](0023-claude-code-reads-agents-md-as-a-fallback.md)
+  — **decision 2's mechanism no longer holds; its aim does.** The policy core
+  is maintained once, but Claude Code does not consume it through a
+  `CLAUDE.md` → `@AGENTS.md` import bridge: ADR-0018 composes a `CLAUDE.md`
+  per Claude surface from the same fragments instead. A user-level
+  `AGENTS.md` is not read by Claude Code at all, so none is delivered to it.
 - **Date**: 2026-08-09
 - **Tags**: claude-code, codex, opencode, skills, plugins, architecture
 - **Scope**: user (applies to all personal repos and agent surfaces)

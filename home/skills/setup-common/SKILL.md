@@ -627,12 +627,17 @@ is there rather than replacing it.
 
 ### 10. Repo-level agent instructions
 
-Two files, one text. **`AGENTS.md` holds the instructions; `CLAUDE.md` is a
-short pointer that imports it** — [ADR-0019](https://github.com/pmgledhill102/agentic-coding-config/blob/main/adrs/0019-agents-md-is-the-repo-instruction-source.md).
+One file. **`AGENTS.md` holds the instructions, and Claude Code reads it
+directly when the repo has no `CLAUDE.md`** —
+[ADR-0019](https://github.com/pmgledhill102/agentic-coding-config/blob/main/adrs/0019-agents-md-is-the-repo-instruction-source.md)
+for `AGENTS.md` as the source,
+[ADR-0023](https://github.com/pmgledhill102/agentic-coding-config/blob/main/adrs/0023-claude-code-reads-agents-md-as-a-fallback.md)
+for dropping the pointer file.
 
-If the repo already has an `AGENTS.md`, leave its content alone and only add
-the `CLAUDE.md` pointer. If it has instructions in `CLAUDE.md` and no
-`AGENTS.md`, **move** the content across rather than copying it.
+If the repo already has an `AGENTS.md`, leave its content alone. If it has
+instructions in `CLAUDE.md` and no `AGENTS.md`, **move** the content across
+rather than copying it, and delete `CLAUDE.md` unless something
+Claude-specific is left over (below). Do not generate a `CLAUDE.md` otherwise.
 
 `AGENTS.md`:
 
@@ -648,34 +653,22 @@ the `CLAUDE.md` pointer. If it has instructions in `CLAUDE.md` and no
 ## Conventions & Patterns
 ```
 
-`CLAUDE.md`:
+**Only if the repo has Claude-specific guidance**, add a `CLAUDE.md` that
+imports `AGENTS.md` and adds to it:
 
 ```markdown
 # Claude Code
 
 @AGENTS.md
 
-This repository's agent instructions live in [`AGENTS.md`](AGENTS.md) — the
-cross-vendor convention that Codex and other coding agents read. Claude Code
-reads `CLAUDE.md` and **not** `AGENTS.md`, so this file imports it.
-
-<!-- Claude-specific guidance, if any, goes below this line. -->
+<Claude-specific guidance, as an addition to AGENTS.md rather than a copy of it>
 ```
 
-Why this shape rather than either file alone, both measured on 2026-09-05:
-
-- **Claude Code does not read a repo-level `AGENTS.md` by itself.** In a
-  session where the file was present, both `CLAUDE.md` files reached the
-  context window and neither `AGENTS.md` did. So `AGENTS.md` alone means Claude
-  reads *nothing* — never delete `CLAUDE.md` in favour of it.
-- **Claude Code does follow the `@AGENTS.md` import.** Confirmed live in a
-  `paul-context` session, whose `CLAUDE.md` is exactly the pointer above and
-  whose context contained the whole of `AGENTS.md`.
-
-So one text serves both vendors and there is nothing to keep in sync. Never
-write instructions into `CLAUDE.md` itself: anything Claude-specific goes
-*below* the import, as an addition to the shared text rather than a second copy
-of it that drifts.
+The import is not optional. Claude Code reads `AGENTS.md` only as a fallback
+for a repo with no `CLAUDE.md`: once a `CLAUDE.md` exists, `AGENTS.md` is
+dropped unless `CLAUDE.md` imports it, and nothing reports the loss. Through
+the import it is loaded once, not twice. Never write the shared instructions
+into `CLAUDE.md` itself, where they become a second copy that drifts.
 
 ### 11. Verify
 

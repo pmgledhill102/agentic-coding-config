@@ -1,9 +1,19 @@
 # ADR-0019: `AGENTS.md` is the source of repo-level agent instructions
 
-- **Status**: Accepted (2026-09-05)
+- **Status**: Accepted (2026-09-05); **partially superseded by
+  [ADR-0023](0023-claude-code-reads-agents-md-as-a-fallback.md)** (proposed
+  2026-10-22)
 - **Date**: 2026-09-05
 - **Tags**: context, portability, claude-code, codex, skills
 - **Scope**: user (applies to all personal repos and agent surfaces)
+
+> **What still holds, and what does not.** `AGENTS.md` is the single source of
+> repo-level instructions: still in force. The requirement that every repo
+> also carry a `CLAUDE.md` pointer is superseded. Claude Code now reads a
+> repo's `AGENTS.md` itself when the repo has no `CLAUDE.md`, so the
+> measurement below, the "`CLAUDE.md` is never deleted" rule and the "convert
+> the remaining repos" follow-on no longer apply. Where a `CLAUDE.md` exists
+> it must still import `AGENTS.md`. The text below is left as recorded.
 
 ## Context
 
