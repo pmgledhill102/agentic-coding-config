@@ -562,6 +562,77 @@ accept what is simply not yours.** Returning an error for a message the
 handler has nothing to say about retries it forever; swallowing the failure
 of a webhook that is down loses the alert.
 
+## Terraform versions
+
+Applies to every repo whose tree contains a `.tf` file, whatever its tier.
+The values are the spec's top-level `terraform` block; this is why they are
+shaped the way they are.
+
+> Terraform repos declare `required_version = ">= <floor>"`, where the floor
+> is the oldest version whose features the configuration needs. CI and the
+> cloud sandbox both run the estate **pin**, which is on the **current minor
+> line**. Revisit when a new minor opens: HashiCorp publishes no support
+> policy, and in practice the previous line stops receiving patches once the
+> next one ships.
+
+**The floor is not the pin.** They are independent values with two
+invariants between them, not one value with two derivations:
+
+| Value | Where it lives | What it says |
+| --- | --- | --- |
+| **floor** | each repo's `required_version` | the oldest Terraform the configuration can run on |
+| **pin** | the spec's `terraform.pin` | the one version CI and the sandbox run |
+| **new-repo floor** | the spec's `terraform.floor` | what `/setup-terraform` declares when nothing older is known to be needed |
+
+- **`pin >= floor`**, for the spec and for every repo. A repo whose floor is
+  above the pin cannot `init` in CI or the sandbox.
+- **sandbox == CI == pin.** A sandbox behind CI fails `terraform_validate` in
+  every root, so the pre-push hook cannot pass for any push touching a `.tf`
+  file; a sandbox ahead of CI can write state CI cannot read.
+- **Raising a floor to track the pin is wrong.** It locks out an older local
+  binary for no benefit and adds a second value to keep in step. Raise a
+  floor only when the configuration starts using a feature that needs it.
+- **The constraint is a bare `>=`.** No `~>` and no `<`: an upper bound turns
+  every pin move into a sweep of `required_version` edits. Provider
+  constraints are a separate axis and may carry ranges.
+
+**Why "current minor line", and why that and not "a supported line".** The
+honest intent is *a line still receiving patches*, but that is not
+observable. HashiCorp's `.github/SUPPORT.md` makes no version statement, and
+`CONTRIBUTING.md` says only that a fix *can* be backported to "one or two
+previous minor versions" when someone labels that PR for it — discretionary
+per fix, with no window to look up. Observed, patches stop when the next line
+opens: 1.15's last was 2026-08-19 and 1.16 opened 2026-08-26; 1.14's last was
+2026-04-20 and 1.15 opened 2026-04-29. Nothing announces that a line has gone
+quiet, so a rule keyed on it fires only in retrospect, which is the unwatched
+condition this section exists to remove. *Is there a newer stable minor?* is
+one request against `releases.hashicorp.com`, and it turns the trigger into an
+event. Without that check the other two invariants hold indefinitely with the
+whole estate frozen on an old line.
+
+**The pin is declared once.** `cloud/bootstrap.sh` carries `TF_VER` because it
+runs before anything can parse JSON, and `tests/github-repo-standard.py`
+fails CI when the two differ. A workflow's `terraform_version` is a copy the
+sweep compares against the pin. Neither copy is an authority: "CI moves up to
+meet the sandbox" would have let a sandbox pin set by accident drag every
+repo's CI with it, backwards included.
+
+**Rollout order, because state upgrades are one-way.** Once a newer Terraform
+writes state, older versions cannot read it back. So a pin move is one change
+to CI and the sandbox together, and a floor rises only where it would
+otherwise be violated. The cost of a move is dominated by state-format
+migration rather than configuration breakage: five repos jumped nine minor
+versions, 1.7.0 to 1.16.3, and every root applied `0 added, 0 changed, 0
+destroyed`.
+
+**Read the workflow, not the state.** Terraform rewrites a state object's
+`terraform_version` only when it persists state, so a no-op apply leaves the
+old label and an intentionally empty root reads its first version forever. A
+sweep that reads state reports drift that is not there. And list repos and
+read their files: GitHub code search returned one hit across nine Terraform
+repos when this was measured, the same eventual-consistency trap as issue
+search.
+
 ## Verification: settings are not behaviour
 
 The recurring failure across the estate is a system that *looks* configured:

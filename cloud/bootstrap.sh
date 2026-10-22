@@ -1533,11 +1533,12 @@ cap_precommit() {
         # however the pin is bumped. An installed version NEWER than the pin is
         # left alone, so this never walks a container backwards.
         #
-        # The pin tracks the current stable line rather than a floor. 1.16
-        # opened 2026-08-26 and 1.17 is still in beta, so 1.16.3 is the newest
-        # stable release; 1.16.0 shipped no breaking changes and its one
-        # upgrade note concerns provisioner bastion_host_key. Bump this when a
-        # line settles, not when one opens.
+        # The version is the spec's terraform.pin, not this line's to choose:
+        # this runs before anything here can parse JSON, so it is a literal,
+        # and tests/github-repo-standard.py fails CI when the two differ. Move
+        # it in the same change as the spec and every repo's CI -- a sandbox
+        # ahead of CI can write state CI cannot read back (github-standards.md,
+        # Terraform versions).
         TF_VER=1.16.3
         tf_have=$(terraform version 2> /dev/null | sed -n '1s/^Terraform v//p')
         if [ -z "$tf_have" ] ||

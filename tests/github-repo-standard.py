@@ -17,6 +17,8 @@ as compliant. This validates the properties that matter:
     and no file rule demands and forbids the same pattern
   - every prohibition names a tier that exists and a setting that is real
   - no tier names a repository: assignments are private and live elsewhere
+  - the Terraform pin is a stable release at or above the new-repo floor, and
+    `cloud/bootstrap.sh` installs exactly that pin: sandbox == spec
 
 Run with no arguments to validate the committed spec. The last section feeds
 the validator a deliberately broken copy, so a validator that stops catching
@@ -180,9 +182,62 @@ def validate_prohibitions(prohibited, tiers):
     return problems
 
 
+def version_tuple(text):
+    return tuple(int(part) for part in text.split("."))
+
+
+def validate_terraform(terraform):
+    """The `terraform` block: a stable pin, at or above the new-repo floor.
+
+    The pin is the value every Terraform repo's CI and the sandbox are held
+    to, so a pre-release or a pin below the floor would be applied estate-wide
+    and then reported as compliant.
+    """
+    problems = []
+    for field in ("applies_to", "pin", "pin_why", "floor", "floor_why", "stable_release",
+                  "latest_from", "required_version", "floor_shape", "ci_pin", "ci_pin_default",
+                  "checks"):
+        if not terraform.get(field):
+            problems.append(f"terraform: no {field}")
+    for field in ("stable_release", "required_version", "floor_shape", "ci_pin", "ci_pin_default"):
+        try:
+            re.compile(terraform.get(field) or "")
+        except re.error as e:
+            problems.append(f"terraform.{field}: pattern does not compile: {e}")
+    if problems:
+        return problems
+
+    pin, floor = terraform["pin"], terraform["floor"]
+    stable = re.search(terraform["stable_release"], pin)
+    if not stable:
+        problems.append(f"terraform: pin {pin!r} is not a stable release")
+    shaped = re.search(terraform["floor_shape"], f">= {floor}")
+    if not shaped:
+        problems.append(f"terraform: floor {floor!r} does not fit floor_shape")
+    elif stable and version_tuple(pin) < version_tuple(shaped.group(1)):
+        problems.append(f"terraform: pin {pin} is below floor {floor}")
+
+    for index, check in enumerate(terraform["checks"]):
+        for field in ("id", "holds", "because"):
+            if not check.get(field):
+                problems.append(f"terraform.checks[{check.get('id') or index}]: no {field}")
+    return problems
+
+
+def bootstrap_pin():
+    """Every `TF_VER=` assignment in cloud/bootstrap.sh, as written."""
+    text = (ROOT / "cloud" / "bootstrap.sh").read_text()
+    return re.findall(r"(?m)^\s*TF_VER=(\S+)\s*$", text)
+
+
 def validate(spec):
     """Every problem found, as a list of strings. Empty means valid."""
     problems = []
+
+    if "terraform" not in spec:
+        problems.append("no terraform block")
+    else:
+        problems += validate_terraform(spec["terraform"])
 
     if spec.get("version") != 1:
         problems.append(f"version must be 1, got {spec.get('version')!r}")
@@ -321,6 +376,14 @@ def main():
             "labels_required", "P0"),
         "empty label name": lambda s: s["tiers"]["baseline"]["labels_required"].append(""),
         "duplicate label name": lambda s: s["tiers"]["baseline"]["labels_required"].append("P0"),
+        "terraform block removed": lambda s: s.pop("terraform"),
+        "terraform pin below floor": lambda s: s["terraform"].__setitem__("pin", "1.7.0"),
+        "terraform pin a pre-release": lambda s: s["terraform"].__setitem__("pin", "1.17.0-beta1"),
+        "terraform floor with an upper bound": lambda s: s["terraform"].__setitem__(
+            "floor", "1.11, < 2.0"),
+        "uncompilable terraform pattern": lambda s: s["terraform"].__setitem__(
+            "ci_pin", "terraform_version:(\\s*"),
+        "unexplained terraform check": lambda s: s["terraform"]["checks"][0].pop("because"),
     }
     missed = []
     for label, mutate in broken.items():
@@ -351,6 +414,69 @@ def main():
         print(f"FAIL cooldown rule: positive control fails for {', '.join(wrong)}")
         return 1
     print("ok   cooldown rule: positive control holds")
+
+    # The sandbox half of sandbox == CI: the bootstrap may not hold its own
+    # idea of the version. Exactly one assignment, so a second one added in a
+    # branch the test does not read cannot silently win.
+    terraform = spec["terraform"]
+    pins = bootstrap_pin()
+    if pins != [terraform["pin"]]:
+        print(f"FAIL cloud/bootstrap.sh TF_VER is {pins or 'absent'}; "
+              f"the spec's terraform.pin is {terraform['pin']}")
+        return 1
+    print(f"ok   cloud/bootstrap.sh installs the spec's terraform pin ({terraform['pin']})")
+
+    # The sweep that applies these patterns runs in paul-context, so prove
+    # here that each can speak, on the shapes the estate actually carries.
+    def first(pattern, text):
+        found = re.search(pattern, text)
+        return found.group(1) if found else None
+
+    def floor_of(text):
+        constraint = first(terraform["required_version"], text)
+        return first(terraform["floor_shape"], constraint) if constraint is not None else None
+
+    def default_of(text):
+        found = re.search(terraform["ci_pin_default"], text)
+        return found.group(2) if found else None
+
+    # The shape pmgledhill102/reusable-workflows' terraform-job.yaml carries:
+    # an input whose default sits lines below its name, and a with: that
+    # forwards it as an expression.
+    reusable = (
+        "on:\n  workflow_call:\n    inputs:\n"
+        "      terraform-version:\n"
+        "        description: >-\n          Terraform version to install.\n"
+        "        required: false\n        type: string\n        default: \"1.16.3\"\n\n"
+        "      label:\n        type: string\n        default: \"\"\n"
+        "jobs:\n  plan:\n    steps:\n"
+        "      - uses: hashicorp/setup-terraform@0000000000000000000000000000000000000000 # v4.0.1\n"
+        "        with:\n          terraform_version: ${{ inputs.terraform-version }}\n"
+    )
+    fixtures = {
+        "stable final": (bool(re.search(terraform["stable_release"], "1.17.0")), True),
+        "beta is not stable": (bool(re.search(terraform["stable_release"], "1.17.0-beta1")), False),
+        "rc is not stable": (bool(re.search(terraform["stable_release"], "1.17.0-rc2")), False),
+        "bare floor": (floor_of('  required_version = ">= 1.11"\n'), "1.11"),
+        "three-part floor": (floor_of('required_version = ">=1.7.0"'), "1.7.0"),
+        "pessimistic constraint": (floor_of('required_version = "~> 1.11"'), None),
+        "upper-bounded floor": (floor_of('required_version = ">= 1.7.0, < 2.0.0"'), None),
+        "setup-terraform input": (first(terraform["ci_pin"], "        with:\n          terraform_version: 1.16.3\n"),
+                                  "1.16.3"),
+        "caller input, quoted": (first(terraform["ci_pin"], "      terraform-version: '1.16.3'  # pinned\n"),
+                                 "1.16.3"),
+        "latest is captured, not skipped": (first(terraform["ci_pin"], "terraform_version: latest"),
+                                            "latest"),
+        "expression is captured as indirection": (first(terraform["ci_pin"], reusable), "${{"),
+        "input name alone is not a pin": (first(terraform["ci_pin"], "      terraform-version:\n"), None),
+        "reusable workflow input default": (default_of(reusable), "1.16.3"),
+        "another input's default is not taken": (default_of(reusable.replace('"1.16.3"', "")), None),
+    }
+    wrong = [n for n, (got, want) in fixtures.items() if got != want]
+    if wrong:
+        print(f"FAIL terraform patterns: positive control fails for {', '.join(wrong)}")
+        return 1
+    print(f"ok   terraform patterns: {len(fixtures)} controls hold")
     return 0
 
 
