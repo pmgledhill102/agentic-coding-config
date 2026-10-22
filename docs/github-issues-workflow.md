@@ -97,7 +97,10 @@ commands above are the fallback and the cloud-sandbox option.
 ## Security-control defects
 
 This repo is public, and so is its tracker. One class of finding does not
-belong in it.
+belong in it. The general rule, for every public artefact including commit
+messages and PR bodies, is
+[ADR-0022](../adrs/0022-public-artefact-content.md); this section is how it
+applies to filing an issue here.
 
 - **Security-control defects go to `paul-context`.** A finding that a
   credential guard, `PreToolUse` hook, allowlist/deny rule or secret-handling
@@ -109,20 +112,15 @@ belong in it.
   than the hole. The rule covers the *report*, not the code: the fix, its test
   and its rationale are public as usual. What stays private is the window
   between knowing and fixing.
-- **It is the same line the estate already draws for settings** —
-  *standard public, evidence private*, from
-  [`home/standards/github-standards.md`](../home/standards/github-standards.md):
-  the standard is published here, the audit evidence lives in `paul-context`.
-  A vulnerability report is evidence.
+- **A vulnerability report is evidence**, and evidence is private under
+  ADR-0022.
 - **Scope: controls that are supposed to stop something.** An ordinary bug in
   a security-adjacent tool — a wrong exit code or a misleading message from
   `gcp-credentials`, say — is not in scope and is filed here as usual.
   Over-applying this moves half the tracker into a private repo and loses the
   public record that makes this one useful.
-- **Refer to private work by description, not by `repo#number`.** A
-  `paul-context#N` reference in a public body pins public context onto a
-  specific private issue, and is a link no public reader can follow anyway.
-  Describe what the private work covers instead.
+- **Refer to private work by description, not by `repo#number`**, per
+  ADR-0022.
 
 This rule governs new findings. It does not migrate issues already filed here;
 those are triaged separately.

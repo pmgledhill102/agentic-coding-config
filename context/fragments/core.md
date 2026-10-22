@@ -122,7 +122,7 @@ stated rather than inferred from where it sits.
 
 ## Commit & PR Style
 
-- Prefer several short paragraphs to one long line in commit messages; state what changed and why, not just what. Use repeated `-m` flags for the paragraphs (`git commit -m "Title" -m "Body" -m "Co-Authored-By: ..."`) rather than an editor or a heredoc
+- Prefer several short paragraphs to one long line in commit messages; state what changed and why, not just what. Use repeated `-m` flags for the paragraphs (`git commit -m "Title" -m "Body" -m "Co-Authored-By: ..."`) rather than an editor or a heredoc. In a public repo, what any artefact may say — commit, issue, PR, review — is [ADR-0022](https://github.com/pmgledhill102/agentic-coding-config/blob/main/adrs/0022-public-artefact-content.md)'s table
 - **For multi-line content, prefer a file over inline.** Use a tool's `--*-file` flag (`--body-file=PATH` for issues and PRs, `--input` for API JSON) or a surgical edit tool, rather than `--body "$(cat …)"` — it avoids quoting edge cases, renders correctly, and keeps the command readable in a transcript
 
 ## Process Guidelines
