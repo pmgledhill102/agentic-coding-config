@@ -1,7 +1,7 @@
 {
   "//": "Source of truth for composed agent context. See adrs/0018-composing-agent-context-per-surface.md.",
   "//fragments": "Fragments are authored standalone with their own H1. The generator demotes every heading one level and emits a single H1 per output, so composed files satisfy MD025.",
-  "//outputs": "Output paths differ by delivery route, deliberately: the workstation profile writes to home/, which chezmoi deploys unchanged; other profiles write to profiles/, which is repo-meta and is fetched by cloud/bootstrap.sh.",
+  "//outputs": "Output paths differ by delivery route, deliberately: the workstation profile writes to home/, which chezmoi deploys unchanged; other profiles write to profiles/, which is repo-meta and is fetched by cloud/bootstrap.sh, or, for claude-wsl, extracted from the same archive by a dotfiles archive-file external.",
   "//skills": "Skill bodies compose the same way, one tier down (#265). A fragment is one section of the skill; a section whose content differs by surface has a -workstation and a -sandbox variant, and every output names exactly one of the pair. The first fragment is the head: head-skill carries the frontmatter and the H1. There used to be a head-command beside it, carrying the one-line description a home/commands/ twin needs instead of frontmatter; the twins were retired (#313) and it went with them. Both cloud profiles take the same sandbox fragments — what varies for these skills is the environment (no usable gh), not the provider.",
   "fragment_dir": "context/fragments",
   "skill_fragment_dir": "context/skills",
@@ -20,7 +20,7 @@
       }
     },
     "claude-wsl": {
-      "//": "Output path is provisional, as codex-workstation's is: nothing delivers it yet. home/ is the macOS workstation's and deploys unchanged, so a second CLAUDE.md there would collide; the per-OS delivery route is decided jointly with #417.",
+      "//": "Output path is a delivery contract: dotfiles' .chezmoiexternal.toml.tmpl names profiles/claude-wsl/CLAUDE.md in an archive-file external on WSL (dotfiles#481), so renaming it breaks that apply. Not home/, which deploys unchanged to every personal machine and already holds the macOS CLAUDE.md.",
       "title": "Agent context — Claude Code on WSL",
       "os": "os-ubuntu", "persistence": "persist-durable", "host": "env-wsl",
       "outputs": {
