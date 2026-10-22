@@ -1050,9 +1050,10 @@ point at went away with the plugin in #312.
    installed. Only governs commands Claude runs via its Bash tool — manual
    terminal commits/pushes are CI-backed.
 
-### SessionStart and Stop: `agent-telemetry-claude-hook`
+### SessionStart, Stop and UserPromptSubmit: `agent-telemetry-claude-hook`
 
-Two entries that drive the telemetry helper (agentic-coding-config#431).
+Three entries that drive the telemetry helper (agentic-coding-config#431
+and #625).
 
 1. **SessionStart** (`agent-telemetry-claude-hook session-start`), beside
    `session-cache-verdict`. Records the session marker into the spool, then
@@ -1066,6 +1067,21 @@ Two entries that drive the telemetry helper (agentic-coding-config#431).
    detached. The transcript path comes from `transcript_path` in the hook
    payload, which is why the Claude-specific parsing lives in a wrapper and the
    helper itself stays vendor-neutral.
+
+   It also records a `hook stop` event on **every** turn, unthrottled, and on
+   the throttled path a `session shape` snapshot before the ship (#625).
+3. **UserPromptSubmit** (`agent-telemetry-claude-hook prompt-submit`) records
+   one `hook prompt-submit` event, detached. With `hook stop` it is the raw
+   material for "was someone watching?": a prompt soon after a Stop marks that
+   stretch as watched. That verdict is computed offline from the timestamps,
+   never in the session. Prints nothing, because this hook's stdout is added
+   to the prompt's context.
+
+The SessionStart entry also puts the toolchain shims (`~/.claude/bin/shims/`,
+made by the cloud bootstrap) ahead on the Bash tool's `PATH`, by appending to
+`CLAUDE_ENV_FILE`. That is how a hook changes the agent's environment without
+a second SessionStart entry or a `PATH` in `env`, which cannot reference the
+inherited value. No shims directory, no line: laptops are unaffected.
 
 Both exit 0 unconditionally: instrumentation must never be why a session fails
 to start or a turn fails to end. With no `TELEMETRY_INGEST_URL` they spool and

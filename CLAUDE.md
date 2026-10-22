@@ -54,6 +54,7 @@ sh tests/session-cache-verdict-test.sh   # rebuild-vs-cache verdict, and it neve
 sh tests/wsl-mnt-guard-test.sh           # /mnt guard speaks only on WSL, never fails a session  <1s
 sh tests/env-conformance-test.sh         # every conformance status reachable; the runner writes nothing  ~1s
 sh tests/agent-telemetry-test.sh         # telemetry helper never fails/slows its caller; no key in argv  ~5s
+sh tests/agent-shim-test.sh              # toolchain shims change no tool's behaviour; <10 ms a call  ~3s
 sh tests/start-session-gather-test.sh    # a gh failure never reaches the brief as exit=0 data  ~3s
 sh tests/end-session-gather-test.sh      # a merged branch never reads as unpushed; a real one does  ~1s
 sh tests/settings-sync.sh                # settings.json never changes without its .md (base: origin/main)  <1s

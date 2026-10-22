@@ -587,7 +587,10 @@ printf 'status=degraded\ndegraded=gcloud terraform\nref=main\n' > "$MANIFEST"
 run session-end repo=pmgledhill102/agentic-coding-config branch=feat/x issues=431 prs=632 secret=nope
 expect_rc "session-end exits 0" 0
 expect_out "session-end applies the allowlist" "dropped key 'secret'"
-expect "a final ship happened" 1 "$(requests)"
+expect "a final ship happened: the session shape, then the session record" 2 "$(requests)"
+expect "the shape goes to /v1/records/event" /v1/records/event "$(sed -n 1p "$RECEIVED" | jq -r .path)"
+expect "the shape is a session shape event" "session shape" \
+    "$(sed -n 1p "$RECEIVED" | jq -r .body | jq -r '"\(.source) \(.name)"')"
 expect "the record goes to /v1/records/session" /v1/records/session "$(last_req .path)"
 rec=$(last_req .body)
 expect "kind is session" session "$(printf '%s' "$rec" | jq -r .kind)"
@@ -674,8 +677,10 @@ run session-end repo=example/repo branch=main
 expect_rc "session-end exits 0 with no URL" 0
 expect "session-end prints nothing with no URL" "" "$OUT"
 sleep 1
-expect "the bootstrap manifest, the marker, the event and the session record are all spooled" "bootstrap event session session-marker" \
-    "$(jq -r .kind "$SPOOL" | sort | tr '\n' ' ' | sed 's/ $//')"
+expect "the bootstrap manifest, the marker, the events and the session record are all spooled" "bootstrap event session session-marker" \
+    "$(jq -r .kind "$SPOOL" | sort -u | tr '\n' ' ' | sed 's/ $//')"
+expect "the events are the caller's, a hook stop and a session shape" "hook.stop session.shape skill.step-done" \
+    "$(jq -r 'select(.kind == "event") | "\(.source).\(.name)"' "$SPOOL" | sort -u | tr '\n' ' ' | sed 's/ $//')"
 expect "nothing was shipped" 0 "$(offset)"
 expect "no request was made" 0 "$(requests)"
 if [ -f "$ARGV_LOG" ]; then bad "curl ran with no URL configured"; else ok "curl never ran"; fi
