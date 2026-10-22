@@ -14,6 +14,8 @@ For each proposal and observation, decide what artifact it produces:
 | **Settings change** | Permission to add or remove, hook to register, env var to set | File an Issue against `pmgledhill102/agentic-coding-config` describing the change and why — same routing as any other a-c-c finding. **Never edit a `settings.json` directly** (see 6b) |
 | **Observation only** | Noted but below the proposal bar | No artifact; mention in the journal's Observations section |
 
+**An Issue filed for one of two reasons also carries its `needs:` label**, from [`docs/github-issues-workflow.md`](https://github.com/pmgledhill102/agentic-coding-config/blob/main/docs/github-issues-workflow.md): `needs: local` when a step needs the owner's workstation (a credential or tool no sandbox has), `needs: decision` when it is blocked on a choice only the owner can make, with the question stated in the body. Either reason, not the P label, is what a later `start-session` uses to keep the issue out of a session that cannot move it. If the target repo lacks the label, file without it and say so in the step 10 summary.
+
 **Ask the question before naming the route: is this lesson machine-local, or estate-wide?** This machine persists, so a memory file is available here — which is exactly why it gets reached for first and the question gets skipped.
 
 - **Machine-local** — a path, a tool that only exists here, a quirk of this machine's setup. A memory file is the right route, and the whole route.

@@ -89,6 +89,10 @@ jobs:
       # A SessionStart hook: a non-zero exit is a session that will not start.
       - name: Run the session-cache verdict tests
         run: sh tests/session-cache-verdict-test.sh
+      # A SessionStart hook in every surface's settings.json: it must speak on
+      # WSL under /mnt/<drive> and be silent and exit 0 everywhere else.
+      - name: Run the WSL /mnt guard tests
+        run: sh tests/wsl-mnt-guard-test.sh
       # curl and gh are stubbed on PATH, so every status is driven offline.
       # The runner's real job is in a sandbox; this proves it can fail.
       - name: Run the environment-conformance tests

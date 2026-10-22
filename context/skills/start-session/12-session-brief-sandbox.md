@@ -30,6 +30,8 @@ In progress (assigned to you):
 Open issues (blocked filter unavailable):
   #<n>  P<pri>  <title>   (<age>)  (top 5 by priority; or "none — backlog empty")
   …
+  <N> issues need a local session (not listed above); <M> need a decision from you.
+                                                    (omit when both are 0)
 
 Needs attention:
   • This repo is ARCHIVED — read-only on GitHub. No pushes, no PRs, no new
@@ -64,6 +66,7 @@ Rules:
 - Each issue row ends with its age, `(<N>d)` — whole days since `updated_at`. A row untouched for more than about 14 days is the one the verify-premises rule above most likely applies to: apply it before presenting that row as the next thing to work on.
 - The issue list is titled **"Open issues (blocked filter unavailable)"**, not "Ready to pick up next". That is not a cosmetic difference: the query in step 1(b) cannot express `-is:blocked`, so some rows may be blocked. Titling it as a ready list would assert a filter that was never applied. Sort by priority label (P0 first, `-` last), emit the top 5, and check an issue's blockers before claiming it.
 - **"Ready bundles" comes first among the work sections**, above "In progress" and "Open issues". That ordering is the point of the section: a bundle is triaged and verified work, where the open-issue list below it is neither. Sourced from the `Bundle:`-titled rows of step 1(b)'s response, and omitted entirely when there are none.
+- The `needs:` line closes the issue list and is a count only: `needs: local` and `needs: decision` issues are never rows here, because this surface cannot move them. Drop a clause whose count is 0.
 - "In progress" is the same response filtered client-side to the authenticated login. Report the real answer — including `none` when the filter genuinely returned nothing. It reads `n/a (no GitHub route)` **only** when the MCP call itself failed.
 - "Recent merges" is sourced from gather section `recent_main_commits`. Omit the entire section when `count=0`.
 - "Parallel work" is sourced from gather section `unmerged_branches` (step 5c). Omit it when `count=0`. Where a branch touches more paths than fit on its line, name the ones in this session's working set first, then `+<k> more`. An overlap with the working set is never only a row here — it also gets its own "Needs attention" line, because that is the line that stops a duplicate edit.

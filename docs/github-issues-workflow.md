@@ -12,7 +12,30 @@ states the current conventions only.
 | Type | Labels `type: epic\|feature\|task\|bug` | Issue *types* are org-only; labels work everywhere |
 | Priority | Labels `P0`–`P4` | P0 critical … P2 medium … P4 lowest priority, but intended |
 | Dependencies | Native blocked-by (`--blocked-by`) | Max 50 per relationship type; blocked icon in lists |
+| Where it moves | Labels `needs: local`, `needs: decision` | Only for issues one place can move; see below |
 | History | Issue timeline | Automatic; includes label/state/relationship events |
+
+## What a session cannot do from where it is
+
+Two labels mark an issue that only one place can move. Neither changes its
+priority: they say *where*, and the `P` label still says how urgent.
+
+| Label | Means | Cleared by |
+| --- | --- | --- |
+| `needs: local` | A step needs the owner's workstation: a credential or tool a cloud sandbox does not have | The owner, in a local session |
+| `needs: decision` | Blocked on a choice only the owner can make; the body or a comment names the question | The owner, by answering on the issue |
+
+There is no third label for big design work: that is `needs: decision` plus
+`type: epic` or the `P` label. Remove the label when its reason is gone.
+
+- **`/start-session` reads them.** In a cloud sandbox the brief counts both
+  and leaves them out of the work it offers, so a session does not pick one
+  and stop. On a workstation it lists `needs: local` first, since that is
+  the one place they move, and `needs: decision` second.
+- **`/bundle-issues` and `/retrospective` write them**: bundle-issues when
+  a `DEFER` reason is one of the two, retrospective on anything it files for
+  either reason. A repo's next `/bundle-issues` run is the sweep that labels
+  its existing backlog.
 
 ## Ideas are not issues
 
@@ -135,6 +158,9 @@ for l in "P0:b60205" "P1:d93f0b" "P2:fbca04" "P3:0e8a16" "P4:c5def5"; do
 done
 for t in epic feature task bug; do
   gh label create "type: $t" --color 1d76db --force
+done
+for n in local decision; do
+  gh label create "needs: $n" --color 5319e7 --force
 done
 ```
 

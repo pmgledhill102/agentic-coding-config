@@ -352,6 +352,11 @@
             "type": "command",
             "command": "~/.claude/bin/agent-telemetry-claude-hook session-start",
             "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "~/.claude/bin/wsl-mnt-guard-claude-hook",
+            "timeout": 5
           }
         ]
       }

@@ -57,6 +57,7 @@ TIER_KEYS = {
     "applies_to", "extends", "repository", "security", "ruleset",
     "rules_required", "rules_when_ci", "classic_branch_protection",
     "dependabot_secrets", "actions_secrets", "files", "labels_required",
+    "labels_why",
 }
 FILE_RULE_KEYS = {"required", "why", "must_match", "must_not_match"}
 PROHIBITION_KEYS = {"id", "applies_below_tier", "match", "because"}
@@ -263,6 +264,9 @@ def validate(spec):
             problems += validate_files(name, tier["files"])
         if "labels_required" in tier:
             problems += validate_labels(name, tier["labels_required"])
+        stray = set(tier.get("labels_why", {})) - set(tier.get("labels_required", []))
+        if stray:
+            problems.append(f"{name}: labels_why explains labels it does not require: {sorted(stray)}")
 
     problems += validate_prohibitions(spec.get("prohibited", []), tiers)
 
@@ -376,6 +380,8 @@ def main():
             "labels_required", "P0"),
         "empty label name": lambda s: s["tiers"]["baseline"]["labels_required"].append(""),
         "duplicate label name": lambda s: s["tiers"]["baseline"]["labels_required"].append("P0"),
+        "labels_why for an unrequired label": lambda s: s["tiers"]["baseline"].setdefault(
+            "labels_why", {}).__setitem__("needs: nothing", "x"),
         "terraform block removed": lambda s: s.pop("terraform"),
         "terraform pin below floor": lambda s: s["terraform"].__setitem__("pin", "1.7.0"),
         "terraform pin a pre-release": lambda s: s["terraform"].__setitem__("pin", "1.17.0-beta1"),
