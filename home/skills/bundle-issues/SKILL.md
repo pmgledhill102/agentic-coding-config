@@ -38,7 +38,8 @@ threads that correct them. Concretely:
 - **Tier 1 — auto-act**: reading issues, verifying claims, writing the notes
   file.
 - **Tier 2 — one batched confirmation**: closing the already-fixed issues,
-  creating the Bundle Issues, and parking ideas. Both are taken together, once, at step 7.
+  creating the Bundle Issues, parking ideas, and labelling deferrals. All are
+  taken together, once, at step 7.
 - **Tier 3 — surface only**: anything that needs a decision, including every
   deferred issue and every cluster finding.
 
@@ -133,6 +134,15 @@ Verdicts:
 | `PARK` | An idea, not a commitment: nothing is broken, and the item adds or redesigns a capability that no current work needs. The last column carries the proposed trigger (below). |
 | `CLAIMED` | An open PR or a branch already addresses it. |
 | `BLOCKED` | A blocked-by dependency is still open. |
+
+**A `DEFER` whose reason is one of two kinds also names its label** in the
+notes line, from
+[`docs/github-issues-workflow.md`](../../../docs/github-issues-workflow.md):
+`needs: local` when a step needs the owner's workstation (a live write no
+broker tier reaches, a tool a sandbox lacks), `needs: decision` when the
+reason is "needs a decision about X". Anything else defers unlabelled. Write
+it now; step 7 applies it, because writes wait for the one confirmation. This
+is how a repo's backlog gets labelled: no separate sweep exists.
 
 `PARK` is not a softer `DEFER`. `DEFER` stays on the backlog because someone
 will do the work once a question is answered; `PARK` leaves it, because nobody
@@ -296,7 +306,10 @@ step 10 summaries). Tables and bullets survive wrapping; a label gutter does not
 >
 > **Eligible but unbundled:** `<u>` · **Deferred:** `<d>`
 >
-> Create `<b>` Bundle Issues, close `<k>` fixed issues and park `<p>` ideas? (y/n)
+> **Label deferrals:** `needs: local` #`<n>`, #`<n>` · `needs: decision` #`<n>`
+>
+> Create `<b>` Bundle Issues, close `<k>` fixed issues, park `<p>` ideas and
+> label `<l>` deferrals? (y/n)
 
 On yes:
 
@@ -311,6 +324,13 @@ gives: title, `Status: parked (<today>)`, the confirmed `Trigger:`, `From:
 branch and open one PR. Once the PR is open, close each issue as **not
 planned** with "Parked as an idea: `ideas/<slug>.md`". Comments stay reachable
 through the `From:` link, so do not copy them.
+
+**Label the deferrals** named in the plan, adding to each issue's existing
+labels rather than replacing them. A label the repo does not have yet is
+created first with the bootstrap line in
+[`docs/github-issues-workflow.md`](../../../docs/github-issues-workflow.md); where that
+cannot be done from this surface, say so in the report and list the issues
+instead.
 
 **Create one Issue per bundle**, titled `Bundle: <shared concern>`. One per
 bundle, not one combined plan: each is then independently claimable, closeable
@@ -420,7 +440,8 @@ Same rule as the plan: markdown, never a gutter-aligned fence.
 > - Parked as ideas: `<p>` — #`<n>` (`ideas/<slug>.md`), counted apart from
 >   deferred: parked items need no decision, deferred ones do
 > - Deferred: `<d>` — the backlog that actually needs you; checked against
->   commits and named blockers to depth `<commits searched>`
+>   commits and named blockers to depth `<commits searched>`; labelled
+>   `needs: local` `<l>`, `needs: decision` `<m>`
 > - Backlog: `<N>` open before, `<N-k-p+b>` now with the bundle issues,
 >   `<N-k-p-closed-by-bundles>` once the bundle PRs merge
 

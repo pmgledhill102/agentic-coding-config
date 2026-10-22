@@ -27,8 +27,13 @@
       },
       "labels_required": [
         "P0", "P1", "P2", "P3", "P4",
-        "type: epic", "type: feature", "type: task", "type: bug"
+        "type: epic", "type: feature", "type: task", "type: bug",
+        "needs: local", "needs: decision"
       ],
+      "labels_why": {
+        "needs: local": "A step needs the owner's workstation: a credential or tool no cloud sandbox has. Without it a cloud session's start-session brief offers the issue as ordinary work, the session picks it and stops; with it the cloud brief counts it aside and a workstation brief lists it first, the one place it moves. A where, not a how-urgent: priority stays on the P label.",
+        "needs: decision": "Blocked on a choice only the owner can make, with the question named in the body or a comment. Without it the issue reads as workable and a session stalls on it; with it start-session surfaces it as 'answer these and they unblock'. Not a third label for big design work: that is this plus type: epic or the P label."
+      },
       "files": {
         ".github/dependabot.yml": {
           "why": "checked wherever the file exists rather than required, because whether every repo should have one is a separate question (paul-context#140). A repo without the file is not this check's business; a repo with one that nobody can see is.",
