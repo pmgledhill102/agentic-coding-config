@@ -240,7 +240,7 @@ the sandbox will still be here" is not one of the three.
 ## Ubuntu
 
 True only on **Ubuntu 24.04**: GNU userland, `/bin/sh` is dash. That covers
-every cloud sandbox, and WSL once it has a profile (ADR-0020).
+every cloud sandbox, and WSL (ADR-0020).
 
 - **System Python refuses `pip install`** (PEP 668 `EXTERNALLY-MANAGED`).
   Prefer `uv` or a virtualenv; `--break-system-packages` only on a machine

@@ -134,6 +134,14 @@ names one of each. The composition guard in `tests/compose-context.py`
 checks the pair is legal: no `persist-ephemeral` with `os-macos`, and no
 `os-windows` at all, because no profile exists for it.
 
+*Amended 2026-10-22 (#569):* a profile may also name one **host fragment**.
+This is an overlay, not a fourth axis. It carries what being inside another
+OS adds to one coordinate, and the manifest pins it to that coordinate.
+`env-wsl` is the first. WSL is `os-ubuntu` + `persist-durable`, and it also has
+the Windows host one `cd` away at `/mnt/c`. That rule depends on nothing the
+three axes carry. The guard rejects a host fragment on any other coordinate,
+and it requires each of an output's environment fragments exactly once.
+
 ### 6. Deviation
 
 Per [ADR-0015](0015-tiered-adrs.md), a repo may deviate from this matrix
