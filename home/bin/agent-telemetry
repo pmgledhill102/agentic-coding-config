@@ -18,8 +18,14 @@
 #   session-end [key=value ...]
 #       The end-session record: `event`, plus the fields a model should not be
 #       trusted to recompute (duration, cache verdict, degraded capabilities,
-#       read from the session marker and the bootstrap manifest), then a final
-#       `ship`.
+#       read from the session marker and the bootstrap manifest), preceded by
+#       a `session-shape` snapshot, then a final `ship`.
+#   session-shape
+#       One `session shape` event: cache verdict, session source, bootstrap
+#       sha and duration (from the session marker), and seconds from session
+#       start to the first commit and to each shimmed tool's first use (from
+#       agent-shim's state). A snapshot: it is emitted again at each throttled
+#       Stop and at session-end, and the latest one per session is the answer.
 #   ship [--background]
 #       Send unsent spool lines to /v1/records/<kind>. A byte offset in
 #       shipped.offset advances ONLY on a 2xx, so re-running after success
@@ -100,6 +106,9 @@ ALLOWED_KEYS="phase step skill outcome result status duration_ms duration_s exit
 ALLOWED_KEYS="$ALLOWED_KEYS reason section sentinel prs_touched issues_closed issues_commented commits_pushed"
 ALLOWED_KEYS="$ALLOWED_KEYS proposals_total proposals_always_loaded proposals_description proposals_body proposals_addition proposals_removal proposals_amendment"
 ALLOWED_KEYS="$ALLOWED_KEYS issues_filed issues_filed_refs fixed_in_place journal_draft reviewed_open reviewed_completed reviewed_not_planned reviewed_reverted"
+# Watched wait time (#625): toolchain shim calls and the session shape. Times,
+# exit codes and tool names only; never an argument.
+ALLOWED_KEYS="$ALLOWED_KEYS via blocked_ms session_source bootstrap_duration_seconds first_commit_s first_use_s"
 
 umask 077
 
@@ -124,6 +133,7 @@ usage:
   agent-telemetry event <source> <name> [key=value ...]
   agent-telemetry record <kind> <file>
   agent-telemetry session-end [key=value ...]
+  agent-telemetry session-shape
   agent-telemetry ship [--background]
   agent-telemetry upload-transcript <path> [--background]
   agent-telemetry status
@@ -645,9 +655,49 @@ cmd_session_end() {
 
     # Caller-supplied pairs come last so an explicit value wins over a derived one
     # in a reader that keeps the last duplicate; the allowlist applies to both.
+    # The shape first, so the session record stays the last thing shipped.
+    cmd_session_shape
     # shellcheck disable=SC2086  # _derived is deliberately split into pairs
     emit session end-session session $_derived "$@"
     cmd_ship
+}
+
+# --- session-shape ------------------------------------------------------------
+
+marker_field() { sed -n "s/^$1=//p" "$MARKER" 2> /dev/null | head -1; }
+
+cmd_session_shape() {
+    _pairs=""
+    for _f in cache session_source sha bootstrap_duration_seconds; do
+        _v=$(marker_field "$_f")
+        case "$_v" in "" | unknown) ;; *) _pairs="$_pairs $_f=$_v" ;; esac
+    done
+
+    # Offsets need a session start; without one there is nothing to measure from.
+    _start=$(marker_field observed_at)
+    _e=""
+    [ -z "$_start" ] || [ "$_start" = unknown ] || _e=$(epoch_of "$_start")
+    _shims="$STATE/shims"
+    if [ -n "$_e" ]; then
+        _fc=$(head -1 "$_shims/first-commit" 2> /dev/null)
+        case "$_fc" in
+            "" | *[!0-9]*) ;;
+            *) [ "$_fc" -lt "$_e" ] || _pairs="$_pairs first_commit_s=$((_fc - _e))" ;;
+        esac
+        # tool:seconds in order of first use. A stamp older than this session
+        # start is a previous session's, left by a container with no
+        # SessionStart hook to clear it.
+        _uses=$(for _u in "$_shims"/first-use/*; do
+            [ -f "$_u" ] || continue
+            _t=$(head -1 "$_u" 2> /dev/null)
+            case "$_t" in "" | *[!0-9]*) continue ;; esac
+            [ "$_t" -ge "$_e" ] || continue
+            echo "$((_t - _e)) ${_u##*/}"
+        done | sort -n | awk '{ printf "%s%s:%s", (NR > 1 ? "," : ""), $2, $1 }')
+        [ -z "$_uses" ] || _pairs="$_pairs first_use_s=$_uses"
+    fi
+    # shellcheck disable=SC2086  # _pairs is deliberately split into pairs
+    emit event session shape $_pairs
 }
 
 # --- status -------------------------------------------------------------------
@@ -688,6 +738,7 @@ case "$cmd" in
     event) cmd_event "$@" ;;
     record) cmd_record "$@" ;;
     session-end) cmd_session_end "$@" ;;
+    session-shape) cmd_session_shape ;;
     ship) cmd_ship "$@" ;;
     upload-transcript) cmd_upload "$@" ;;
     status) cmd_status ;;

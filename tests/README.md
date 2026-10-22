@@ -66,6 +66,15 @@ A fake `curl` on `PATH` records every argument the helper passes, which is what
 URL both travel in mode-0600 curl config files. Runs in a few seconds, makes no
 network calls beyond loopback.
 
+`agent-shim-test.sh` drives `home/bin/agent-shim`, the watched-wait events in the
+hook wrapper, and `agent-telemetry session-shape` (#625). It compares every
+shimmed call against the bare tool byte for byte (arguments, stdin, stdout,
+stderr, exit code), including with the helper absent, broken, or unable to
+write; runs a real `git commit` whose pre-commit hook calls a shimmed tool, to
+see `via=git-hook`; proves a missing tool is a plain 127 even with a second
+route to the shims on `PATH`; and measures the latency a call adds, which must
+stay under 10 ms.
+
 ## Environment conformance
 
 `env-conformance-test.sh` drives `home/bin/env-conformance` with stubbed `curl`
