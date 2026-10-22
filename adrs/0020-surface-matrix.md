@@ -89,7 +89,7 @@ list, which neither repo owns.
 | --- | --- | --- | --- |
 | macos · durable · personal | **primary** | full (`personal`) | full: `claude-workstation` |
 | macos · durable · work | supported | `work` | none (dotfiles ADR-0016) |
-| ubuntu · durable · personal (WSL, a VM) | supported | `personal` minus GUI | none until a WSL profile exists (#569) |
+| ubuntu · durable · personal (WSL, a VM) | supported | `personal` minus GUI | WSL: `claude-wsl`, delivered by an `archive-file` external (#569, dotfiles#481); a VM: none |
 | ubuntu · ephemeral · personal (cloud sandbox) | supported | not applied | `claude-cloud-sandbox` / `codex-cloud-sandbox` |
 | windows · durable · personal (the desktop) | **best-effort** | `personal` (WinGet, PowerShell, Windows Terminal) | none until an `env-windows` profile exists (#417) |
 | windows · durable · work | best-effort | `work` | none |
@@ -106,9 +106,13 @@ Tier meanings:
   on this tier carry a `surface:` label so they can be excluded from
   what-can-I-do-from-here views without being closed.
 
-"None" on a Windows or WSL row is the target, not today's behaviour: until
-the delivery route in #417 and #569 lands, those machines still receive the
-macOS workstation profile through dotfiles' external.
+"None" on a Windows row is the target, not today's behaviour: until #417
+lands, that machine still receives the macOS workstation profile through
+dotfiles' external. WSL's route is decided: dotfiles narrows the archive's
+`include` to skip `home/CLAUDE.md` there, and a second external of type
+`archive-file` extracts `profiles/claude-wsl/CLAUDE.md` from the same tarball
+into its place (dotfiles#481). Windows takes the same route once its profile
+exists.
 
 ### 4. Agent surfaces, as a set
 
@@ -119,7 +123,7 @@ framing does not mistake a dropped one for an undocumented one:
 | --- | --- | --- |
 | Workstation (macOS) | supported | — |
 | Cloud sandbox (Claude, Codex) | supported | — |
-| WSL | deferred, seam named | a WSL profile and its delivery route (#569) |
+| WSL | profile composed, delivery pending | dotfiles#481 lands and is verified on the machine (#569) |
 | CloudCoop (bespoke cloud sandbox) | **retired** (#423) | hosted runners with the credential-broker pattern now meet its requirements |
 
 Maturity is not tracked in a hand-maintained table. Where it is tracked at
@@ -164,8 +168,8 @@ only by naming this ADR and saying why.
   checks each one against it. A manifest nobody asserts is a third list.
 - Four environment fragments instead of two, and a guard to keep their
   pairings honest. More files; each says less.
-- Until #417 and #569 land, Windows and WSL machines keep receiving the
-  macOS profile, which is the status quo and is not made worse.
+- Until #417 lands, and dotfiles#481 for WSL, those machines keep receiving
+  the macOS profile, which is the status quo and is not made worse.
 
 ## Alternatives considered
 
