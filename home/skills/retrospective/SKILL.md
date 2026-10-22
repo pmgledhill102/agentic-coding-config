@@ -36,6 +36,9 @@ API call it costs
 
 ### 1. Close the loop (always first)
 
+Start with `~/.claude/bin/agent-telemetry event retrospective start`; step 10's
+run record is timed from it.
+
 **Before reading anything, check the session can reach `paul-context` at all.** The closed-loop reads below, the journal draft in step 8, and every cross-repo Issue step 6 routes all target a repo that is *not* the one this session is working in — most often `pmgledhill102/paul-context`. A **repo-scoped session** — a cloud sandbox is one — can only reach the repos attached to it, and a GitHub call against an unattached repo is **refused outright**. This is a different failure from having no local clone: the API call itself is denied, and the denial arrives as a 403 or a 404 that reads like "no such Issues" rather than "no access", so it is easy to record as an empty history and move on.
 
 Confirm the scope *here*, at the top, rather than at the point of the first write. A cheap read is enough — listing that repo's Issues either works or is denied. Discovering the denial in step 8 means the whole session has been analysed with nowhere to put the output.
@@ -294,6 +297,14 @@ Next /start-session in the cross-repo'd repos will surface the new Issues as rea
 ```
 
 "Issues created: 0, fixed in place: N" is a successful retro, not a thin one: the backlog shrank instead of growing.
+
+Then one run record, counts and tokens only (`issues_filed_refs` like `a-c-c#630,paul-context#57`; omit it when none):
+
+```sh
+~/.claude/bin/agent-telemetry event retrospective run proposals_total=<n> proposals_always_loaded=<n> proposals_description=<n> proposals_body=<n> proposals_addition=<n> proposals_removal=<n> proposals_amendment=<n> issues_filed=<n> issues_filed_refs=<refs> fixed_in_place=<n> journal_draft=<yes|no> reviewed_open=<n> reviewed_completed=<n> reviewed_not_planned=<n> reviewed_reverted=<n>
+```
+
+The `reviewed_*` counts are step 1's closed-loop Issues by state. If the helper is absent, skip silently; never relay its output.
 
 **No label gutter, deliberately — do not pad the values back into a column.** The previous form aligned every value at column 31, which pushed the longest line to 143 characters, so the block wrapped and interleaved at terminal width. That is the same failure the step 7 table fixed, at 136 characters — this one was worse. Six wrap-up lines have no columns to compare down, so alignment buys nothing and costs the width that breaks it; leave the labels ragged and keep every line short enough to survive a narrow terminal.
 

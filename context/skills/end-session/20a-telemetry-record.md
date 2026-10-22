@@ -3,6 +3,19 @@
 After the summary is printed, once, whatever the outcome — including a red PR or
 an unpushed branch. A session that ended badly is the one most worth recording.
 
+First one record per Phase 1 step (1 to 14b, `n/a here` and skipped ones
+included), one per gather section, and the phase's counts:
+
+```sh
+~/.claude/bin/agent-telemetry event end-session step-<n> outcome=<ok|skipped|degraded|failed> reason=<token>
+~/.claude/bin/agent-telemetry event end-session gather section=<name> exit_code=<N> sentinel=<token>
+~/.claude/bin/agent-telemetry event end-session phase-1 prs_touched=<n> issues_closed=<n> issues_commented=<n> commits_pushed=<n>
+```
+
+`reason` (only when not `ok`) and `sentinel` are tokens, never prose: a
+sentinel such as `gh-unauthorized`, or `raw-403` for a GraphQL 403 body that
+arrived under `exit=0`. Omit `sentinel` when the section held data. Then:
+
 ```sh
 ~/.claude/bin/agent-telemetry session-end repo=<owner/repo> branch=<branch> issues=<n,n> prs=<n,n>
 ```
