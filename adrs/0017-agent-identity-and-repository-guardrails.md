@@ -14,11 +14,10 @@ file that the agent bound by it could also edit.
 
 The audit's specific findings — which controls were absent, on which
 repositories, and what an agent session could therefore reach — are
-recorded in the **personal tier** under ADR-0015, not here. Current-state
-weaknesses in a live system are personal-tier material regardless of
-which repository they concern; publishing them buys a reader nothing the
-decision below does not, and costs whatever window exists before they are
-closed.
+recorded in the **personal tier** under ADR-0015, not here, per the rule
+[ADR-0022](0022-public-artefact-content.md) now states for every public
+artefact: current-state weaknesses in a live system are personal-tier
+material regardless of which repository they concern.
 
 What generalises, and what this ADR records, is the shape of the problem:
 a policy expressed only as prose, on a surface where the agent holds the
