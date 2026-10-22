@@ -52,7 +52,7 @@ case "$1 $2" in
         case "${STUB_LIST:-ok}" in
             ok)
                 echo "warning: a notice on stderr that must not reach jq" >&2
-                echo '[{"number":7,"title":"Bundle: seven","labels":[{"name":"P2"}],"updatedAt":"2020-01-01T00:00:00Z"}]' ;;
+                echo '[{"number":7,"title":"Bundle: seven","labels":[{"name":"P2"}],"updatedAt":"2020-01-01T00:00:00Z"},{"number":8,"title":"eight","labels":[{"name":"needs: local"},{"name":"P1"}],"updatedAt":"2020-01-01T00:00:00Z"}]' ;;
             *)
                 echo "HTTP 502: Bad Gateway" >&2
                 exit 1 ;;
@@ -88,7 +88,7 @@ out="$WORK/out"
 STUB_REST=ok STUB_GQL=fail STUB_LIST=fail
 export STUB_REST STUB_GQL STUB_LIST
 gather >"$out"
-for s in gh_ready gh_assigned gh_bundles; do
+for s in gh_ready gh_assigned gh_bundles gh_needs; do
     check "graphql blocked: $s exits non-zero" \
         grep -q "^===$s (exit=1)===" "$out"
     check "graphql blocked: $s says gh-unauthorized" \
@@ -102,7 +102,7 @@ check "graphql blocked: repo_archived still answers from REST" \
 # --- Both probes pass, then the list call itself fails. ---------------------
 STUB_REST=ok STUB_GQL=ok STUB_LIST=fail
 gather >"$out"
-for s in gh_ready gh_assigned gh_bundles; do
+for s in gh_ready gh_assigned gh_bundles gh_needs; do
     check "list fails: $s exits non-zero, not exit=0" \
         sh -c '! grep -q "^===$2 (exit=0)===" "$1" && grep -q "^===$2 (exit=" "$1"' _ "$out" "$s"
     check "list fails: $s shows gh's own error" \
@@ -116,6 +116,10 @@ check "healthy: gh_ready exit=0" grep -q "^===gh_ready (exit=0)===" "$out"
 check "healthy: gh_ready row parsed, with its age in days" \
     grep -Eqx "#7\|P2\|[0-9]{4,}d\|Bundle: seven" "$out"
 check "healthy: gh_bundles row parsed" grep -qx "#7|seven" "$out"
+check "healthy: gh_needs row parsed, labelled local" \
+    grep -Eqx "local\|#8\|P1\|[0-9]{4,}d\|eight" "$out"
+check "healthy: gh_needs lists no unlabelled issue" \
+    sh -c '! grep -A3 "^===gh_needs (exit=0)===" "$1" | grep -q "#7"' _ "$out"
 check "healthy: stderr warning kept out of the data" \
     sh -c '! grep -q "must not reach jq" "$1"' _ "$out"
 

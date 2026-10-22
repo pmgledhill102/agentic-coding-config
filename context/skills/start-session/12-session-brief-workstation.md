@@ -19,12 +19,18 @@ Parallel work (pushed <48h, unmerged):              (omit when count=0)
 Ready bundles:                                      (omit when none)
   #<n>  <concern>                  (pre-triaged by /bundle-issues)
 
+Needs a local session (only here can move these):  (omit when none)
+  #<n>  P<pri>  <title>   (<age>)
+
 In progress (assigned to you):
   #<n>  P<pri>  <title>   (<age>)  (or "none")
 
 Ready to pick up next:
   #<n>  P<pri>  <title>   (<age>)  (top 5 by priority; or "none — backlog empty")
   …
+
+Needs a decision (answer these and they unblock):  (omit when none)
+  #<n>  P<pri>  <title>   (<age>)
 
 Needs attention:
   • This repo is ARCHIVED — read-only on GitHub. No pushes, no PRs, no new
@@ -48,6 +54,7 @@ Rules:
 - When `repo_resolution` is present, the `Repo:` line carries the second line naming which repo was resolved and why. It is never silent: a session that resolved its own repo should be able to see that it did.
 - Sections with nothing to say collapse to a single `none` line; "Needs attention" is omitted entirely when empty.
 - **"Ready bundles" comes first among the work sections**, above "In progress" and "Ready to pick up next". That ordering is the point of the section: a bundle is triaged and verified work, where the lists below it are neither. Sourced from gather section `gh_bundles`, rows already shaped `#<n>|<concern>` — split on `|` and emit them all. Omitted entirely when empty; `n/a (gh absent)` when the section could not answer.
+- **"Needs a local session" sits directly under "Ready bundles"**, above everything else: a workstation is the only place those issues move, and a cloud session has been counting them aside. "Needs a decision" sits under "Ready to pick up next". Both are sourced from gather section `gh_needs`, rows shaped `<local|decision>|#<n>|P<pri>|<age>|<title>` — split on the first four `|`, group by the first field, sort each group by priority, and emit them all. `gh_ready` already excludes these issues, so nothing appears twice.
 - **Rows in "Ready to pick up next" are open issues, which describe the world when they were filed.** Before acting on one — or citing it as a reason something will fail — verify its premises against current source. An issue is often fixed by adjacent work that never referenced it, and a body can be reversed by its own newest comment, so read the comments before implementing.
 - Each issue row ends with its age, `(<N>d)`, from the `<age>` field of the gather row. A row untouched for more than about 14 days is the one the verify-premises rule above most likely applies to: apply it before presenting that row as the next thing to work on.
 - "Ready to pick up next" is sourced from gather section `gh_ready`. Each row is already pipe-separated `#<n>|P<pri>|<age>|<title>` — split on the first three `|` (a title may contain more), sort by priority label (P0 first, `-` last), and emit the top 5. Ready = open and not directly blocked; the filter is direct-blocks-only, so eyeball the blocked icon before claiming work.

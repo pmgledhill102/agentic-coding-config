@@ -124,7 +124,7 @@ Output is a sectioned stream. Each section starts with `===<name> (exit=<N>)===`
 | `repo_archived` | 3b, 7 | Always present, never absent. `state=true` / `false` / `unknown`. The flag rides a repo-scoped REST probe, which this surface's proxy has both allowed and 403ed: where it passes the answer is real, and where it is blocked it reads `unknown` — report that as unchecked, never as "not archived". |
 | `local_state` | 3, 7 | Includes branch, dirty/clean, ahead/behind upstream, ahead/behind `origin/<default>`, and, under `---origin---`, the remote URL that gives you `<owner>/<repo>` for part (b). |
 | `recent_main_commits` | 5 | First line is `count=<N>` (commits that merged into `origin/<default>` since the previous local tip). When non-zero, subsequent lines are `<short-sha> <subject>`, capped at 10. Empty when caught up. |
-| `gh_ready`, `gh_assigned`, `gh_bundles` | — | Never usable on this surface (see §Surface); ignore all three whatever they contain. They read `gh-unavailable` / `gh-unauthorized` with a non-zero exit: the script probes the GraphQL lane `gh issue list` needs, which the proxy blocks, separately from the REST probe, which may pass. A container bootstrapped before that probe existed can still show a raw GraphQL `403` body under **`exit=0`** here, which the exit-code rules below would otherwise take for data — another reason to ignore these sections rather than parse them. Part (b) is where the issue and bundle data comes from. They are still emitted because the script is one file shared with the workstation composition. |
+| `gh_ready`, `gh_assigned`, `gh_bundles`, `gh_needs` | — | Never usable on this surface (see §Surface); ignore all four whatever they contain. They read `gh-unavailable` / `gh-unauthorized` with a non-zero exit: the script probes the GraphQL lane `gh issue list` needs, which the proxy blocks, separately from the REST probe, which may pass. A container bootstrapped before that probe existed can still show a raw GraphQL `403` body under **`exit=0`** here, which the exit-code rules below would otherwise take for data — another reason to ignore these sections rather than parse them. Part (b) is where the issue and bundle data comes from. They are still emitted because the script is one file shared with the workstation composition. |
 | `unmerged_branches` | 5c, 7 | Remote branches pushed in the last 48h and not merged into `origin/<default>`, excluding this session's own branch — i.e. what a sibling session is working on now. First line `count=<N>`; then per branch, newest first, `<branch>\|<age>\|<n> files` followed by its changed paths indented two spaces (capped at 20, then `+<k> more`). Up to 10 branches, then `more=<k>`. `count=0` = none. Pure git, so it works here. |
 | `gcloud_auth` | 7 | `state=absent` (gcloud not on PATH) = reported as n/a, no noise. `state=live` = silent. `state=expired` = a "Needs attention" line with the `! gcloud auth login` remedy, because an agent has no tty to reauth on. Never prompts. |
 | `claude_drift` | — | `state=absent` on this surface: nothing here is chezmoi-managed, so there is no deployed tree to be behind. Silent skip. |
@@ -154,9 +154,13 @@ From that one response:
   filter is client-side on purpose, and it is free: the rows are already in this
   response, and the alternative — an issue *search* — is eventually consistent,
   so a bundle written minutes ago could be missing from it.
+- **Needs another place** — the issues labelled `needs: local` or
+  `needs: decision`, counted per label for the brief. This surface cannot move
+  either kind, so they are a count, not rows.
 - **Ready to pick up** — every returned issue, sorted by its `P0`–`P4` label
-  (`-` when it has none), top 5 into the brief. Exclude the `Bundle:` rows;
-  they have their own section and would otherwise appear twice.
+  (`-` when it has none), top 5 into the brief. Exclude the `Bundle:` rows,
+  which have their own section and would otherwise appear twice, and the
+  `needs:` rows, which a session here would pick and then stop on.
 - **In progress** — the same list filtered client-side to issues whose
   `assignees` include the authenticated login. `mcp__github__get_me` supplies
   that login and can be sent in the same message; on a personal repo the owner
@@ -440,6 +444,8 @@ In progress (assigned to you):
 Open issues (blocked filter unavailable):
   #<n>  P<pri>  <title>   (<age>)  (top 5 by priority; or "none — backlog empty")
   …
+  <N> issues need a local session (not listed above); <M> need a decision from you.
+                                                    (omit when both are 0)
 
 Needs attention:
   • This repo is ARCHIVED — read-only on GitHub. No pushes, no PRs, no new
@@ -474,6 +480,7 @@ Rules:
 - Each issue row ends with its age, `(<N>d)` — whole days since `updated_at`. A row untouched for more than about 14 days is the one the verify-premises rule above most likely applies to: apply it before presenting that row as the next thing to work on.
 - The issue list is titled **"Open issues (blocked filter unavailable)"**, not "Ready to pick up next". That is not a cosmetic difference: the query in step 1(b) cannot express `-is:blocked`, so some rows may be blocked. Titling it as a ready list would assert a filter that was never applied. Sort by priority label (P0 first, `-` last), emit the top 5, and check an issue's blockers before claiming it.
 - **"Ready bundles" comes first among the work sections**, above "In progress" and "Open issues". That ordering is the point of the section: a bundle is triaged and verified work, where the open-issue list below it is neither. Sourced from the `Bundle:`-titled rows of step 1(b)'s response, and omitted entirely when there are none.
+- The `needs:` line closes the issue list and is a count only: `needs: local` and `needs: decision` issues are never rows here, because this surface cannot move them. Drop a clause whose count is 0.
 - "In progress" is the same response filtered client-side to the authenticated login. Report the real answer — including `none` when the filter genuinely returned nothing. It reads `n/a (no GitHub route)` **only** when the MCP call itself failed.
 - "Recent merges" is sourced from gather section `recent_main_commits`. Omit the entire section when `count=0`.
 - "Parallel work" is sourced from gather section `unmerged_branches` (step 5c). Omit it when `count=0`. Where a branch touches more paths than fit on its line, name the ones in this session's working set first, then `+<k> more`. An overlap with the working set is never only a row here — it also gets its own "Needs attention" line, because that is the line that stops a duplicate edit.

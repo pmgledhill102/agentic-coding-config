@@ -164,7 +164,7 @@ run_sh() {
     ) &
 }
 
-# Shared preamble for the three gh issue sections, prepended to each script.
+# Shared preamble for the four gh issue sections, prepended to each script.
 # Each sentinel exits 1, so the skill's rule "exit=0 with content is data" can
 # never meet one. The issue-list call itself is captured before jq rather than
 # piped into it: in a pipe without pipefail gh's failure exit is masked by jq's
@@ -256,12 +256,14 @@ run_sh local_state '
 
 # shellcheck disable=SC2016
 run_sh gh_ready "$GH_ISSUES_PREAMBLE"'
-    # Ready work: open issues with no direct blocked-by relationship, per
-    # docs/github-issues-workflow.md. Note -is:blocked filters direct blocks
-    # only (no transitive query). Output: pipe-separated rows,
+    # Ready work: open issues with no direct blocked-by relationship and no
+    # "needs:" label, per docs/github-issues-workflow.md. Note -is:blocked
+    # filters direct blocks only (no transitive query); the needs: issues are
+    # the gh_needs rows instead. Output: pipe-separated rows,
     #   #<number>|P<n>|<age>|<title>
     # (priority "-" when no P0-P4 label). Empty output = no ready work.
-    out=$(gh issue list ${REPO_SLUG:+-R "$REPO_SLUG"} --search "is:open -is:blocked" --limit 10 \
+    out=$(gh issue list ${REPO_SLUG:+-R "$REPO_SLUG"} \
+        --search "is:open -is:blocked -label:\"needs: local\" -label:\"needs: decision\"" --limit 10 \
         --json number,title,labels,updatedAt 2>"$errf") || { cat "$errf"; exit 1; }
     printf "%s\n" "$out" \
       | jq -r "$GH_ROW_JQ"
@@ -301,6 +303,23 @@ run_sh gh_bundles "$GH_ISSUES_PREAMBLE"'
           .[] | select(.title | startswith("Bundle:"))
               | "#\(.number)|\(.title | sub("^Bundle:\\s*"; ""))"
         '\''
+'
+
+# shellcheck disable=SC2016
+run_sh gh_needs "$GH_ISSUES_PREAMBLE"'
+    # Issues only one place can move: "needs: local" (the owner workstation)
+    # and "needs: decision" (an answer from the owner). Output: the gh_ready
+    # row shape with the label suffix in front, local rows first,
+    #   local|#<number>|P<n>|<age>|<title>
+    # Listed and filtered in jq, like gh_bundles, so a label applied minutes
+    # ago is not missed the way a search could miss it. Empty = none.
+    out=$(gh issue list ${REPO_SLUG:+-R "$REPO_SLUG"} --state open --limit 100 \
+        --json number,title,labels,updatedAt 2>"$errf") || { cat "$errf"; exit 1; }
+    for n in local decision; do
+        printf "%s\n" "$out" \
+          | jq -r --arg l "needs: $n" "map(select([(.labels // [])[].name] | index(\$l))) | $GH_ROW_JQ" \
+          | sed "s/^/$n|/"
+    done
 '
 
 # Deployed-config drift. Cheap (a cmp per file, and nothing else unless one
@@ -590,6 +609,6 @@ printf '===repo_archived (exit=0)===\n'
 printf 'state=%s\n' "$REPO_ARCHIVED"
 printf '\n'
 
-for s in local_state recent_main_commits unmerged_branches gh_ready gh_assigned gh_bundles gcloud_auth claude_drift bootstrap_currency conformance; do
+for s in local_state recent_main_commits unmerged_branches gh_ready gh_assigned gh_bundles gh_needs gcloud_auth claude_drift bootstrap_currency conformance; do
     [ -f "$TMP/$s.exit" ] && emit "$s"
 done

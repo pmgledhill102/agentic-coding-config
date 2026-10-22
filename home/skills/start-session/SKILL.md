@@ -107,9 +107,10 @@ Output is a sectioned stream. Each section starts with `===<name> (exit=<N>)===`
 | `local_state` | 3, 7 | Includes branch, dirty/clean, ahead/behind upstream, ahead/behind `origin/<default>`. |
 | `recent_main_commits` | 5 | First line is `count=<N>` (commits that merged into `origin/<default>` since the previous local tip). When non-zero, subsequent lines are `<short-sha> <subject>`, capped at 10. Empty when caught up. |
 | `unmerged_branches` | 5c, 7 | Remote branches pushed in the last 48h and not merged into `origin/<default>`, excluding this session's own branch — i.e. what a sibling session is working on now. First line `count=<N>`; then per branch, newest first, `<branch>\|<age>\|<n> files` followed by its changed paths indented two spaces (capped at 20, then `+<k> more`). Up to 10 branches, then `more=<k>`. `count=0` = none. |
-| `gh_ready` | 7 | Content `not-github` / `jq-unavailable` = silent skip. Empty content = no ready work. Otherwise up to 10 pipe-separated rows: `#<n>\|P<pri>\|<age>\|<title>` (priority `-` when the issue has no `P0`–`P4` label; `<age>` is whole days since the issue was last updated, e.g. `30d`). The title is last because it alone can contain a `\|`. Ready = open and not directly blocked (`gh issue list --search "is:open -is:blocked"`) — direct blocks only, no transitive query. Already pre-summarised — use rows directly in the brief without further parsing. |
+| `gh_ready` | 7 | Content `not-github` / `jq-unavailable` = silent skip. Empty content = no ready work. Otherwise up to 10 pipe-separated rows: `#<n>\|P<pri>\|<age>\|<title>` (priority `-` when the issue has no `P0`–`P4` label; `<age>` is whole days since the issue was last updated, e.g. `30d`). The title is last because it alone can contain a `\|`. Ready = open, not directly blocked and not labelled `needs:` (`gh issue list --search "is:open -is:blocked -label:…"`) — direct blocks only, no transitive query. Already pre-summarised — use rows directly in the brief without further parsing. |
 | `gh_assigned` | 7 | Same skip convention as `gh_ready`. Empty content = nothing in flight. Otherwise pipe-separated rows: `#<n>\|P<pri>\|<age>\|<title>` for open issues assigned to me (usually 0-3). Same row shape as `gh_ready`. |
 | `gh_bundles` | 6b, 7 | Same skip convention as `gh_ready`. Empty content = no ready bundles. Otherwise pipe-separated rows: `#<n>\|<concern>` — open issues whose title starts with `Bundle:`, with the prefix stripped. Produced by a plain `gh issue list` filtered in `jq`, never by `gh search`: search is eventually consistent, so a bundle written minutes ago could be missing, and a session told there are none right after running `/bundle-issues` is the one failure this must not have. |
+| `gh_needs` | 7 | Same skip convention as `gh_ready`. Empty content = none. Otherwise pipe-separated rows: `<local\|decision>\|#<n>\|P<pri>\|<age>\|<title>` — open issues labelled `needs: local` or `needs: decision`, local rows first. A plain `gh issue list` filtered in `jq`, for the reason `gh_bundles` gives. `gh_ready` excludes these issues. |
 | `gcloud_auth` | 7 | `state=absent` (gcloud not on PATH) = reported as n/a, no noise. `state=live` = silent. `state=expired` = a "Needs attention" line with the `! gcloud auth login` remedy, because an agent has no tty to reauth on. Never prompts. |
 | `claude_drift` | 5b, 7 | `state=no-source` (not in an a-c-c checkout) = silent skip. `state=compared` gives `behind=<n>` and `modified=<n>`, then one `behind: <path>` / `modified: <path>` line each, plus `remedy_behind=` / `remedy_modified=` when non-zero. Both zero = silent. |
 | `bootstrap_currency` | — | `state=not-a-container` on this surface, every time. Silent skip; it is the sandbox composition's check. |
@@ -298,12 +299,18 @@ Parallel work (pushed <48h, unmerged):              (omit when count=0)
 Ready bundles:                                      (omit when none)
   #<n>  <concern>                  (pre-triaged by /bundle-issues)
 
+Needs a local session (only here can move these):  (omit when none)
+  #<n>  P<pri>  <title>   (<age>)
+
 In progress (assigned to you):
   #<n>  P<pri>  <title>   (<age>)  (or "none")
 
 Ready to pick up next:
   #<n>  P<pri>  <title>   (<age>)  (top 5 by priority; or "none — backlog empty")
   …
+
+Needs a decision (answer these and they unblock):  (omit when none)
+  #<n>  P<pri>  <title>   (<age>)
 
 Needs attention:
   • This repo is ARCHIVED — read-only on GitHub. No pushes, no PRs, no new
@@ -327,6 +334,7 @@ Rules:
 - When `repo_resolution` is present, the `Repo:` line carries the second line naming which repo was resolved and why. It is never silent: a session that resolved its own repo should be able to see that it did.
 - Sections with nothing to say collapse to a single `none` line; "Needs attention" is omitted entirely when empty.
 - **"Ready bundles" comes first among the work sections**, above "In progress" and "Ready to pick up next". That ordering is the point of the section: a bundle is triaged and verified work, where the lists below it are neither. Sourced from gather section `gh_bundles`, rows already shaped `#<n>|<concern>` — split on `|` and emit them all. Omitted entirely when empty; `n/a (gh absent)` when the section could not answer.
+- **"Needs a local session" sits directly under "Ready bundles"**, above everything else: a workstation is the only place those issues move, and a cloud session has been counting them aside. "Needs a decision" sits under "Ready to pick up next". Both are sourced from gather section `gh_needs`, rows shaped `<local|decision>|#<n>|P<pri>|<age>|<title>` — split on the first four `|`, group by the first field, sort each group by priority, and emit them all. `gh_ready` already excludes these issues, so nothing appears twice.
 - **Rows in "Ready to pick up next" are open issues, which describe the world when they were filed.** Before acting on one — or citing it as a reason something will fail — verify its premises against current source. An issue is often fixed by adjacent work that never referenced it, and a body can be reversed by its own newest comment, so read the comments before implementing.
 - Each issue row ends with its age, `(<N>d)`, from the `<age>` field of the gather row. A row untouched for more than about 14 days is the one the verify-premises rule above most likely applies to: apply it before presenting that row as the next thing to work on.
 - "Ready to pick up next" is sourced from gather section `gh_ready`. Each row is already pipe-separated `#<n>|P<pri>|<age>|<title>` — split on the first three `|` (a title may contain more), sort by priority label (P0 first, `-` last), and emit the top 5. Ready = open and not directly blocked; the filter is direct-blocks-only, so eyeball the blocked icon before claiming work.
