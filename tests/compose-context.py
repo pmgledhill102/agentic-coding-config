@@ -37,8 +37,10 @@ failures into quiet ones, so the build is what catches them:
 
 1. every committed output matches what the fragments currently produce
 2. every profile names one OS and one persistence fragment, as a pair that
-   exists (ADR-0020 §5); every output includes both, and no other surface's;
-   and no portable fragment carries a string that marks a surface fact
+   exists (ADR-0020 §5), and at most one host fragment, only on the coordinate
+   that host pins; every output includes each of those exactly once, and no
+   other surface's; and no portable fragment carries a string that marks a
+   surface fact
 3. every policy output has exactly one H1, so markdownlint MD025 holds
 4. every always-loaded output is within its own budget (a ratchet, in the
    manifest beside the output it governs)
@@ -61,7 +63,7 @@ ILLEGAL_PAIRS = {("os-macos", "persist-ephemeral")}
 # Strings only an os-* or persist-* fragment has reason to contain. Short on
 # purpose: each is a surface fact that is false somewhere, not a topic.
 SURFACE_MARKERS = ("dotup", "/private/tmp", "refreshPeriod", ".bootstrap-manifest",
-                   "--break-system-packages")
+                   "--break-system-packages", "/mnt/c")
 
 HEADING = re.compile(r"^(#{1,5})(\s+\S)", re.M)
 FENCE = re.compile(r"^(```|~~~)")
@@ -226,7 +228,11 @@ def main():
     manifest = json.loads(MANIFEST.read_text())
     os_fragments = set(manifest["os_fragments"])
     persistence_fragments = set(manifest["persistence_fragments"])
-    env_fragments = os_fragments | persistence_fragments
+    # A host fragment overlays one OS x persistence coordinate with what being
+    # inside another OS adds (WSL: the Windows host at /mnt/c). It pins the
+    # only coordinate it is true on, so it cannot ride along anywhere else.
+    host_fragments = manifest.get("host_fragments", {})
+    env_fragments = os_fragments | persistence_fragments | set(host_fragments)
 
     failures, wrote = [], []
 
@@ -243,11 +249,12 @@ def main():
             if marker in text:
                 failures.append(
                     f"{path.relative_to(ROOT)}: contains {marker!r}, a surface fact; "
-                    f"move it to an os-* or persist-* fragment (ADR-0020 §5)"
+                    f"move it to an os-*, persist-* or host fragment (ADR-0020 §5)"
                 )
 
     for profile, spec in manifest["profiles"].items():
         own_os, own_persist = spec.get("os"), spec.get("persistence")
+        own_host = spec.get("host")
 
         # Check 2a. One of each axis, and a pair that exists.
         if own_os == "os-windows":
@@ -263,6 +270,18 @@ def main():
             failures.append(
                 f"{profile}: {own_os} with {own_persist} is not a surface that exists")
             continue
+        if own_host is not None:
+            pinned = host_fragments.get(own_host)
+            if pinned is None:
+                failures.append(
+                    f"{profile}: host {own_host!r} is not one of {sorted(host_fragments)}")
+                continue
+            if (pinned["os"], pinned["persistence"]) != (own_os, own_persist):
+                failures.append(
+                    f"{profile}: host {own_host} is true only on {pinned['os']} + "
+                    f"{pinned['persistence']}, not {own_os} + {own_persist}")
+                continue
+        own_env = [f for f in (own_os, own_persist, own_host) if f]
 
         for output, decl in spec["outputs"].items():
             fragments, budget = decl["fragments"], decl["budget"]
@@ -271,19 +290,30 @@ def main():
             # apply" to a surface with no chezmoi — wrong policy stated with
             # full confidence, which is worse than no policy.
             foreign = [f for f in fragments
-                       if f in env_fragments and f not in (own_os, own_persist)]
+                       if f in env_fragments and f not in own_env]
             if foreign:
                 failures.append(
                     f"{profile} -> {output}: includes environment fragment(s) "
-                    f"{foreign} but its surface is {own_os} + {own_persist}"
+                    f"{foreign} but its surface is {' + '.join(own_env)}"
                 )
+                continue
+
+            # Check 2e. Exactly once, not merely present: a fragment listed
+            # twice composes its section twice, and the second copy is the one
+            # a later edit forgets.
+            repeated = sorted({f for f in fragments
+                               if f in env_fragments and fragments.count(f) > 1})
+            if repeated:
+                failures.append(
+                    f"{profile} -> {output}: lists environment fragment(s) "
+                    f"{repeated} more than once")
                 continue
 
             # Check 2d. The mirror image: an output that omits its environment
             # tells an agent the policy but not the machine, and core's
             # pointers into "the environment fragment composed into this
             # file" then dangle (#310).
-            missing = [f for f in (own_os, own_persist) if f not in fragments]
+            missing = [f for f in own_env if f not in fragments]
             if missing:
                 failures.append(
                     f"{profile} -> {output}: omits its environment fragment(s) {missing}")

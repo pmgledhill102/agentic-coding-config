@@ -71,7 +71,7 @@ See `docs/end-session-design.md` for the full rationale.
 
 ### SessionStart: `session-cache-verdict`
 
-The first `SessionStart` hook (the second is `agent-telemetry-claude-hook`, below), and
+The first `SessionStart` hook (the others are `agent-telemetry-claude-hook` and `wsl-mnt-guard-claude-hook`, below), and
 it exists because the question it answers is **only true if asked at the start**.
 
 A cloud environment runs its setup script once, snapshots the filesystem, and
@@ -1071,6 +1071,30 @@ Both exit 0 unconditionally: instrumentation must never be why a session fails
 to start or a turn fails to end. With no `TELEMETRY_INGEST_URL` they spool and
 do nothing else, so wiring them before the ingest exists is safe. 5 s timeouts,
 because nothing they do inline is slow.
+
+### SessionStart: `wsl-mnt-guard-claude-hook`
+
+The third `SessionStart` hook, and the only one that prints. On WSL the Windows
+host is mounted at `/mnt/<drive>`, and the WSL profile's policy is that an agent
+works only on the distro's own filesystem (#569). A session whose `cwd` is under
+`/mnt/<drive>` gets one line of context saying so, and asking it to check with
+the user before working there. Printing is the point here: a `SessionStart`
+hook's stdout is how a fact reaches the agent before its first turn.
+
+**A no-op off WSL**, so it ships in this one shared file. It reads
+`/proc/version` before anything else and exits 0 unless the kernel is
+Microsoft's. macOS has no `/proc`, and a cloud sandbox's kernel is not
+Microsoft's, so both pay a process spawn and print nothing.
+
+Fail-open and exit 0 unconditionally, following `credguard-claude-hook`: no
+`jq`, a payload it cannot parse, or no `cwd` prints nothing. It is a
+guardrail, not a security boundary. It advises once at the start and does not
+stop a later `cd /mnt/c` or a write there.
+
+**A `PreToolUse` block on `Write|Edit` under `/mnt/<drive>` is not wired.** It
+would catch work drifting there mid-session, but it would also block a write the
+user asked for, so it needs a session override to be livable. That decision
+belongs on #569. `SessionStart` alone is the minimum the issue sets.
 
 ### PostToolUse (Write|Edit)
 
