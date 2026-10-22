@@ -62,6 +62,12 @@ Look up the latest release tag for each repo and use those for the `rev:` values
 
 Use `gitleaks-system`, not `gitleaks`. The plain id is `language: golang`, so pre-commit compiles gitleaks from source the first time it runs in a container, which takes about 30 seconds. The `-system` id runs the `gitleaks` binary on `PATH`; the workstation Brewfile and the cloud bootstrap both install it. It needs gitleaks 8.19 or later.
 
+This hook is one of three gitleaks layers. Keep all three. On a personal account, GitHub's secret scanning and push protection are not available on private repos, so gitleaks is the only secret control those repos have:
+
+- **The hook gives fast feedback.** It stops a secret before it becomes a commit, which is the only point where removing it is free. It only runs where pre-commit runs, though. A web edit on github.com, a fresh clone, or a `--no-verify` commit never meets it.
+- **The CI job (step 7) is the layer that can't be skipped.** It runs on the server for every push and PR, whatever the committer's machine had installed. It scans only the commits being pushed, though.
+- **The scheduled history scan (step 7) covers what both of those miss.** A secret committed before the hook existed, or one that got past both layers and was later deleted, is in history but not in any diff. So the diff-shaped layers report the repo as clean.
+
 Do **not** run `pre-commit install` — nothing should write to `.git/hooks`. The config file is the source of truth, and it is enforced from two directions: a global pre-tool hook runs pre-commit on every `git commit`/`git push` the agent makes, and CI runs the same scanners as jobs of their own on every push (step 7). CI does not run pre-commit itself, so a `-system` hook needs nothing installed on the runner. Manual terminal commits are CI-backed. Mention this model in the closing summary so the user knows why no git hook was installed.
 
 If `pre-commit` is not installed, tell the user to install it (`brew install pre-commit`) and stop.
@@ -261,6 +267,8 @@ jobs:
       - uses: gitleaks/gitleaks-action@<full-sha> # <version>
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Same value as gitleaks-history.yml, whose canary vouches for it.
+          GITLEAKS_VERSION: <gitleaks version, no leading v>
 
   cspell:
     name: Spell Check
@@ -284,6 +292,78 @@ jobs:
 (`--error` for the same reason as the hook: without it findings don't fail the job.)
 
 The gitleaks job's `permissions:` block is required: the default `GITHUB_TOKEN` no longer grants `pull-requests: read`, and `gitleaks-action` needs it in PR context to fetch the PR's commit list — without it, the first PR run fails with `403 Resource not accessible by integration`. Job-level rather than workflow-level keeps it least-privilege; cspell and semgrep don't need it.
+
+The gitleaks job scans only the pushed or PR commits; `fetch-depth: 0` gives it the history but does not make it scan that history. Create `.github/workflows/gitleaks-history.yml` to scan every ref's full history once a week. Before the scan, the workflow runs a canary to prove the scanner can still find a secret. A scanner that has stopped matching, because of a rule change, a config that allowlists too much, or a broken install, reports a repo with secrets in it as clean. The canary is what tells those two results apart:
+
+```yaml
+name: Gitleaks history
+# Scheduled, not on pull_request: never add this context to the ruleset's
+# required checks — a PR would block on a Pending check forever.
+on:
+  schedule:
+    - cron: '<minute> <hour> * * <weekday>'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  GITLEAKS_VERSION: <gitleaks version, no leading v>
+  GITLEAKS_SHA256: <sha256 of gitleaks_<version>_linux_x64.tar.gz>
+
+jobs:
+  history:
+    name: Gitleaks history
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@<full-sha> # <version>
+        with:
+          fetch-depth: 0
+
+      - name: Install gitleaks
+        run: |
+          tarball="gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          mkdir -p "$RUNNER_TEMP/bin"
+          curl -fsSL -o "$RUNNER_TEMP/$tarball" \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/$tarball"
+          echo "$GITLEAKS_SHA256  $RUNNER_TEMP/$tarball" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/$tarball" -C "$RUNNER_TEMP/bin" gitleaks
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+          # The canary scans a different directory, so the repo's config has
+          # to be passed explicitly for it to judge the same rules.
+          if [ -f .gitleaks.toml ]; then
+            echo "GITLEAKS_CONFIG=$PWD/.gitleaks.toml" >> "$GITHUB_ENV"
+          fi
+
+      - name: Canary — a history-only secret must be found
+        run: |
+          canary="$RUNNER_TEMP/canary"
+          git init -q "$canary"
+          # Random per run: a fixed or low-entropy token is suppressed by the
+          # rule's entropy floor, and a committed one would trip the scan.
+          printf 'token = "ghp_%s"\n' "$(openssl rand -hex 18)" > "$canary/leak.txt"
+          git -C "$canary" add leak.txt
+          git -C "$canary" -c user.name=canary -c user.email=canary@example.invalid commit -qm plant
+          git -C "$canary" rm -q leak.txt
+          git -C "$canary" -c user.name=canary -c user.email=canary@example.invalid commit -qm remove
+          # --exit-code 0 so a gitleaks error (also exit 1) can't pass as a find.
+          gitleaks git --redact --no-banner --exit-code 0 \
+            --report-format json --report-path "$RUNNER_TEMP/canary.json" "$canary"
+          found=$(jq '[.[] | select(.RuleID == "github-pat")] | length' "$RUNNER_TEMP/canary.json")
+          if [ "$found" -lt 1 ]; then
+            echo "::error::gitleaks missed the canary secret, so a clean history scan would prove nothing"
+            exit 1
+          fi
+
+      - name: Scan full history
+        run: gitleaks git --redact --no-banner --verbose --log-opts="--all" .
+```
+
+Use the same `GITLEAKS_VERSION` in both workflows. The canary then also vouches for the binary the PR job runs. Pin `GITLEAKS_SHA256` from the release's `gitleaks_<version>_checksums.txt` at setup time, not at run time: a checksum fetched from the same release in the same run only checks that the download completed. Pick a cron minute and hour other than `0`, because scheduled runs on the hour are delayed the most.
+
+The canary has to be a **history-only**, **high-entropy** secret. It is history-only because history is what this workflow is for: a canary that sat in `HEAD` would pass even if history scanning had broken. It is high-entropy because gitleaks' rules have an entropy floor, so an obviously fake key like `ghp_aaaa…` is suppressed. A canary built from one comes back clean and proves the opposite of what it looks like.
+
+A finding from this workflow is a secret already in history. The fix is to rotate the secret, not to rewrite history: once a secret has been pushed, it has been exposed. Add an entry to `.gitleaksignore` only after the secret has been rotated. GitHub notifies whoever last edited the `cron` line when a scheduled run fails. On a public repo, it also disables scheduled workflows after 60 days with no activity, so re-enable this one if a quiet repo goes silent.
 
 Create a separate `.github/workflows/actionlint.yml` with a path filter. Because the filter is at the trigger, this workflow is **ineligible as a required check**: a required context whose workflow a PR's paths skip stays Pending forever and blocks the merge (the standard's Checks and CI section carries the rule), so keep `Actionlint` out of the ruleset's contexts list. `rhysd/actionlint` publishes no GitHub Action to pin, so use the official download script rather than `rhysd/actionlint@main` (a mutable branch reference that fails the repo's own semgrep gate):
 

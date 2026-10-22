@@ -7,7 +7,40 @@ description: Set up Terraform formatting, linting and security scanning for a pr
 
 ## What to install and configure
 
-### 1. tflint
+### 1. Terraform version
+
+The estate declares two values in the spec's `terraform` block, and this repo
+takes both from there rather than choosing its own. Read them from the local
+copy, which every surface carries:
+
+```sh
+SPEC="${CLAUDE_STANDARDS_SPEC:-$HOME/.claude/standards/github-repo.json}"
+python3 -c 'import json, sys; t = json.load(open(sys.argv[1]))["terraform"]; print("floor", t["floor"]); print("pin", t["pin"])' "$SPEC"
+```
+
+- **`floor`** is what every root and module declares, as a bare lower bound
+  — no `~>`, no `<`:
+
+  ```hcl
+  terraform {
+    required_version = ">= <floor>"
+  }
+  ```
+
+  Declare an *older* floor only if the configuration is known to run on it,
+  and a newer one only when it uses a feature that needs it. Never raise it
+  to match the pin.
+- **`pin`** is the exact version CI installs: it goes in the workflow's
+  `terraform_version` (step 5), or the `terraform-version` input if the repo
+  calls the shared reusable workflow. The cloud sandbox runs the same version.
+
+If an existing repo's floor is above the pin, or its CI runs another version,
+stop and report it rather than editing either: moving the pin is one change
+across the estate, because state written by a newer Terraform cannot be read
+by an older one. The rationale is [github-standards.md, Terraform
+versions](../../standards/github-standards.md#terraform-versions).
+
+### 2. tflint
 
 Create `.tflint.hcl` in the project root (if it doesn't already exist). If one exists, review and suggest additions.
 
@@ -26,7 +59,7 @@ plugin "aws" {
 
 Adjust the cloud provider plugin based on what the project uses (AWS, Azure, GCP). Remove the AWS plugin if not applicable and add the relevant one. If unsure, ask the user.
 
-### 2. .gitignore
+### 3. .gitignore
 
 Append these lines to `.gitignore` if they aren't already present:
 
@@ -74,7 +107,7 @@ terraform -chdir=<root> providers lock \
 A single-hash lock rewrites itself on the next machine, which surfaces as the
 pre-commit hook failing a push with `files were modified by this hook`.
 
-### 3. Add pre-commit hooks
+### 4. Add pre-commit hooks
 
 Append these repos to the existing `.pre-commit-config.yaml`:
 
@@ -106,7 +139,7 @@ ordinary commit that touches only a subdirectory. `__GIT_WORKING_DIR__` is
 pre-commit-terraform's placeholder for the repository root, so the explicit
 path makes both runs read the same config.
 
-### 4. GitHub Actions workflow
+### 5. GitHub Actions workflow
 
 Create or update the CI workflow to include Terraform linting and security scanning jobs that only run when Terraform files change. Use a separate workflow file (e.g., `.github/workflows/terraform.yml`) with path filters, or add jobs to an existing workflow.
 
@@ -125,6 +158,8 @@ jobs:
     steps:
       - uses: actions/checkout@<full-sha> # <version>
       - uses: hashicorp/setup-terraform@<full-sha> # <version>
+        with:
+          terraform_version: <pin>  # the spec's terraform.pin, never unset
       - run: terraform fmt -check -recursive
       - run: terraform init -backend=false
       - run: terraform validate
@@ -155,7 +190,7 @@ jobs:
 
 Don't duplicate if Terraform lint jobs already exist. Look up latest action versions.
 
-### 5. Dependabot ecosystem
+### 6. Dependabot ecosystem
 
 Read `.github/dependabot.yml` and add the `terraform` ecosystem entry if it isn't already present. Don't duplicate entries.
 
@@ -176,7 +211,7 @@ Read `.github/dependabot.yml` and add the `terraform` ecosystem entry if it isn'
       default-days: 7
 ```
 
-### 6. Verify
+### 7. Verify
 
 Run `pre-commit run --all-files` to confirm hooks work. Fix any lint or formatting issues.
 

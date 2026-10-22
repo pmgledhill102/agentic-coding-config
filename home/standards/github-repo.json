@@ -281,6 +281,44 @@
     }
   ],
   "prohibitions_are_narrow": "`applies_below_tier` is resolved through `extends`, not by name: a repo is below a tier when that tier is not in its own tier's extends chain. Each prohibition carries its own `because` because the distinction is hardening versus safety control — a dependabot.yml on a dormant repo is beneficial coverage, an ungated auto-merge is not. A blanket \"nothing above your tier\" would erode the permissive defaults of principles/repos.md and must not be written.",
+  "terraform": {
+    "applies_to": "Every repository whose git tree contains a `*.tf` file, whatever its tier. Rationale in github-standards.md#terraform-versions.",
+    "pin": "1.16.3",
+    "pin_why": "The one version CI and the cloud sandbox run, on the current stable minor line. Declared here once: cloud/bootstrap.sh's TF_VER is asserted equal to it by tests/github-repo-standard.py, and each repo's workflow pin is a copy the sweep compares against it. Move it as one change with every repo's CI, because a newer Terraform writes state an older one cannot read back.",
+    "floor": "1.11",
+    "floor_why": "What /setup-terraform declares as required_version for a new repo when nothing older is known to be needed: the oldest line with write-only arguments, which gcp-org-management's secret handling (its ADR 023) relies on, and the highest floor any repo declares. It is not a minimum existing repos must raise to -- a repo's floor is its own feature requirement, and raising one to track the pin locks out older local binaries for no benefit.",
+    "stable_release": "^\\d+\\.\\d+\\.\\d+$",
+    "stable_release_why": "Anchored at both ends so 1.17.0-beta1 and 1.17.0-rc1 are not read as 1.17.0. HashiCorp's index lists every pre-release beside the final.",
+    "latest_from": "https://releases.hashicorp.com/terraform/index.json",
+    "required_version": "required_version\\s*=\\s*\"([^\"]*)\"",
+    "floor_shape": "^>=\\s*(\\d+\\.\\d+(?:\\.\\d+)?)$",
+    "ci_pin": "terraform[-_]version:[ \\t]*['\"]?([^'\"\\s#]+)",
+    "ci_pin_default": "(?m)^([ \\t]+)terraform-version:[ \\t]*\\n(?:\\1[ \\t]+.*\\n)*?\\1[ \\t]+default:[ \\t]*['\"]?([^'\"\\s#]+)",
+    "ci_pin_why": "ci_pin reads a version off one line: hashicorp/setup-terraform's `terraform_version` input, or the `terraform-version` a caller passes to a reusable workflow. It captures whatever follows rather than only a version, so `latest` is reported instead of skipped. A value starting `${{` is indirection, not drift: the version is then the caller's input or, where the caller passes none, the reusable workflow's declared default, which ci_pin_default reads (group 2) from the `inputs:` block. A `.terraform-version` file is a copy too. A workflow that runs setup-terraform with no version at all gets whatever the action resolves today, and is drift.",
+    "checks": [
+      {
+        "id": "floor-is-a-bare-lower-bound",
+        "holds": "Every required_version in the repo matches floor_shape: one `>=`, no `~>`, no `<`.",
+        "because": "An upper bound turns every pin move into a sweep of required_version edits, and a pessimistic constraint is an upper bound in disguise. Provider constraints are a separate axis and are not checked here."
+      },
+      {
+        "id": "pin-at-or-above-floor",
+        "holds": "pin >= floor, and pin >= every floor a repo declares.",
+        "because": "A repo whose floor is above the pin cannot init in CI or the sandbox. The sandbox shipped 1.9.8 against roots declaring >= 1.11 and terraform_validate failed in all sixteen, blocking every push that touched a .tf file (agentic-coding-config#369)."
+      },
+      {
+        "id": "ci-runs-the-pin",
+        "holds": "Every version a repo's .github/workflows/ resolves to -- each ci_pin match that is not an expression, each ci_pin_default, and a `.terraform-version` file if one exists -- equals pin, and no workflow that uses hashicorp/setup-terraform leaves the version unset.",
+        "because": "With cloud/bootstrap.sh asserted to the pin in this repo's CI, this is what makes sandbox == CI hold. Read the workflow, not the state: Terraform rewrites a state object's terraform_version only when it persists state, so a no-op apply leaves the old label and an intentionally empty root reads 1.7.0 forever."
+      },
+      {
+        "id": "pin-on-current-minor",
+        "holds": "pin's major.minor equals that of the newest version in latest_from matching stable_release.",
+        "because": "pin >= floor and sandbox == CI both hold indefinitely with the estate frozen on an old line. HashiCorp publishes no support policy and backports per fix at its discretion; observed, the previous line stops receiving patches once the next opens. Is there a newer stable minor is one request, so standing still is reported rather than tolerated. A failure here is a prompt to move CI and the sandbox together, never to move one."
+      }
+    ],
+    "method": "List repositories and read their files. GitHub code search returned one hit across nine Terraform repos for required_version, and is not usable for this sweep."
+  },
   "unspecified": {
     "allow_forking": "Not settable on a personal account: PATCH with allow_forking:false returns 422 (org-owned private repos only). Fork control is one of the arguments for an organisation, not a value this spec can carry.",
     "actions_allowed": "Decision pending in paul-context (#114): `all` vs `selected`, sequenced with SHA-pinning (#44).",

@@ -245,6 +245,36 @@ expect_rc "an unknown subcommand is a usage error" 2
 run
 expect_rc "no subcommand is a usage error" 2
 
+# Every `event` call the skills document (#629) runs here with its placeholders
+# filled, so a key added to a skill without its allowlist entry fails this test
+# rather than being dropped in every session.
+echo "skill step records"
+reset
+calls="$WORK/skill-calls.txt"
+grep -rhoE '[~]/\.claude/bin/agent-telemetry event [^`]*' \
+    "$ROOT/context/skills/end-session" "$ROOT/context/skills/retrospective" \
+    | sed 's/<[^>]*>/x/g; s/[[:space:]]*$//' > "$calls"
+n_calls=$(count_lines "$calls")
+if [ "$n_calls" -ge 6 ]; then
+    ok "the skills' event calls were found ($n_calls)"
+else
+    bad "the skills' event calls were found" "only $n_calls; did the extraction pattern drift?"
+fi
+set -f
+while IFS= read -r c; do
+    # shellcheck disable=SC2086  # deliberate: split the documented call into words
+    set -- $c
+    shift # the helper path; run supplies the real one
+    run "$@"
+    expect_rc "documented call exits 0: $2 $3" 0
+    expect_no_out "documented call keeps every key: $2 $3" "dropped key"
+done < "$calls"
+set +f
+expect "each documented call spools one record" "$n_calls" "$(spool_lines)"
+expect "a gather record keeps its sentinel" x "$(jq -r 'select(.name == "gather") | .sentinel' "$SPOOL")"
+expect "the run record keeps its loop-closing counts" x \
+    "$(jq -r 'select(.name == "run") | .reviewed_not_planned' "$SPOOL")"
+
 # --- 4. record ----------------------------------------------------------------
 
 echo "record"
