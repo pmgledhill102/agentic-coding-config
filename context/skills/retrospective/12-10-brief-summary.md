@@ -19,4 +19,12 @@ Next /start-session in the cross-repo'd repos will surface the new Issues as rea
 
 "Issues created: 0, fixed in place: N" is a successful retro, not a thin one: the backlog shrank instead of growing.
 
+Then one run record, counts and tokens only (`issues_filed_refs` like `a-c-c#630,paul-context#57`; omit it when none):
+
+```sh
+~/.claude/bin/agent-telemetry event retrospective run proposals_total=<n> proposals_always_loaded=<n> proposals_description=<n> proposals_body=<n> proposals_addition=<n> proposals_removal=<n> proposals_amendment=<n> issues_filed=<n> issues_filed_refs=<refs> fixed_in_place=<n> journal_draft=<yes|no> reviewed_open=<n> reviewed_completed=<n> reviewed_not_planned=<n> reviewed_reverted=<n>
+```
+
+The `reviewed_*` counts are step 1's closed-loop Issues by state. If the helper is absent, skip silently; never relay its output.
+
 **No label gutter, deliberately — do not pad the values back into a column.** The previous form aligned every value at column 31, which pushed the longest line to 143 characters, so the block wrapped and interleaved at terminal width. That is the same failure the step 7 table fixed, at 136 characters — this one was worse. Six wrap-up lines have no columns to compare down, so alignment buys nothing and costs the width that breaks it; leave the labels ragged and keep every line short enough to survive a narrow terminal.
