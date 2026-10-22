@@ -5,7 +5,9 @@ document says what a repo's GitHub-side configuration should be and why;
 it deliberately does not say what any repo's configuration currently is.
 Audits, per-repo tier assignments and the archive list are private and live
 in `paul-context` (`registry/`, `tools/repo-audit.sh`) — the split is:
-**standard public, evidence private**.
+**standard public, evidence private**, one instance of the rule in
+[ADR-0022](https://github.com/pmgledhill102/agentic-coding-config/blob/main/adrs/0022-public-artefact-content.md) for what each public
+artefact may say.
 
 **Where to read this.** A local copy is delivered to
 `$HOME/.claude/standards/github-standards.md` on every surface — by chezmoi on

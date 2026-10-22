@@ -1,5 +1,8 @@
 ### 1. Close the loop (always first)
 
+Start with `~/.claude/bin/agent-telemetry event retrospective start`; step 10's
+run record is timed from it.
+
 **Before reading anything, check the session can reach `paul-context` at all.** The closed-loop reads below, the journal draft in step 8, and every cross-repo Issue step 6 routes all target a repo that is *not* the one this session is working in — most often `pmgledhill102/paul-context`. A **repo-scoped session** — a cloud sandbox is one — can only reach the repos attached to it, and a GitHub call against an unattached repo is **refused outright**. This is a different failure from having no local clone: the API call itself is denied, and the denial arrives as a 403 or a 404 that reads like "no such Issues" rather than "no access", so it is easy to record as an empty history and move on.
 
 Confirm the scope *here*, at the top, rather than at the point of the first write. A cheap read is enough — listing that repo's Issues either works or is denied. Discovering the denial in step 8 means the whole session has been analysed with nowhere to put the output.
