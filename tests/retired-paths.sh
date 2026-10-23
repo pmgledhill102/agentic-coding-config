@@ -30,46 +30,49 @@ home_dir="$root/home"
 # to resolve paths against the real home/, since that is what the assertions
 # are about.
 if [ ! -f "$list" ]; then
-    echo "$list not present — nothing to validate."
-    exit 0
+  echo "$list not present — nothing to validate."
+  exit 0
 fi
 
 rc=0
 section=retired
 while IFS= read -r line || [ -n "$line" ]; do
-    case "$line" in
-        '# === UNDEPLOYED:'*) section=undeployed; continue ;;
-    esac
+  case "$line" in
+    '# === UNDEPLOYED:'*)
+      section=undeployed
+      continue
+      ;;
+  esac
 
-    path=$(printf '%s' "$line" | sed 's/[[:space:]]*$//')
-    case "$path" in
-        '' | '#'*) continue ;;
-    esac
+  path=$(printf '%s' "$line" | sed 's/[[:space:]]*$//')
+  case "$path" in
+    '' | '#'*) continue ;;
+  esac
 
-    # Must not escape ~/.claude/. The pruner refuses these too, but failing
-    # here means a bad entry never reaches a machine. Both sections.
-    case "$path" in
-        /* | *..*)
-            echo "::error file=home/retired-paths::unsafe entry (absolute or ..): $path"
-            rc=1
-            continue
-            ;;
-    esac
+  # Must not escape ~/.claude/. The pruner refuses these too, but failing
+  # here means a bad entry never reaches a machine. Both sections.
+  case "$path" in
+    /* | *..*)
+      echo "::error file=home/retired-paths::unsafe entry (absolute or ..): $path"
+      rc=1
+      continue
+      ;;
+  esac
 
-    if [ "$section" = retired ]; then
-        if [ -e "$home_dir/$path" ]; then
-            echo "::error file=home/retired-paths::still present in home/ — retire the file first, move it below the UNDEPLOYED marker, or drop this entry: $path"
-            rc=1
-        fi
-    else
-        if [ ! -e "$home_dir/$path" ]; then
-            echo "::error file=home/retired-paths::listed as undeployed but absent from home/ — move it above the UNDEPLOYED marker: $path"
-            rc=1
-        fi
+  if [ "$section" = retired ]; then
+    if [ -e "$home_dir/$path" ]; then
+      echo "::error file=home/retired-paths::still present in home/ — retire the file first, move it below the UNDEPLOYED marker, or drop this entry: $path"
+      rc=1
     fi
-done < "$list"
+  else
+    if [ ! -e "$home_dir/$path" ]; then
+      echo "::error file=home/retired-paths::listed as undeployed but absent from home/ — move it above the UNDEPLOYED marker: $path"
+      rc=1
+    fi
+  fi
+done <"$list"
 
 if [ "$rc" -eq 0 ]; then
-    echo "retired-paths: entries are safe and on the correct side of the UNDEPLOYED marker."
+  echo "retired-paths: entries are safe and on the correct side of the UNDEPLOYED marker."
 fi
 exit "$rc"

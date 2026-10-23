@@ -31,7 +31,7 @@ WORK=$(mktemp -d)
 HOME="$WORK/home"
 export HOME
 unset AGENT_TELEMETRY_HOME AGENT_TELEMETRY_MARKER AGENT_TELEMETRY_MANIFEST \
-    TELEMETRY_INGEST_URL TELEMETRY_INGEST_KEY CLAUDE_ENV_FILE
+  TELEMETRY_INGEST_URL TELEMETRY_INGEST_KEY CLAUDE_ENV_FILE
 CB="$HOME/.claude/bin"
 SHIMS="$CB/shims"
 REAL="$WORK/real"
@@ -44,16 +44,16 @@ cleanup() { rm -rf "$WORK"; }
 trap cleanup EXIT
 
 ok() {
-    PASS=$((PASS + 1))
-    printf '  ok    %s\n' "$1"
+  PASS=$((PASS + 1))
+  printf '  ok    %s\n' "$1"
 }
 bad() {
-    FAIL=$((FAIL + 1))
-    printf '  FAIL  %s\n' "$1"
-    [ $# -lt 2 ] || printf '        %s\n' "$2"
+  FAIL=$((FAIL + 1))
+  printf '  FAIL  %s\n' "$1"
+  [ $# -lt 2 ] || printf '        %s\n' "$2"
 }
 expect() { # expect <description> <want> <got>
-    if [ "$2" = "$3" ]; then ok "$1"; else bad "$1" "want '$2', got '$3'"; fi
+  if [ "$2" = "$3" ]; then ok "$1"; else bad "$1" "want '$2', got '$3'"; fi
 }
 
 # The installed layout: the shim, a symlink per tool, the helper beside them.
@@ -62,7 +62,7 @@ install -m 0755 "$ROOT/home/bin/agent-telemetry-claude-hook" "$CB/agent-telemetr
 ln -s "$ROOT/home/bin/agent-telemetry" "$CB/agent-telemetry"
 for t in fake-tool quick absent-tool git; do ln -s ../agent-shim "$SHIMS/$t"; done
 
-cat > "$REAL/fake-tool" << 'EOF'
+cat >"$REAL/fake-tool" <<'EOF'
 #!/bin/sh
 printf 'argc=%s\n' "$#"
 for a in "$@"; do printf 'arg=[%s]\n' "$a"; done
@@ -71,7 +71,7 @@ echo "to-stderr" >&2
 [ -z "${FAKE_SIG:-}" ] || kill "-$FAKE_SIG" $$
 exit "${FAKE_RC:-0}"
 EOF
-printf '#!/bin/sh\nexit 0\n' > "$REAL/quick"
+printf '#!/bin/sh\nexit 0\n' >"$REAL/quick"
 chmod 0755 "$REAL/fake-tool" "$REAL/quick"
 
 BASE_PATH=$PATH
@@ -81,26 +81,26 @@ export PATH
 # Waits (bounded) for the detached recorder to spool <n> shim events.
 shim_events() { if [ -f "$SPOOL" ]; then jq -c 'select(.source == "shim")' "$SPOOL" | wc -l | tr -d ' '; else echo 0; fi; }
 wait_events() {
-    _i=0
-    until [ "$(shim_events)" -ge "$1" ] || [ "$_i" -ge 50 ]; do
-        sleep 0.1
-        _i=$((_i + 1))
-    done
+  _i=0
+  until [ "$(shim_events)" -ge "$1" ] || [ "$_i" -ge 50 ]; do
+    sleep 0.1
+    _i=$((_i + 1))
+  done
 }
 
 # run_both <label> [env assignments are the caller's] -- runs fake-tool bare and
 # through the shim with identical arguments and stdin, and compares everything.
 compare() { # compare <label> <shim-path-for-tool> -- args...
-    _label=$1
-    _via=$2
-    shift 2
-    printf 'line one\nline two' | "$REAL/fake-tool" "$@" > "$WORK/out/d.out" 2> "$WORK/out/d.err"
-    _drc=$?
-    printf 'line one\nline two' | "$_via" "$@" > "$WORK/out/s.out" 2> "$WORK/out/s.err"
-    _src=$?
-    expect "$_label: exit code" "$_drc" "$_src"
-    if cmp -s "$WORK/out/d.out" "$WORK/out/s.out"; then ok "$_label: stdout identical"; else bad "$_label: stdout differs" "$(diff "$WORK/out/d.out" "$WORK/out/s.out" | head -5)"; fi
-    if cmp -s "$WORK/out/d.err" "$WORK/out/s.err"; then ok "$_label: stderr identical"; else bad "$_label: stderr differs" "$(diff "$WORK/out/d.err" "$WORK/out/s.err" | head -5)"; fi
+  _label=$1
+  _via=$2
+  shift 2
+  printf 'line one\nline two' | "$REAL/fake-tool" "$@" >"$WORK/out/d.out" 2>"$WORK/out/d.err"
+  _drc=$?
+  printf 'line one\nline two' | "$_via" "$@" >"$WORK/out/s.out" 2>"$WORK/out/s.err"
+  _src=$?
+  expect "$_label: exit code" "$_drc" "$_src"
+  if cmp -s "$WORK/out/d.out" "$WORK/out/s.out"; then ok "$_label: stdout identical"; else bad "$_label: stdout differs" "$(diff "$WORK/out/d.out" "$WORK/out/s.out" | head -5)"; fi
+  if cmp -s "$WORK/out/d.err" "$WORK/out/s.err"; then ok "$_label: stderr identical"; else bad "$_label: stderr differs" "$(diff "$WORK/out/d.err" "$WORK/out/s.err" | head -5)"; fi
 }
 
 NL='
@@ -129,7 +129,7 @@ expect "via is direct outside a hook" direct "$(printf '%s' "$first" | jq -r .vi
 expect "blocked_ms is present and 0" 0 "$(printf '%s' "$first" | jq -r .blocked_ms)"
 expect "duration_ms is a number" number "$(printf '%s' "$first" | jq -r '.duration_ms | type')"
 expect "exactly the documented keys" "blocked_ms duration_ms exit_code kind name session_id source ts via" \
-    "$(printf '%s' "$first" | jq -r 'keys | join(" ")')"
+  "$(printf '%s' "$first" | jq -r 'keys | join(" ")')"
 if grep -q "dropped key" "$WORK/out/s.err"; then bad "a shim key is missing from the allowlist"; else ok "every shim key is allowlisted"; fi
 if grep -qF "$ARG_SENTINEL" "$SPOOL"; then bad "an argument reached the spool"; else ok "no argument reaches the spool"; fi
 if [ -f "$STATE/shims/first-use/fake-tool" ]; then ok "first use is stamped"; else bad "no first-use stamp"; fi
@@ -139,30 +139,33 @@ if [ -f "$STATE/shims/first-use/fake-tool" ]; then ok "first use is stamped"; el
 echo "git hook"
 REPO="$WORK/repo"
 mkdir -p "$REPO" "$WORK/hooks"
-printf '#!/bin/sh\nfake-tool from-hook > /dev/null 2>&1\n' > "$WORK/hooks/pre-commit"
+printf '#!/bin/sh\nfake-tool from-hook > /dev/null 2>&1\n' >"$WORK/hooks/pre-commit"
 chmod 0755 "$WORK/hooks/pre-commit"
 git -C "$REPO" init -q
 before=$(shim_events)
 GIT_CONFIG_GLOBAL=/dev/null git -C "$REPO" -c core.hooksPath="$WORK/hooks" -c user.name=t -c user.email=t@example.com \
-    commit -q --allow-empty -m test
+  commit -q --allow-empty -m test
 expect "git commit through the shim succeeds" 0 "$?"
 wait_events $((before + 1))
 expect "the hook's tool call is via=git-hook" git-hook "$(jq -r 'select(.source == "shim") | .via' "$SPOOL" | tail -1)"
 i=0
-until [ -f "$STATE/shims/first-commit" ] || [ "$i" -ge 50 ]; do sleep 0.1; i=$((i + 1)); done
+until [ -f "$STATE/shims/first-commit" ] || [ "$i" -ge 50 ]; do
+  sleep 0.1
+  i=$((i + 1))
+done
 if [ -f "$STATE/shims/first-commit" ]; then ok "the first commit is stamped"; else bad "no first-commit stamp"; fi
 expect "git itself emits no event" 0 "$(jq -c 'select(.source == "shim" and .name == "git")' "$SPOOL" | wc -l | tr -d ' ')"
 
 echo "git passthrough"
 realgit=$(PATH=$BASE_PATH command -v git)
 expect "git --version is unchanged" "$("$realgit" --version)" "$(git --version)"
-"$realgit" -C "$REPO" rev-parse --verify no-such-ref > "$WORK/out/d.out" 2>&1
+"$realgit" -C "$REPO" rev-parse --verify no-such-ref >"$WORK/out/d.out" 2>&1
 drc=$?
-git -C "$REPO" rev-parse --verify no-such-ref > "$WORK/out/s.out" 2>&1
+git -C "$REPO" rev-parse --verify no-such-ref >"$WORK/out/s.out" 2>&1
 expect "a failing git command keeps its exit code" "$drc" "$?"
 if cmp -s "$WORK/out/d.out" "$WORK/out/s.out"; then ok "and its output"; else bad "a failing git command's output differs"; fi
 rm -f "$STATE/shims/first-commit"
-git -C "$REPO" -c user.name=t -c user.email=t@example.com commit -q -m nothing-staged > /dev/null 2>&1
+git -C "$REPO" -c user.name=t -c user.email=t@example.com commit -q -m nothing-staged >/dev/null 2>&1
 sleep 0.3
 if [ -f "$STATE/shims/first-commit" ]; then bad "a failed commit was stamped"; else ok "a failed commit is not stamped"; fi
 
@@ -180,7 +183,7 @@ expect "and says so" "absent-tool: command not found" "$OUT"
 echo "broken telemetry"
 rm "$CB/agent-telemetry"
 FAKE_STDIN=1 FAKE_RC=5 compare "helper absent" fake-tool a "b c"
-printf '#!/bin/sh\necho BROKEN\necho BROKEN >&2\nexit 9\n' > "$CB/agent-telemetry"
+printf '#!/bin/sh\necho BROKEN\necho BROKEN >&2\nexit 9\n' >"$CB/agent-telemetry"
 chmod 0755 "$CB/agent-telemetry"
 FAKE_STDIN=1 FAKE_RC=5 compare "helper broken" fake-tool a "b c"
 FAKE_STDIN=1 FAKE_RC=5 AGENT_TELEMETRY_HOME=/proc/no/such/dir compare "state unwritable" fake-tool a
@@ -199,16 +202,20 @@ N=20
 direct=0
 i=0
 while [ "$i" -lt "$N" ]; do
-    t=$(now_ns); "$REAL/quick"; direct=$((direct + $(now_ns) - t))
-    i=$((i + 1))
+  t=$(now_ns)
+  "$REAL/quick"
+  direct=$((direct + $(now_ns) - t))
+  i=$((i + 1))
 done
 shimmed=0
 i=0
 before=$(shim_events)
 while [ "$i" -lt "$N" ]; do
-    t=$(now_ns); quick; shimmed=$((shimmed + $(now_ns) - t))
-    i=$((i + 1))
-    wait_events $((before + i))
+  t=$(now_ns)
+  quick
+  shimmed=$((shimmed + $(now_ns) - t))
+  i=$((i + 1))
+  wait_events $((before + i))
 done
 expect "every timed call was recorded" $((before + N)) "$(shim_events)"
 per=$(((shimmed - direct) / N / 1000))
@@ -222,24 +229,30 @@ OUT=$(printf '{"session_id":"s","prompt":"PROMPT-SENTINEL"}' | "$CB/agent-teleme
 expect "prompt-submit exits 0" 0 "$?"
 expect "prompt-submit prints nothing (its stdout joins the prompt)" "" "$OUT"
 i=0
-until grep -q '"name":"prompt-submit"' "$SPOOL" 2> /dev/null || [ "$i" -ge 50 ]; do sleep 0.1; i=$((i + 1)); done
+until grep -q '"name":"prompt-submit"' "$SPOOL" 2>/dev/null || [ "$i" -ge 50 ]; do
+  sleep 0.1
+  i=$((i + 1))
+done
 expect "prompt-submit records hook prompt-submit" 1 "$(jq -c 'select(.source == "hook" and .name == "prompt-submit")' "$SPOOL" | wc -l | tr -d ' ')"
 if grep -qF PROMPT-SENTINEL "$SPOOL"; then bad "the prompt reached the spool"; else ok "the prompt never reaches the spool"; fi
 
 AGENT_TELEMETRY_STOP_EVERY=100000
 export AGENT_TELEMETRY_STOP_EVERY
-date +%s > "$STATE/stop.last"
+date +%s >"$STATE/stop.last"
 OUT=$(printf '{"session_id":"s"}' | "$CB/agent-telemetry-claude-hook" stop 2>&1)
 expect "stop prints nothing" "" "$OUT"
 i=0
-until grep -q '"name":"stop"' "$SPOOL" 2> /dev/null || [ "$i" -ge 50 ]; do sleep 0.1; i=$((i + 1)); done
+until grep -q '"name":"stop"' "$SPOOL" 2>/dev/null || [ "$i" -ge 50 ]; do
+  sleep 0.1
+  i=$((i + 1))
+done
 expect "stop records hook stop even inside the ship throttle" 1 "$(jq -c 'select(.source == "hook" and .name == "stop")' "$SPOOL" | wc -l | tr -d ' ')"
 unset AGENT_TELEMETRY_STOP_EVERY
 
 echo "session-start"
 CLAUDE_ENV_FILE="$WORK/env-file"
 export CLAUDE_ENV_FILE
-: > "$CLAUDE_ENV_FILE"
+: >"$CLAUDE_ENV_FILE"
 mkdir -p "$STATE/shims/first-use"
 OUT=$(printf '{"session_id":"s","source":"startup"}' | "$CB/agent-telemetry-claude-hook" session-start 2>&1)
 expect "session-start prints nothing" "" "$OUT"
@@ -247,8 +260,8 @@ if [ -d "$STATE/shims" ]; then bad "the previous session's shim state survived";
 got=$(PATH=/usr/bin:/bin sh -c '. "$1"; . "$1"; printf "%s" "$PATH"' _ "$CLAUDE_ENV_FILE")
 expect "the env file puts the shims first, once, however often it is sourced" "$SHIMS:/usr/bin:/bin" "$got"
 mv "$SHIMS" "$WORK/shims-moved"
-: > "$CLAUDE_ENV_FILE"
-printf '{}' | "$CB/agent-telemetry-claude-hook" session-start > /dev/null 2>&1
+: >"$CLAUDE_ENV_FILE"
+printf '{}' | "$CB/agent-telemetry-claude-hook" session-start >/dev/null 2>&1
 expect "no shims directory, no PATH line" "" "$(cat "$CLAUDE_ENV_FILE")"
 mv "$WORK/shims-moved" "$SHIMS"
 unset CLAUDE_ENV_FILE
@@ -257,26 +270,26 @@ unset CLAUDE_ENV_FILE
 
 echo "session shape"
 start=$(($(date +%s) - 100))
-iso=$(date -u -d "@$start" +%Y-%m-%dT%H:%M:%SZ 2> /dev/null || date -u -r "$start" +%Y-%m-%dT%H:%M:%SZ)
-printf 'cache=rebuild\nsession_id=sess-1\nsession_source=resume\nobserved_at=%s\nbootstrap_duration_seconds=80\nsha=abc123\n' "$iso" > "$MARKER"
+iso=$(date -u -d "@$start" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -r "$start" +%Y-%m-%dT%H:%M:%SZ)
+printf 'cache=rebuild\nsession_id=sess-1\nsession_source=resume\nobserved_at=%s\nbootstrap_duration_seconds=80\nsha=abc123\n' "$iso" >"$MARKER"
 mkdir -p "$STATE/shims/first-use"
-echo $((start + 12)) > "$STATE/shims/first-use/semgrep"
-echo $((start + 5)) > "$STATE/shims/first-use/cspell"
-echo $((start - 50)) > "$STATE/shims/first-use/stale"
-echo $((start + 30)) > "$STATE/shims/first-commit"
+echo $((start + 12)) >"$STATE/shims/first-use/semgrep"
+echo $((start + 5)) >"$STATE/shims/first-use/cspell"
+echo $((start - 50)) >"$STATE/shims/first-use/stale"
+echo $((start + 30)) >"$STATE/shims/first-commit"
 OUT=$("$CB/agent-telemetry" session-shape 2>&1)
 expect "session-shape is silent" "" "$OUT"
 rec=$(jq -c 'select(.source == "session" and .name == "shape")' "$SPOOL" | tail -1)
 expect "the shape carries the marker's fields" "rebuild resume abc123 80" \
-    "$(printf '%s' "$rec" | jq -r '"\(.cache) \(.session_source) \(.sha) \(.bootstrap_duration_seconds)"')"
+  "$(printf '%s' "$rec" | jq -r '"\(.cache) \(.session_source) \(.sha) \(.bootstrap_duration_seconds)"')"
 expect "first_commit_s is relative to session start" 30 "$(printf '%s' "$rec" | jq -r .first_commit_s)"
 expect "first_use_s is in order of use, and ignores an earlier session's stamp" "cspell:5,semgrep:12" \
-    "$(printf '%s' "$rec" | jq -r .first_use_s)"
+  "$(printf '%s' "$rec" | jq -r .first_use_s)"
 rm -rf "$STATE/shims"
-"$CB/agent-telemetry" session-shape > /dev/null 2>&1
+"$CB/agent-telemetry" session-shape >/dev/null 2>&1
 rec=$(jq -c 'select(.source == "session" and .name == "shape")' "$SPOOL" | tail -1)
 expect "with no commit and no tool use, both are absent" "null null" \
-    "$(printf '%s' "$rec" | jq -r '"\(.first_commit_s) \(.first_use_s)"')"
+  "$(printf '%s' "$rec" | jq -r '"\(.first_commit_s) \(.first_use_s)"')"
 
 printf '\n%s passed, %s failed\n' "$PASS" "$FAIL"
 [ "$FAIL" -eq 0 ]

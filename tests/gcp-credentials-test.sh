@@ -34,7 +34,7 @@ STUB_DIR="$WORK/stub"
 CB_DIR="$WORK/cb"
 ALL_OUTPUT="$WORK/all-output.txt"
 mkdir -p "$STUB_DIR" "$CB_DIR"
-: > "$ALL_OUTPUT"
+: >"$ALL_OUTPUT"
 
 # The stub listens on loopback; a proxy in the environment must not intercept.
 no_proxy=127.0.0.1,localhost
@@ -46,31 +46,31 @@ export CREDENTIAL_BROKER_REQUEST_KEY=test-request-key
 export STUB_DIR
 
 cleanup() {
-    [ -n "${STUB_PID:-}" ] && kill "$STUB_PID" 2> /dev/null
-    # Any refresh loop a test started, though --no-refresh is used throughout.
-    [ -f "$CB_DIR/refresh.pid" ] && kill "$(cat "$CB_DIR/refresh.pid")" 2> /dev/null
-    rm -rf "$WORK"
-    return 0
+  [ -n "${STUB_PID:-}" ] && kill "$STUB_PID" 2>/dev/null
+  # Any refresh loop a test started, though --no-refresh is used throughout.
+  [ -f "$CB_DIR/refresh.pid" ] && kill "$(cat "$CB_DIR/refresh.pid")" 2>/dev/null
+  rm -rf "$WORK"
+  return 0
 }
 trap cleanup EXIT INT TERM
 
 # --- stub lifecycle ----------------------------------------------------------
 
-python3 "$STUB" > "$WORK/stub.out" 2>&1 &
+python3 "$STUB" >"$WORK/stub.out" 2>&1 &
 STUB_PID=$!
 
 PORT=""
 i=0
 while [ "$i" -lt 50 ]; do
-    PORT=$(sed -n 's/^PORT //p' "$WORK/stub.out" 2> /dev/null | head -1)
-    [ -n "$PORT" ] && break
-    sleep 0.1
-    i=$((i + 1))
+  PORT=$(sed -n 's/^PORT //p' "$WORK/stub.out" 2>/dev/null | head -1)
+  [ -n "$PORT" ] && break
+  sleep 0.1
+  i=$((i + 1))
 done
 if [ -z "$PORT" ]; then
-    echo "could not start the stub broker:"
-    cat "$WORK/stub.out"
-    exit 1
+  echo "could not start the stub broker:"
+  cat "$WORK/stub.out"
+  exit 1
 fi
 export CREDENTIAL_BROKER_URL="http://127.0.0.1:$PORT"
 
@@ -78,22 +78,22 @@ export CREDENTIAL_BROKER_URL="http://127.0.0.1:$PORT"
 
 # canned <endpoint> <status> [body-json]
 canned() {
-    printf '%s' "$2" > "$STUB_DIR/$1.status"
-    if [ $# -ge 3 ]; then
-        printf '%s' "$3" > "$STUB_DIR/$1.json"
-    else
-        printf '{}' > "$STUB_DIR/$1.json"
-    fi
+  printf '%s' "$2" >"$STUB_DIR/$1.status"
+  if [ $# -ge 3 ]; then
+    printf '%s' "$3" >"$STUB_DIR/$1.json"
+  else
+    printf '{}' >"$STUB_DIR/$1.json"
+  fi
 }
 
 reset_state() {
-    rm -f "$CB_DIR"/grant.json "$CB_DIR"/pending.json "$CB_DIR"/access_token \
-        "$CB_DIR"/refresh.pid "$CB_DIR"/refresh.log "$CB_DIR"/created-projects.jsonl
-    rm -f "$CB_DIR"/grant-readonly-estate.json "$CB_DIR"/pending-readonly-estate.json \
-        "$CB_DIR"/access_token-readonly-estate "$CB_DIR"/refresh-readonly-estate.pid \
-        "$CB_DIR"/refresh-readonly-estate.log
-    rm -f "$STUB_DIR"/*.status "$STUB_DIR"/*.json 2> /dev/null
-    : > "$STUB_DIR/calls.log"
+  rm -f "$CB_DIR"/grant.json "$CB_DIR"/pending.json "$CB_DIR"/access_token \
+    "$CB_DIR"/refresh.pid "$CB_DIR"/refresh.log "$CB_DIR"/created-projects.jsonl
+  rm -f "$CB_DIR"/grant-readonly-estate.json "$CB_DIR"/pending-readonly-estate.json \
+    "$CB_DIR"/access_token-readonly-estate "$CB_DIR"/refresh-readonly-estate.pid \
+    "$CB_DIR"/refresh-readonly-estate.log
+  rm -f "$STUB_DIR"/*.status "$STUB_DIR"/*.json 2>/dev/null
+  : >"$STUB_DIR/calls.log"
 }
 
 OUT=""
@@ -101,42 +101,45 @@ RC=0
 # run <args...> -- captures stdout+stderr together, records both for the
 # end-of-run secret sweep, and never lets a non-zero exit kill the harness.
 run() {
-    OUT=$("$HELPER" "$@" 2>&1) && RC=0 || RC=$?
-    printf '%s\n' "$OUT" >> "$ALL_OUTPUT"
+  OUT=$("$HELPER" "$@" 2>&1) && RC=0 || RC=$?
+  printf '%s\n' "$OUT" >>"$ALL_OUTPUT"
 }
 
 # run_in <dir> <args...> -- the same, from a chosen working directory.
 # `teardown` resolves its sandbox from the origin remote of the cwd and takes no
 # --repo, so where it runs from IS an input to it.
 run_in() {
-    ri_dir=$1
-    shift
-    OUT=$(cd "$ri_dir" && "$HELPER" "$@" 2>&1) && RC=0 || RC=$?
-    printf '%s\n' "$OUT" >> "$ALL_OUTPUT"
+  ri_dir=$1
+  shift
+  OUT=$(cd "$ri_dir" && "$HELPER" "$@" 2>&1) && RC=0 || RC=$?
+  printf '%s\n' "$OUT" >>"$ALL_OUTPUT"
 }
 
-ok() { PASS=$((PASS + 1)); printf '  ok    %s\n' "$1"; }
+ok() {
+  PASS=$((PASS + 1))
+  printf '  ok    %s\n' "$1"
+}
 no() {
-    FAIL=$((FAIL + 1))
-    printf '  FAIL  %s\n' "$1"
-    printf '        rc=%s\n' "$RC"
-    printf '%s\n' "$OUT" | sed 's/^/        | /'
+  FAIL=$((FAIL + 1))
+  printf '  FAIL  %s\n' "$1"
+  printf '        rc=%s\n' "$RC"
+  printf '%s\n' "$OUT" | sed 's/^/        | /'
 }
 
 expect_rc() { # label expected
-    if [ "$RC" -eq "$2" ]; then ok "$1 (rc=$2)"; else no "$1 — expected rc=$2"; fi
+  if [ "$RC" -eq "$2" ]; then ok "$1 (rc=$2)"; else no "$1 — expected rc=$2"; fi
 }
 expect_out() { # label pattern
-    if printf '%s' "$OUT" | grep -q -- "$2"; then ok "$1"; else no "$1 — missing: $2"; fi
+  if printf '%s' "$OUT" | grep -q -- "$2"; then ok "$1"; else no "$1 — missing: $2"; fi
 }
 expect_no_out() { # label pattern
-    if printf '%s' "$OUT" | grep -q -- "$2"; then no "$1 — unexpectedly present: $2"; else ok "$1"; fi
+  if printf '%s' "$OUT" | grep -q -- "$2"; then no "$1 — unexpectedly present: $2"; else ok "$1"; fi
 }
 expect_file() { # label path
-    if [ -f "$2" ]; then ok "$1"; else no "$1 — missing file: $2"; fi
+  if [ -f "$2" ]; then ok "$1"; else no "$1 — missing file: $2"; fi
 }
 expect_no_file() { # label path
-    if [ -f "$2" ]; then no "$1 — file should not exist: $2"; else ok "$1"; fi
+  if [ -f "$2" ]; then no "$1 — file should not exist: $2"; else ok "$1"; fi
 }
 
 # Response fixtures.
@@ -147,12 +150,12 @@ EXCHANGE_OK='{"access_token":"'"$SENTINEL"'","expires_at":"2026-08-15T13:00:00Z"
 # request_then_poll <poll-status> <poll-body> [extra request args...]
 # Gets a request outstanding, then arranges what `wait` will see.
 request_then_poll() {
-    ps=$1
-    pb=$2
-    shift 2
-    canned request 200 "$REQ_OK"
-    run request --purpose "test" --project p --no-gcloud --no-refresh "$@"
-    canned poll "$ps" "$pb"
+  ps=$1
+  pb=$2
+  shift 2
+  canned request 200 "$REQ_OK"
+  run request --purpose "test" --project p --no-gcloud --no-refresh "$@"
+  canned poll "$ps" "$pb"
 }
 
 # --- configuration errors ----------------------------------------------------
@@ -160,12 +163,12 @@ request_then_poll() {
 echo "not configured (exit 6)"
 reset_state
 OUT=$(env -u CREDENTIAL_BROKER_REQUEST_KEY "$HELPER" request --purpose t --project p 2>&1) && RC=0 || RC=$?
-printf '%s\n' "$OUT" >> "$ALL_OUTPUT"
+printf '%s\n' "$OUT" >>"$ALL_OUTPUT"
 expect_rc "missing request key" 6
 expect_out "names both key locations" "CREDENTIAL_BROKER_REQUEST_KEY"
 
 OUT=$(env -u CREDENTIAL_BROKER_URL "$HELPER" request --purpose t --project p 2>&1) && RC=0 || RC=$?
-printf '%s\n' "$OUT" >> "$ALL_OUTPUT"
+printf '%s\n' "$OUT" >>"$ALL_OUTPUT"
 expect_rc "missing broker URL" 6
 
 echo "usage errors (exit 2)"
@@ -227,9 +230,9 @@ expect_out "phrase is in its own banner" "APPROVAL REQUIRED"
 expect_out "tells the caller to run wait" "wait"
 expect_file "records the outstanding request" "$CB_DIR/pending.json"
 if grep -q "client=4" "$STUB_DIR/calls.log"; then
-    ok "sends X-Client-Version on /request"
+  ok "sends X-Client-Version on /request"
 else
-    no "sends X-Client-Version on /request"
+  no "sends X-Client-Version on /request"
 fi
 
 run status
@@ -308,20 +311,20 @@ expect_file "grant recorded" "$CB_DIR/grant.json"
 expect_no_file "pending discharged" "$CB_DIR/pending.json"
 
 if [ "$(cat "$CB_DIR/access_token")" = "$SENTINEL" ]; then
-    ok "token file holds exactly the token, no trailing newline"
+  ok "token file holds exactly the token, no trailing newline"
 else
-    no "token file holds exactly the token, no trailing newline"
+  no "token file holds exactly the token, no trailing newline"
 fi
 
-MODE=$(stat -c %a "$CB_DIR/access_token" 2> /dev/null || stat -f %Lp "$CB_DIR/access_token" 2> /dev/null)
+MODE=$(stat -c %a "$CB_DIR/access_token" 2>/dev/null || stat -f %Lp "$CB_DIR/access_token" 2>/dev/null)
 if [ "$MODE" = "600" ]; then ok "token file is 0600"; else no "token file is 0600 (got $MODE)"; fi
-MODE=$(stat -c %a "$CB_DIR/grant.json" 2> /dev/null || stat -f %Lp "$CB_DIR/grant.json" 2> /dev/null)
+MODE=$(stat -c %a "$CB_DIR/grant.json" 2>/dev/null || stat -f %Lp "$CB_DIR/grant.json" 2>/dev/null)
 if [ "$MODE" = "600" ]; then ok "grant file is 0600"; else no "grant file is 0600 (got $MODE)"; fi
 
 if grep -q "GET /requests/req-123 client=4" "$STUB_DIR/calls.log"; then
-    ok "sends X-Client-Version on /poll too"
+  ok "sends X-Client-Version on /poll too"
 else
-    no "sends X-Client-Version on /poll too"
+  no "sends X-Client-Version on /poll too"
 fi
 
 echo "status over a live grant"
@@ -340,7 +343,7 @@ expect_out "reports the client version" "client  : v4"
 GC_WRAP="$WORK/gcloud-wrapper"
 GC_PLAIN="$WORK/gcloud-plain"
 mkdir -p "$GC_WRAP" "$GC_PLAIN"
-cat > "$GC_WRAP/gcloud" << 'STUB'
+cat >"$GC_WRAP/gcloud" <<'STUB'
 #!/bin/sh
 # stand-in for cloud/bootstrap.sh's wrapper; status only lists configurations.
 if [ -n "${CLOUDSDK_AUTH_ACCESS_TOKEN:-}" ] && [ -f "$CB_TOKEN" ]; then
@@ -348,19 +351,19 @@ if [ -n "${CLOUDSDK_AUTH_ACCESS_TOKEN:-}" ] && [ -f "$CB_TOKEN" ]; then
 fi
 exit 0
 STUB
-printf '#!/bin/sh\nexit 0\n' > "$GC_PLAIN/gcloud"
+printf '#!/bin/sh\nexit 0\n' >"$GC_PLAIN/gcloud"
 chmod 0755 "$GC_WRAP/gcloud" "$GC_PLAIN/gcloud"
 
 # run_status_env <gcloud-dir> [VAR=value...] -- status with only the named
 # overriding variables set, whatever the surrounding sandbox presets.
 run_status_env() {
-    rse_dir=$1
-    shift
-    OUT=$(env -u CLOUDSDK_AUTH_ACCESS_TOKEN -u CLOUDSDK_AUTH_ACCESS_TOKEN_FILE \
-        -u CLOUDSDK_CORE_PROJECT -u GOOGLE_APPLICATION_CREDENTIALS \
-        -u GOOGLE_OAUTH_ACCESS_TOKEN PATH="$rse_dir:$PATH" "$@" \
-        "$HELPER" status 2>&1) && RC=0 || RC=$?
-    printf '%s\n' "$OUT" >> "$ALL_OUTPUT"
+  rse_dir=$1
+  shift
+  OUT=$(env -u CLOUDSDK_AUTH_ACCESS_TOKEN -u CLOUDSDK_AUTH_ACCESS_TOKEN_FILE \
+    -u CLOUDSDK_CORE_PROJECT -u GOOGLE_APPLICATION_CREDENTIALS \
+    -u GOOGLE_OAUTH_ACCESS_TOKEN PATH="$rse_dir:$PATH" "$@" \
+    "$HELPER" status 2>&1) && RC=0 || RC=$?
+  printf '%s\n' "$OUT" >>"$ALL_OUTPUT"
 }
 
 echo "status is wrapper-aware (#377)"
@@ -400,16 +403,16 @@ expect_no_out "nothing set: no gcloud override line at all" "CLOUDSDK_AUTH_ACCES
 # run_wait_env <gcloud-dir> [VAR=value...] -- request, approve, then `wait`
 # with only the named overriding variables set.
 run_wait_env() {
-    rwe_dir=$1
-    shift
-    reset_state
-    request_then_poll 200 "$APPROVED"
-    canned exchange 200 "$EXCHANGE_OK"
-    OUT=$(env -u CLOUDSDK_AUTH_ACCESS_TOKEN -u CLOUDSDK_AUTH_ACCESS_TOKEN_FILE \
-        -u CLOUDSDK_CORE_PROJECT -u GOOGLE_APPLICATION_CREDENTIALS \
-        -u GOOGLE_OAUTH_ACCESS_TOKEN PATH="$rwe_dir:$PATH" "$@" \
-        "$HELPER" wait 2>&1) && RC=0 || RC=$?
-    printf '%s\n' "$OUT" >> "$ALL_OUTPUT"
+  rwe_dir=$1
+  shift
+  reset_state
+  request_then_poll 200 "$APPROVED"
+  canned exchange 200 "$EXCHANGE_OK"
+  OUT=$(env -u CLOUDSDK_AUTH_ACCESS_TOKEN -u CLOUDSDK_AUTH_ACCESS_TOKEN_FILE \
+    -u CLOUDSDK_CORE_PROJECT -u GOOGLE_APPLICATION_CREDENTIALS \
+    -u GOOGLE_OAUTH_ACCESS_TOKEN PATH="$rwe_dir:$PATH" "$@" \
+    "$HELPER" wait 2>&1) && RC=0 || RC=$?
+  printf '%s\n' "$OUT" >>"$ALL_OUTPUT"
 }
 
 echo "install warning is wrapper-aware (#556)"
@@ -494,7 +497,7 @@ expect_out "reports no-grant, not none" "state=no-grant"
 expect_no_out "does not claim a clean result" "^created="
 
 reset_state
-printf '%s' '{"request_id":"req-A","session_token":"t"}' > "$CB_DIR/grant.json"
+printf '%s' '{"request_id":"req-A","session_token":"t"}' >"$CB_DIR/grant.json"
 run created
 expect_rc "created with a grant and no ledger" 0
 expect_out "reports the grant" "state=grant"
@@ -502,7 +505,7 @@ expect_no_out "nothing created under it" "^created="
 
 # The entry a session that built a project would have left behind.
 printf '%s\n' '{"project":"proj-A","request_id":"req-A","origin":"git@github.com:o/r.git","created_at":"2026-08-28T10:00:00Z"}' \
-    > "$CB_DIR/created-projects.jsonl"
+  >"$CB_DIR/created-projects.jsonl"
 run created
 expect_out "names the project built under this grant" "created=proj-A"
 expect_out "carries the timestamp" "at=2026-08-28T10:00:00Z"
@@ -511,7 +514,7 @@ expect_out "carries the timestamp" "at=2026-08-28T10:00:00Z"
 # $HOME persists, so an entry from an earlier grant must not report as this
 # session's doing. A sandbox would pass this trivially on a fresh container.
 printf '%s\n' '{"project":"proj-OLD","request_id":"req-EARLIER","origin":"git@github.com:o/r.git","created_at":"2026-07-01T10:00:00Z"}' \
-    >> "$CB_DIR/created-projects.jsonl"
+  >>"$CB_DIR/created-projects.jsonl"
 run created
 expect_out "still names this grant's project" "created=proj-A"
 expect_no_out "does not claim an earlier grant's project" "proj-OLD"
@@ -535,8 +538,8 @@ echo "teardown"
 # string rather than whatever this repo's remote happens to be.
 TD_REPO="$WORK/td-repo"
 mkdir -p "$TD_REPO"
-git -C "$TD_REPO" init -q > /dev/null 2>&1
-git -C "$TD_REPO" remote add origin git@github.com:o/sandbox-repo.git > /dev/null 2>&1
+git -C "$TD_REPO" init -q >/dev/null 2>&1
+git -C "$TD_REPO" remote add origin git@github.com:o/sandbox-repo.git >/dev/null 2>&1
 
 reset_state
 run_in "$WORK" teardown
@@ -559,15 +562,15 @@ expect_out "prints the phrase" "mint-copper-falcon"
 # What actually went on the wire. Every assertion here is a separate line of the
 # contract, so a drift names itself rather than failing as one opaque case.
 TD_BODY="$STUB_DIR/request-body.json"
-if jq -e '.intent == "teardown"' < "$TD_BODY" > /dev/null 2>&1; then
-    ok "sends intent=teardown"
+if jq -e '.intent == "teardown"' <"$TD_BODY" >/dev/null 2>&1; then
+  ok "sends intent=teardown"
 else
-    no "sends intent=teardown"
+  no "sends intent=teardown"
 fi
-if jq -e 'has("project") | not' < "$TD_BODY" > /dev/null 2>&1; then
-    ok "never sends a project — the broker 400s one, deliberately"
+if jq -e 'has("project") | not' <"$TD_BODY" >/dev/null 2>&1; then
+  ok "never sends a project — the broker 400s one, deliberately"
 else
-    no "never sends a project — the broker 400s one, deliberately"
+  no "never sends a project — the broker 400s one, deliberately"
 fi
 # The contract is WHICH sandbox the broker is asked about, not which transport
 # the URL is spelled in. Matched as a pattern rather than as the fixture string
@@ -580,29 +583,29 @@ fi
 # are still pinned, so a wrong remote, an empty value or a different repo all
 # fail this.
 if jq -e '.repo | test("^(git@github[.]com:|(https|ssh)://(git@)?github[.]com/)o/sandbox-repo[.]git$")' \
-    < "$TD_BODY" > /dev/null 2>&1; then
-    ok "sends the repo resolved from the cwd's origin"
+  <"$TD_BODY" >/dev/null 2>&1; then
+  ok "sends the repo resolved from the cwd's origin"
 else
-    no "sends the repo resolved from the cwd's origin"
+  no "sends the repo resolved from the cwd's origin"
 fi
-if jq -e '[has("grant_ttl"), has("tier"), has("purpose")] | any | not' < "$TD_BODY" > /dev/null 2>&1; then
-    ok "sends no ttl, tier or purpose — the card composes its own"
+if jq -e '[has("grant_ttl"), has("tier"), has("purpose")] | any | not' <"$TD_BODY" >/dev/null 2>&1; then
+  ok "sends no ttl, tier or purpose — the card composes its own"
 else
-    no "sends no ttl, tier or purpose — the card composes its own"
+  no "sends no ttl, tier or purpose — the card composes its own"
 fi
 # CLIENT_VERSION does NOT change for this: `intent` is an optional field, so the
 # broker did not raise its minimum. A bump here would 426 every session in the
 # estate over a capability none of them asked for.
 if grep -q "POST /request client=4" "$STUB_DIR/calls.log"; then
-    ok "still speaks client version 4"
+  ok "still speaks client version 4"
 else
-    no "still speaks client version 4"
+  no "still speaks client version 4"
 fi
 
 echo "teardown leaves local state alone unless it succeeds"
 reset_state
-printf '%s' '{"request_id":"req-123","project":"example-project-sbx","session_token":"t","grant_expires_at":"2026-08-16T12:00:00Z"}' > "$CB_DIR/grant.json"
-printf '%s' "$SENTINEL" > "$CB_DIR/access_token"
+printf '%s' '{"request_id":"req-123","project":"example-project-sbx","session_token":"t","grant_expires_at":"2026-08-16T12:00:00Z"}' >"$CB_DIR/grant.json"
+printf '%s' "$SENTINEL" >"$CB_DIR/access_token"
 canned request 200 "$REQ_OK"
 canned poll 200 '{"state":"denied"}'
 run_in "$TD_REPO" teardown
@@ -643,14 +646,14 @@ expect_out "says it is being destroyed" "torn down"
 expect_no_file "token removed, so nothing mints against a dead project" "$CB_DIR/access_token"
 expect_no_file "grant removed" "$CB_DIR/grant.json"
 if grep -q "POST /exchange" "$STUB_DIR/calls.log"; then
-    no "a teardown poll issues no credential"
+  no "a teardown poll issues no credential"
 else
-    ok "a teardown poll issues no credential"
+  ok "a teardown poll issues no credential"
 fi
 
 echo "a teardown of someone else's sandbox leaves this grant alone"
 reset_state
-printf '%s' '{"request_id":"req-123","project":"other-project-sbx","session_token":"t","grant_expires_at":"2026-08-16T12:00:00Z"}' > "$CB_DIR/grant.json"
+printf '%s' '{"request_id":"req-123","project":"other-project-sbx","session_token":"t","grant_expires_at":"2026-08-16T12:00:00Z"}' >"$CB_DIR/grant.json"
 canned request 200 "$REQ_OK"
 canned poll 200 '{"state":"approved","project":"example-project-sbx"}'
 run_in "$TD_REPO" teardown
@@ -704,23 +707,23 @@ echo "proxy-supplied request key"
 # run_proxy <args...> / run_proxy_in <dir> <args...> -- run with the sentinel and
 # no key file, as a Claude cloud environment holding the key as a credential.
 run_proxy() {
-    OUT=$(CREDENTIAL_BROKER_REQUEST_KEY=proxy-injected "$HELPER" "$@" 2>&1) && RC=0 || RC=$?
-    printf '%s\n' "$OUT" >> "$ALL_OUTPUT"
+  OUT=$(CREDENTIAL_BROKER_REQUEST_KEY=proxy-injected "$HELPER" "$@" 2>&1) && RC=0 || RC=$?
+  printf '%s\n' "$OUT" >>"$ALL_OUTPUT"
 }
 run_proxy_in() {
-    rp_dir=$1
-    shift
-    OUT=$(cd "$rp_dir" && CREDENTIAL_BROKER_REQUEST_KEY=proxy-injected "$HELPER" "$@" 2>&1) && RC=0 || RC=$?
-    printf '%s\n' "$OUT" >> "$ALL_OUTPUT"
+  rp_dir=$1
+  shift
+  OUT=$(cd "$rp_dir" && CREDENTIAL_BROKER_REQUEST_KEY=proxy-injected "$HELPER" "$@" 2>&1) && RC=0 || RC=$?
+  printf '%s\n' "$OUT" >>"$ALL_OUTPUT"
 }
 key_absent_on() { # label "METHOD PATH-prefix"
-    if grep "^$2" "$STUB_DIR/calls.log" | grep -q 'key=header'; then
-        no "$1 — sent an X-Request-Key header"
-    elif grep -q "^$2" "$STUB_DIR/calls.log"; then
-        ok "$1"
-    else
-        no "$1 — the call was never made"
-    fi
+  if grep "^$2" "$STUB_DIR/calls.log" | grep -q 'key=header'; then
+    no "$1 — sent an X-Request-Key header"
+  elif grep -q "^$2" "$STUB_DIR/calls.log"; then
+    ok "$1"
+  else
+    no "$1 — the call was never made"
+  fi
 }
 
 rm -f "$CB_DIR/request-key"
@@ -728,21 +731,21 @@ rm -f "$CB_DIR/request-key"
 # Control: the strict stub must refuse an ordinary client that sends its key,
 # or every pass below proves nothing.
 reset_state
-printf 'proxy' > "$STUB_DIR/key-mode"
+printf 'proxy' >"$STUB_DIR/key-mode"
 canned request 200 "$REQ_OK"
 run request --purpose "test" --project p --no-gcloud --no-refresh
 expect_rc "control: the proxy-mode stub refuses a client that sends a key" 1
 
 # (a) request -> wait -> revoke, end to end, with no key anywhere in the client.
 reset_state
-printf 'proxy' > "$STUB_DIR/key-mode"
+printf 'proxy' >"$STUB_DIR/key-mode"
 canned request 200 "$REQ_OK"
 run_proxy request --purpose "test" --project p --no-gcloud --no-refresh
 expect_rc "request opens with the key supplied by the proxy" 0
-if jq -e 'has("request_key")' < "$STUB_DIR/request-body.json" > /dev/null 2>&1; then
-    no "request body carries no request_key field"
+if jq -e 'has("request_key")' <"$STUB_DIR/request-body.json" >/dev/null 2>&1; then
+  no "request body carries no request_key field"
 else
-    ok "request body carries no request_key field"
+  ok "request body carries no request_key field"
 fi
 key_absent_on "request sends no X-Request-Key header" "POST /request"
 canned poll 200 "$APPROVED"
@@ -759,15 +762,15 @@ key_absent_on "revoke sends no X-Request-Key header" "POST /requests/"
 
 # (b) teardown shares /request, so it shares the rule.
 reset_state
-printf 'proxy' > "$STUB_DIR/key-mode"
+printf 'proxy' >"$STUB_DIR/key-mode"
 canned request 200 "$REQ_OK"
 canned poll 200 '{"state":"denied"}'
 run_proxy_in "$TD_REPO" teardown
 expect_rc "teardown reaches a decision with the key supplied by the proxy" 3
-if jq -e 'has("request_key")' < "$STUB_DIR/request-body.json" > /dev/null 2>&1; then
-    no "teardown body carries no request_key field"
+if jq -e 'has("request_key")' <"$STUB_DIR/request-body.json" >/dev/null 2>&1; then
+  no "teardown body carries no request_key field"
 else
-    ok "teardown body carries no request_key field"
+  ok "teardown body carries no request_key field"
 fi
 
 # (c) The broker rejects the proxy's key: the advice points at the environment's
@@ -782,10 +785,10 @@ expect_out "names the header it must carry" "X-Request-Key"
 
 # (d) The sentinel is a mode switch, never a value: it must not appear in
 # anything sent. Header absence is covered by key_absent_on above.
-if grep -q 'proxy-injected' "$STUB_DIR"/*-body.json 2> /dev/null; then
-    no "the sentinel was never sent in a request body"
+if grep -q 'proxy-injected' "$STUB_DIR"/*-body.json 2>/dev/null; then
+  no "the sentinel was never sent in a request body"
 else
-    ok "the sentinel was never sent in a request body"
+  ok "the sentinel was never sent in a request body"
 fi
 
 # (e) Unset still means not configured, distinct from proxy-supplied.
@@ -818,10 +821,10 @@ canned request 200 "$ESTATE_REQ"
 run request --tier readonly-estate --purpose "why is org-services over budget" --no-gcloud --no-refresh
 expect_rc "estate request opens" 0
 if jq -e '.tier == "readonly-estate" and .grant_ttl == "4h" and (has("repo") | not) and (has("project") | not)' \
-    "$STUB_DIR/request-body.json" > /dev/null 2>&1; then
-    ok "sends the tier and a 4h default, and no repo or project"
+  "$STUB_DIR/request-body.json" >/dev/null 2>&1; then
+  ok "sends the tier and a 4h default, and no repo or project"
 else
-    no "estate request body — got: $(cat "$STUB_DIR/request-body.json" 2> /dev/null)"
+  no "estate request body — got: $(cat "$STUB_DIR/request-body.json" 2>/dev/null)"
 fi
 expect_out "card scope is stated" "ENTIRE ORGANISATION, read-only"
 expect_out "points at the tier-specific wait" "wait --tier readonly-estate"
@@ -846,8 +849,8 @@ request_then_poll 200 "$LIVE_SANDBOX_APPROVED"
 canned exchange 200 "$EXCHANGE_OK"
 run wait
 expect_rc "sandbox grant installed" 0
-sb_grant_before=$(cksum < "$CB_DIR/grant.json")
-sb_token_mtime=$(stat -c %Y "$CB_DIR/access_token" 2> /dev/null || stat -f %m "$CB_DIR/access_token")
+sb_grant_before=$(cksum <"$CB_DIR/grant.json")
+sb_token_mtime=$(stat -c %Y "$CB_DIR/access_token" 2>/dev/null || stat -f %m "$CB_DIR/access_token")
 
 canned request 200 "$ESTATE_REQ"
 run request --tier readonly-estate --purpose t --no-gcloud --no-refresh
@@ -860,16 +863,16 @@ expect_rc "wait with no --tier picks the only outstanding (estate) request" 0
 expect_out "install names the scope, not the home project" "ENTIRE ORGANISATION, read-only"
 expect_file "estate grant written" "$CB_DIR/grant-readonly-estate.json"
 expect_file "estate token written" "$CB_DIR/access_token-readonly-estate"
-if jq -e '.session_token == "stub-estate-session"' "$STUB_DIR/exchange-body.json" > /dev/null 2>&1; then
-    ok "estate exchange used the estate session token"
+if jq -e '.session_token == "stub-estate-session"' "$STUB_DIR/exchange-body.json" >/dev/null 2>&1; then
+  ok "estate exchange used the estate session token"
 else
-    no "estate exchange body — got: $(jq -c '{request_id}' "$STUB_DIR/exchange-body.json" 2> /dev/null)"
+  no "estate exchange body — got: $(jq -c '{request_id}' "$STUB_DIR/exchange-body.json" 2>/dev/null)"
 fi
-if [ "$(cksum < "$CB_DIR/grant.json")" = "$sb_grant_before" ]; then ok "sandbox grant file untouched"; else no "sandbox grant file was modified"; fi
-if [ "$(stat -c %Y "$CB_DIR/access_token" 2> /dev/null || stat -f %m "$CB_DIR/access_token")" = "$sb_token_mtime" ]; then
-    ok "sandbox token untouched"
+if [ "$(cksum <"$CB_DIR/grant.json")" = "$sb_grant_before" ]; then ok "sandbox grant file untouched"; else no "sandbox grant file was modified"; fi
+if [ "$(stat -c %Y "$CB_DIR/access_token" 2>/dev/null || stat -f %m "$CB_DIR/access_token")" = "$sb_token_mtime" ]; then
+  ok "sandbox token untouched"
 else
-    no "sandbox token was rewritten by the estate install"
+  no "sandbox token was rewritten by the estate install"
 fi
 
 run request --purpose t --project p --no-gcloud --no-refresh
@@ -907,7 +910,7 @@ echo "readonly-estate: gcloud configuration created but not activated"
 reset_state
 GC_REC="$WORK/gcloud-recorder"
 mkdir -p "$GC_REC"
-cat > "$GC_REC/gcloud" << 'STUB'
+cat >"$GC_REC/gcloud" <<'STUB'
 #!/bin/sh
 # Records every invocation; reports no configuration as existing.
 printf '%s\n' "$*" >> "$GCLOUD_LOG"
@@ -919,16 +922,16 @@ STUB
 chmod 0755 "$GC_REC/gcloud"
 GCLOUD_LOG="$WORK/gcloud.log"
 export GCLOUD_LOG
-: > "$GCLOUD_LOG"
+: >"$GCLOUD_LOG"
 canned request 200 "$ESTATE_REQ"
 OUT=$(PATH="$GC_REC:$PATH" "$HELPER" request --tier readonly-estate --purpose t --no-refresh 2>&1) && RC=0 || RC=$?
-printf '%s\n' "$OUT" >> "$ALL_OUTPUT"
+printf '%s\n' "$OUT" >>"$ALL_OUTPUT"
 canned poll 200 "$ESTATE_APPROVED"
 canned exchange 200 "$ESTATE_EXCHANGE"
 OUT=$(PATH="$GC_REC:$PATH" "$HELPER" wait 2>&1) && RC=0 || RC=$?
-printf '%s\n' "$OUT" >> "$ALL_OUTPUT"
+printf '%s\n' "$OUT" >>"$ALL_OUTPUT"
 expect_rc "estate install with gcloud present" 0
-if grep -q "configurations create agent-broker-estate" "$GCLOUD_LOG"; then ok "creates the agent-broker-estate configuration"; else no "no agent-broker-estate configuration created — log: $(tr '\n' ';' < "$GCLOUD_LOG")"; fi
+if grep -q "configurations create agent-broker-estate" "$GCLOUD_LOG"; then ok "creates the agent-broker-estate configuration"; else no "no agent-broker-estate configuration created — log: $(tr '\n' ';' <"$GCLOUD_LOG")"; fi
 if grep -q "configurations activate" "$GCLOUD_LOG"; then no "estate configuration was activated"; else ok "estate configuration left inactive"; fi
 expect_out "says how to use it per call" "CLOUDSDK_ACTIVE_CONFIG_NAME=agent-broker-estate"
 
@@ -942,40 +945,43 @@ expect_out "says how to use it per call" "CLOUDSDK_ACTIVE_CONFIG_NAME=agent-brok
 echo "gcloud wrapper follows the tier"
 WR="$WORK/wrapper"
 mkdir -p "$WR/sdk/bin" "$WR/bin" "$WR/cb" "$WR/gcfg"
-cat > "$WR/sdk/bin/gcloud" << 'STUB'
+cat >"$WR/sdk/bin/gcloud" <<'STUB'
 #!/bin/sh
 echo "sdk-gcloud token=${CLOUDSDK_AUTH_ACCESS_TOKEN:-unset}"
 STUB
-cat > "$WR/bin/gcp-credentials" << 'STUB'
+cat >"$WR/bin/gcp-credentials" <<'STUB'
 #!/bin/sh
 printf '%s\n' "$*" >> "$WRAPPER_HELPER_LOG"
 STUB
 sed -n '/<< .WRAPPER.$/,/^WRAPPER$/p' "$ROOT/cloud/bootstrap.sh" | sed '1d;$d' \
-    | sed "s#@GCLOUD_SDK@#$WR/sdk#g" > "$WR/bin/gcloud"
+  | sed "s#@GCLOUD_SDK@#$WR/sdk#g" >"$WR/bin/gcloud"
 chmod 0755 "$WR/sdk/bin/gcloud" "$WR/bin/gcp-credentials" "$WR/bin/gcloud"
 WRAPPER_HELPER_LOG="$WR/helper.log"
 export WRAPPER_HELPER_LOG
 
 # run_wrapper [VAR=value...] -- [gcloud args...]
 run_wrapper() {
-    rw_env=""
-    while [ $# -gt 0 ] && [ "$1" != "--" ]; do rw_env="$rw_env $1"; shift; done
+  rw_env=""
+  while [ $# -gt 0 ] && [ "$1" != "--" ]; do
+    rw_env="$rw_env $1"
     shift
-    : > "$WRAPPER_HELPER_LOG"
-    # shellcheck disable=SC2086 # rw_env is a list of VAR=value words
-    OUT=$(env -u CLOUDSDK_ACTIVE_CONFIG_NAME CREDENTIAL_BROKER_HOME="$WR/cb" \
-        CLOUDSDK_CONFIG="$WR/gcfg" CLOUDSDK_AUTH_ACCESS_TOKEN=preset \
-        PATH="$WR/bin:$PATH" $rw_env "$WR/bin/gcloud" "$@" 2>&1) && RC=0 || RC=$?
+  done
+  shift
+  : >"$WRAPPER_HELPER_LOG"
+  # shellcheck disable=SC2086 # rw_env is a list of VAR=value words
+  OUT=$(env -u CLOUDSDK_ACTIVE_CONFIG_NAME CREDENTIAL_BROKER_HOME="$WR/cb" \
+    CLOUDSDK_CONFIG="$WR/gcfg" CLOUDSDK_AUTH_ACCESS_TOKEN=preset \
+    PATH="$WR/bin:$PATH" $rw_env "$WR/bin/gcloud" "$@" 2>&1) && RC=0 || RC=$?
 }
 stale() { touch -t 202601010000 "$1"; }
 
 if [ -s "$WR/bin/gcloud" ] && grep -q 'exec env -u CLOUDSDK_AUTH_ACCESS_TOKEN' "$WR/bin/gcloud"; then
-    ok "wrapper extracted from cloud/bootstrap.sh"
+  ok "wrapper extracted from cloud/bootstrap.sh"
 else
-    no "could not extract the gcloud wrapper from cloud/bootstrap.sh"
+  no "could not extract the gcloud wrapper from cloud/bootstrap.sh"
 fi
 
-: > "$WR/cb/access_token-readonly-estate"
+: >"$WR/cb/access_token-readonly-estate"
 stale "$WR/cb/access_token-readonly-estate"
 run_wrapper CLOUDSDK_ACTIVE_CONFIG_NAME=agent-broker-estate -- projects list
 if grep -qx 'renew --tier readonly-estate' "$WRAPPER_HELPER_LOG"; then ok "estate config: renews the estate token"; else no "estate config renew — helper saw: $(cat "$WRAPPER_HELPER_LOG")"; fi
@@ -984,7 +990,7 @@ expect_out "estate config: strips the preset token with only an estate token on 
 run_wrapper -- --configuration agent-broker-estate projects list
 if grep -qx 'renew --tier readonly-estate' "$WRAPPER_HELPER_LOG"; then ok "--configuration flag selects the estate token"; else no "--configuration renew — helper saw: $(cat "$WRAPPER_HELPER_LOG")"; fi
 
-printf 'agent-broker-estate' > "$WR/gcfg/active_config"
+printf 'agent-broker-estate' >"$WR/gcfg/active_config"
 run_wrapper -- projects list
 if grep -qx 'renew --tier readonly-estate' "$WRAPPER_HELPER_LOG"; then ok "an active estate config selects the estate token"; else no "active_config renew — helper saw: $(cat "$WRAPPER_HELPER_LOG")"; fi
 rm -f "$WR/gcfg/active_config"
@@ -993,7 +999,7 @@ run_wrapper -- projects list
 if [ -s "$WRAPPER_HELPER_LOG" ]; then no "default config renewed with only an estate token present"; else ok "default config: no sandbox token, no renew"; fi
 expect_out "default config: preset token left alone without a sandbox token" "token=preset"
 
-: > "$WR/cb/access_token"
+: >"$WR/cb/access_token"
 stale "$WR/cb/access_token"
 run_wrapper -- projects list
 if grep -qx 'renew' "$WRAPPER_HELPER_LOG"; then ok "default config: renews the sandbox token, with no --tier"; else no "sandbox renew — helper saw: $(cat "$WRAPPER_HELPER_LOG")"; fi
@@ -1001,26 +1007,26 @@ expect_out "default config: strips the preset token with a sandbox token" "token
 
 echo "transcript hygiene"
 if grep -q "$SENTINEL" "$ALL_OUTPUT"; then
-    FAIL=$((FAIL + 1))
-    printf '  FAIL  THE ACCESS TOKEN REACHED STDOUT/STDERR\n'
-    grep -n "$SENTINEL" "$ALL_OUTPUT" | sed 's/^/        | /'
+  FAIL=$((FAIL + 1))
+  printf '  FAIL  THE ACCESS TOKEN REACHED STDOUT/STDERR\n'
+  grep -n "$SENTINEL" "$ALL_OUTPUT" | sed 's/^/        | /'
 else
-    ok "no access token in any command output, across every case above"
+  ok "no access token in any command output, across every case above"
 fi
 
 if [ -f "$CB_DIR/refresh.log" ] && grep -q "$SENTINEL" "$CB_DIR/refresh.log"; then
-    FAIL=$((FAIL + 1))
-    printf '  FAIL  the access token reached the refresh log\n'
+  FAIL=$((FAIL + 1))
+  printf '  FAIL  the access token reached the refresh log\n'
 else
-    ok "no access token in the refresh log"
+  ok "no access token in the refresh log"
 fi
 
 # The request key travels in a POST body and a curl --config file, never argv.
 if grep -q "test-request-key" "$ALL_OUTPUT"; then
-    FAIL=$((FAIL + 1))
-    printf '  FAIL  the request key reached stdout/stderr\n'
+  FAIL=$((FAIL + 1))
+  printf '  FAIL  the request key reached stdout/stderr\n'
 else
-    ok "no request key in any command output"
+  ok "no request key in any command output"
 fi
 
 # --- result ------------------------------------------------------------------

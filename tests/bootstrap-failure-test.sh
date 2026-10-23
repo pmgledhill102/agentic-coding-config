@@ -37,13 +37,13 @@ BOOTSTRAP="$ROOT/cloud/bootstrap.sh"
 # tests the last pushed state of any fetched file, not the working copy.
 BOOTSTRAP_TEST_REF=${BOOTSTRAP_TEST_REF:-}
 if [ -z "$BOOTSTRAP_TEST_REF" ]; then
-    _branch=${GITHUB_HEAD_REF:-$(git -C "$ROOT" branch --show-current 2> /dev/null || true)}
-    if [ -n "$_branch" ] &&
-        git -C "$ROOT" ls-remote --exit-code --heads origin "$_branch" > /dev/null 2>&1; then
-        BOOTSTRAP_TEST_REF=$_branch
-    else
-        BOOTSTRAP_TEST_REF=main
-    fi
+  _branch=${GITHUB_HEAD_REF:-$(git -C "$ROOT" branch --show-current 2>/dev/null || true)}
+  if [ -n "$_branch" ] \
+    && git -C "$ROOT" ls-remote --exit-code --heads origin "$_branch" >/dev/null 2>&1; then
+    BOOTSTRAP_TEST_REF=$_branch
+  else
+    BOOTSTRAP_TEST_REF=main
+  fi
 fi
 
 # The full runs below take this copy, which skips the golangci-lint capability.
@@ -52,7 +52,7 @@ fi
 # runs it against a fixture.
 BOOTSTRAP_FULL=$(mktemp)
 sed 's/^capability 1 golangci cap_golangci$/capability 0 golangci cap_golangci/' \
-    "$BOOTSTRAP" > "$BOOTSTRAP_FULL"
+  "$BOOTSTRAP" >"$BOOTSTRAP_FULL"
 trap 'rm -f "$BOOTSTRAP_FULL"' EXIT
 
 # Every full run below takes the copy under test as it is. Without this the
@@ -65,26 +65,32 @@ export BOOTSTRAP_REEXEC
 PASS=0
 FAIL=0
 
-ok() { PASS=$((PASS + 1)); printf '  ok    %s\n' "$1"; }
-no() { FAIL=$((FAIL + 1)); printf '  FAIL  %s\n' "$1"; }
+ok() {
+  PASS=$((PASS + 1))
+  printf '  ok    %s\n' "$1"
+}
+no() {
+  FAIL=$((FAIL + 1))
+  printf '  FAIL  %s\n' "$1"
+}
 
 count() {
-    # count <pattern> <file> -- 0 when the file is absent OR has no match.
-    # `grep -c` prints 0 and exits 1 on no match, so a bare `|| echo 0` emits
-    # two lines and every comparison against it fails. Capturing rather than
-    # piping through `head -1`: head exits after its line, and the `echo` then
-    # takes EPIPE and dash reports "echo: I/O error" into the CI log.
-    _n=$(grep -c "$1" "$2" 2> /dev/null) || _n=0
-    [ -n "$_n" ] || _n=0
-    echo "$_n"
+  # count <pattern> <file> -- 0 when the file is absent OR has no match.
+  # `grep -c` prints 0 and exits 1 on no match, so a bare `|| echo 0` emits
+  # two lines and every comparison against it fails. Capturing rather than
+  # piping through `head -1`: head exits after its line, and the `echo` then
+  # takes EPIPE and dash reports "echo: I/O error" into the CI log.
+  _n=$(grep -c "$1" "$2" 2>/dev/null) || _n=0
+  [ -n "$_n" ] || _n=0
+  echo "$_n"
 }
 
 check() {
-    # check <description> <expected> <actual>
-    if [ "$2" = "$3" ]; then ok "$1"; else
-        no "$1"
-        printf '        expected: %s\n        actual:   %s\n' "$2" "$3"
-    fi
+  # check <description> <expected> <actual>
+  if [ "$2" = "$3" ]; then ok "$1"; else
+    no "$1"
+    printf '        expected: %s\n        actual:   %s\n' "$2" "$3"
+  fi
 }
 
 # --with-gcloud etc. are never reached: every run here dies in the argument
@@ -92,8 +98,8 @@ check() {
 # trap covers that, it covers everything later. It did not always -- the trap
 # used to be installed below the loop, so a usage error reported nothing.
 run_failing_bootstrap() {
-    HOME="$1" sh "$BOOTSTRAP" "$BOOTSTRAP_TEST_REF" --a-flag-that-does-not-exist > /dev/null 2>&1
-    echo $?
+  HOME="$1" sh "$BOOTSTRAP" "$BOOTSTRAP_TEST_REF" --a-flag-that-does-not-exist >/dev/null 2>&1
+  echo $?
 }
 
 echo "cloud/bootstrap.sh — reporting a run that did not finish"
@@ -105,17 +111,17 @@ check "a failing run exits non-zero" "1" "$rc"
 
 M="$H/.agents/.bootstrap-manifest"
 if [ -f "$M" ]; then
-    ok "a failing run writes a manifest"
-    check "  status names the failure" "failed" "$(sed -n 's/^status=//p' "$M")"
-    check "  exit_code is recorded" "1" "$(sed -n 's/^exit_code=//p' "$M")"
-    check "  failed_step names the step" \
-        "unknown argument: --a-flag-that-does-not-exist" \
-        "$(sed -n 's/^failed_step=//p' "$M")"
-    # A reader sent to a log that is not there is worse off than one told
-    # nothing, so the path is recorded rather than assumed.
-    check "  log path is recorded" "/tmp/bootstrap.log" "$(sed -n 's/^log=//p' "$M")"
+  ok "a failing run writes a manifest"
+  check "  status names the failure" "failed" "$(sed -n 's/^status=//p' "$M")"
+  check "  exit_code is recorded" "1" "$(sed -n 's/^exit_code=//p' "$M")"
+  check "  failed_step names the step" \
+    "unknown argument: --a-flag-that-does-not-exist" \
+    "$(sed -n 's/^failed_step=//p' "$M")"
+  # A reader sent to a log that is not there is worse off than one told
+  # nothing, so the path is recorded rather than assumed.
+  check "  log path is recorded" "/tmp/bootstrap.log" "$(sed -n 's/^log=//p' "$M")"
 else
-    no "a failing run writes a manifest"
+  no "a failing run writes a manifest"
 fi
 rm -rf "$H"
 
@@ -124,27 +130,27 @@ rm -rf "$H"
 # The banner goes in the one policy file the profile's agent reads: CLAUDE.md
 # for a claude-* profile, which no longer ships an AGENTS.md at all (#310).
 H=$(mktemp -d)
-run_failing_bootstrap "$H" > /dev/null
+run_failing_bootstrap "$H" >/dev/null
 check "banner reaches .claude/CLAUDE.md" "1" \
-    "$(count 'acc:bootstrap-failed:start' "$H/.claude/CLAUDE.md")"
+  "$(count 'acc:bootstrap-failed:start' "$H/.claude/CLAUDE.md")"
 if [ -f "$H/.agents/AGENTS.md" ]; then
-    no "claude profile writes no .agents/AGENTS.md"
+  no "claude profile writes no .agents/AGENTS.md"
 else
-    ok "claude profile writes no .agents/AGENTS.md"
+  ok "claude profile writes no .agents/AGENTS.md"
 fi
 rm -rf "$H"
 
 # A codex container has nothing that ever rewrites ~/.claude/CLAUDE.md, so a
 # banner left there would outlive the failure it describes.
 H=$(mktemp -d)
-HOME="$H" sh "$BOOTSTRAP" "$BOOTSTRAP_TEST_REF" --profile codex-cloud-sandbox --nope > /dev/null 2>&1
+HOME="$H" sh "$BOOTSTRAP" "$BOOTSTRAP_TEST_REF" --profile codex-cloud-sandbox --nope >/dev/null 2>&1
 if [ -f "$H/.claude/CLAUDE.md" ]; then
-    no "codex profile leaves CLAUDE.md alone"
+  no "codex profile leaves CLAUDE.md alone"
 else
-    ok "codex profile leaves CLAUDE.md alone"
+  ok "codex profile leaves CLAUDE.md alone"
 fi
 check "codex profile still gets a banner in AGENTS.md" "1" \
-    "$(count 'acc:bootstrap-failed:start' "$H/.agents/AGENTS.md")"
+  "$(count 'acc:bootstrap-failed:start' "$H/.agents/AGENTS.md")"
 rm -rf "$H"
 
 # --- 3. repeated failures, and real policy underneath ----------------------
@@ -154,16 +160,16 @@ rm -rf "$H"
 # policy under its own warnings; dropping the policy would be worse still.
 H=$(mktemp -d)
 mkdir -p "$H/.claude"
-printf '<!-- GENERATED -->\nPOLICY-CANARY-A\nPOLICY-CANARY-B\n' > "$H/.claude/CLAUDE.md"
-run_failing_bootstrap "$H" > /dev/null
-run_failing_bootstrap "$H" > /dev/null
-run_failing_bootstrap "$H" > /dev/null
+printf '<!-- GENERATED -->\nPOLICY-CANARY-A\nPOLICY-CANARY-B\n' >"$H/.claude/CLAUDE.md"
+run_failing_bootstrap "$H" >/dev/null
+run_failing_bootstrap "$H" >/dev/null
+run_failing_bootstrap "$H" >/dev/null
 check "three failures leave one banner" "1" \
-    "$(grep -c 'acc:bootstrap-failed:start' "$H/.claude/CLAUDE.md")"
+  "$(grep -c 'acc:bootstrap-failed:start' "$H/.claude/CLAUDE.md")"
 check "  and the matching end marker" "1" \
-    "$(grep -c 'acc:bootstrap-failed:end' "$H/.claude/CLAUDE.md")"
+  "$(grep -c 'acc:bootstrap-failed:end' "$H/.claude/CLAUDE.md")"
 check "existing policy survives underneath" "2" \
-    "$(grep -c 'POLICY-CANARY' "$H/.claude/CLAUDE.md")"
+  "$(grep -c 'POLICY-CANARY' "$H/.claude/CLAUDE.md")"
 rm -rf "$H"
 
 # --- 4. pip_install's fallback chain ---------------------------------------
@@ -182,7 +188,7 @@ rm -rf "$H"
 H=$(mktemp -d)
 mkdir -p "$H/stub"
 for n in pip pip3; do
-    cat > "$H/stub/$n" << 'STUB'
+  cat >"$H/stub/$n" <<'STUB'
 #!/bin/sh
 echo "$*" >> "$LOGF"
 case "$*" in
@@ -190,22 +196,22 @@ case "$*" in
     *) echo "ERROR: Cannot uninstall packaging 24.0, RECORD file not found." >&2; exit 1 ;;
 esac
 STUB
-    chmod +x "$H/stub/$n"
+  chmod +x "$H/stub/$n"
 done
 
-sed -n '/^pip_install() {/,/^}$/p' "$BOOTSTRAP" > "$H/fn.sh"
+sed -n '/^pip_install() {/,/^}$/p' "$BOOTSTRAP" >"$H/fn.sh"
 check "pip_install was extractable from the script" "1" \
-    "$(grep -c '^pip_install() {' "$H/fn.sh")"
+  "$(grep -c '^pip_install() {' "$H/fn.sh")"
 
 PATH="$H/stub:$PATH" LOGF="$H/calls.log" sh -c '. "$0/fn.sh"; pip_install checkov' "$H"
 check "pip_install recovers on the third attempt" "0" "$?"
-check "  it tried three times" "3" "$(wc -l < "$H/calls.log" | tr -d ' ')"
+check "  it tried three times" "3" "$(wc -l <"$H/calls.log" | tr -d ' ')"
 check "  bare install first" "1" \
-    "$(sed -n 1p "$H/calls.log" | grep -c -- '--quiet --no-input checkov')"
+  "$(sed -n 1p "$H/calls.log" | grep -c -- '--quiet --no-input checkov')"
 check "  then --break-system-packages" "1" \
-    "$(sed -n 2p "$H/calls.log" | grep -cv -- '--ignore-installed')"
+  "$(sed -n 2p "$H/calls.log" | grep -cv -- '--ignore-installed')"
 check "  --ignore-installed only as a last resort" "1" \
-    "$(sed -n 3p "$H/calls.log" | grep -c -- '--ignore-installed')"
+  "$(sed -n 3p "$H/calls.log" | grep -c -- '--ignore-installed')"
 rm -rf "$H"
 
 # --- 4b. python_cli_install in the system layout: uv first, pip behind it ---
@@ -215,11 +221,11 @@ rm -rf "$H"
 # console script went, and pip must still be reached when uv fails or is absent.
 H=$(mktemp -d)
 mkdir -p "$H/stub" "$H/nouv"
-cat > "$H/stub/pip" << 'STUB'
+cat >"$H/stub/pip" <<'STUB'
 #!/bin/sh
 echo "pip $*" >> "$LOGF"
 STUB
-cat > "$H/stub/uv" << 'STUB'
+cat >"$H/stub/uv" <<'STUB'
 #!/bin/sh
 echo "uv $* UV_TOOL_BIN_DIR=${UV_TOOL_BIN_DIR:-}" >> "$LOGF"
 exit "${UV_RC:-0}"
@@ -229,28 +235,28 @@ ln -s "$H/stub/pip" "$H/nouv/pip"
 for t in sh cat; do ln -s "$(command -v "$t")" "$H/nouv/$t"; done
 
 for fn in pip_install python_cli_install; do
-    sed -n "/^$fn() {/,/^}\$/p" "$BOOTSTRAP"
-done > "$H/fn.sh"
+  sed -n "/^$fn() {/,/^}\$/p" "$BOOTSTRAP"
+done >"$H/fn.sh"
 check "python_cli_install was extractable from the script" "1" \
-    "$(count '^python_cli_install() {' "$H/fn.sh")"
+  "$(count '^python_cli_install() {' "$H/fn.sh")"
 run_pci() { # run_pci <path> <uv rc> <log>
-    PATH="$1" LOGF="$3" UV_RC="$2" INSTALL_MODE=system BIN_DIR=/sys/bin \
-        sh -c 'log() { :; }; . "$0/fn.sh"; python_cli_install checkov' "$H"
+  PATH="$1" LOGF="$3" UV_RC="$2" INSTALL_MODE=system BIN_DIR=/sys/bin \
+    sh -c 'log() { :; }; . "$0/fn.sh"; python_cli_install checkov' "$H"
 }
 
 run_pci "$H/stub:$PATH" 0 "$H/a.log"
 check "system layout with uv installs through uv" "0" "$?"
 check "  into BIN_DIR, and pip is never called" "1 0" \
-    "$(count '^uv tool install checkov UV_TOOL_BIN_DIR=/sys/bin$' "$H/a.log") $(count '^pip ' "$H/a.log")"
+  "$(count '^uv tool install checkov UV_TOOL_BIN_DIR=/sys/bin$' "$H/a.log") $(count '^pip ' "$H/a.log")"
 
 run_pci "$H/stub:$PATH" 1 "$H/b.log"
 check "a failing uv falls back to pip" "0" "$?"
 check "  uv then pip, once each" "1 1" \
-    "$(count '^uv ' "$H/b.log") $(count '^pip install' "$H/b.log")"
+  "$(count '^uv ' "$H/b.log") $(count '^pip install' "$H/b.log")"
 
 run_pci "$H/nouv" 0 "$H/c.log"
 check "no uv on PATH goes straight to pip" "0 1" \
-    "$(count '^uv ' "$H/c.log") $(count '^pip install' "$H/c.log")"
+  "$(count '^uv ' "$H/c.log") $(count '^pip install' "$H/c.log")"
 rm -rf "$H"
 
 # --- 5. the gather script reads what the bootstrap writes ------------------
@@ -260,7 +266,7 @@ rm -rf "$H"
 GATHER="$ROOT/home/bin/start-session-gather-state"
 H=$(mktemp -d)
 mkdir -p "$H/.agents/skills"
-cat > "$H/.agents/.bootstrap-manifest" << 'EOF'
+cat >"$H/.agents/.bootstrap-manifest" <<'EOF'
 status=failed
 exit_code=1
 failed_step=could not install checkov from PyPI
@@ -270,44 +276,44 @@ profile=claude-cloud-sandbox
 log=/tmp/bootstrap.log
 EOF
 currency() {
-    HOME="$1" "$GATHER" 2> /dev/null |
-        sed -n '/^===bootstrap_currency/,/^===[a-z]/p' | sed -n '2p'
+  HOME="$1" "$GATHER" 2>/dev/null \
+    | sed -n '/^===bootstrap_currency/,/^===[a-z]/p' | sed -n '2p'
 }
 check "gather reports state=failed with the step" \
-    "state=failed step=could not install checkov from PyPI" "$(currency "$H")"
+  "state=failed step=could not install checkov from PyPI" "$(currency "$H")"
 
 # A manifest predating the status field can only have been written by a run
 # that reached the end, so its absence must keep meaning what it used to.
-cat > "$H/.agents/.bootstrap-manifest" << 'EOF'
+cat >"$H/.agents/.bootstrap-manifest" <<'EOF'
 ref=main
 ref_kind=pin
 sha=abc123
 installed_at=2026-08-20T00:00:00Z
 EOF
 check "a manifest with no status= is not read as failed" \
-    "state=pinned ref=main sha=abc123 installed_at=2026-08-20T00:00:00Z" \
-    "$(currency "$H")"
+  "state=pinned ref=main sha=abc123 installed_at=2026-08-20T00:00:00Z" \
+  "$(currency "$H")"
 
 # A behind container must be told BOTH halves. Reporting only the re-run is
 # what makes the drift recur: it fixes the session in front of you and leaves
 # the next one restoring the same snapshot (#347).
-cat > "$H/.agents/.bootstrap-manifest" << 'EOF'
+cat >"$H/.agents/.bootstrap-manifest" <<'EOF'
 status=ok
 ref=main
 ref_kind=ref
 sha=0000000000000000000000000000000000000000
 installed_at=2026-08-01T00:00:00Z
 EOF
-behind=$(HOME="$H" "$GATHER" 2> /dev/null |
-    sed -n '/^===bootstrap_currency/,/^===[a-z]/p')
+behind=$(HOME="$H" "$GATHER" 2>/dev/null \
+  | sed -n '/^===bootstrap_currency/,/^===[a-z]/p')
 check "a behind container gets the in-session remedy" "1" \
-    "$(printf '%s\n' "$behind" | grep -c '^remedy=re-run the bootstrap')"
+  "$(printf '%s\n' "$behind" | grep -c '^remedy=re-run the bootstrap')"
 check "  and the recurrence half (bump Rev:)" "1" \
-    "$(printf '%s\n' "$behind" | grep -c '^recurrence=.*Rev:')"
+  "$(printf '%s\n' "$behind" | grep -c '^recurrence=.*Rev:')"
 
 rm -f "$H/.agents/.bootstrap-manifest"
 check "no manifest still means no-manifest, not failed" \
-    "state=no-manifest" "$(currency "$H")"
+  "state=no-manifest" "$(currency "$H")"
 rm -rf "$H"
 
 # --- 6. tiering: the toolkit runs before any capability -------------------
@@ -320,69 +326,69 @@ H=$(mktemp -d)
 LOG="$H/run.log"
 # A resumed container keeps the neutral AGENTS.md an older run wrote (#310).
 mkdir -p "$H/.agents"
-printf 'STALE-NEUTRAL-POLICY\n' > "$H/.agents/AGENTS.md"
+printf 'STALE-NEUTRAL-POLICY\n' >"$H/.agents/AGENTS.md"
 HOME="$H" sh "$BOOTSTRAP_FULL" "$BOOTSTRAP_TEST_REF" --no-gcloud --no-precommit --no-hooks --no-terraform \
-    > "$LOG" 2>&1
+  >"$LOG" 2>&1
 check "a toolkit-only run succeeds" "0" "$?"
 check "  the claude profile's policy is a composed CLAUDE.md" "1" \
-    "$(head -1 "$H/.claude/CLAUDE.md" 2> /dev/null | grep -c '^<!-- GENERATED')"
+  "$(head -1 "$H/.claude/CLAUDE.md" 2>/dev/null | grep -c '^<!-- GENERATED')"
 check "  and an older run's .agents/AGENTS.md is removed" "0" \
-    "$([ -e "$H/.agents/AGENTS.md" ] && echo 1 || echo 0)"
+  "$([ -e "$H/.agents/AGENTS.md" ] && echo 1 || echo 0)"
 
 # The telemetry helper arrives with the toolkit and is handed the manifest, so a
 # run is on the spool before any ingest exists. Spool-first is the whole point:
 # the setup phase cannot authenticate to one (#431).
 # Wherever the manifest says the bin dir is: a root run installs system-wide.
-TELEM_BIN=$(sed -n 's/^bin_dir=//p' "$H/.agents/.bootstrap-manifest" 2> /dev/null)
+TELEM_BIN=$(sed -n 's/^bin_dir=//p' "$H/.agents/.bootstrap-manifest" 2>/dev/null)
 check "the telemetry helper is installed" "1" \
-    "$([ -x "$TELEM_BIN/agent-telemetry" ] && echo 1 || echo 0)"
+  "$([ -x "$TELEM_BIN/agent-telemetry" ] && echo 1 || echo 0)"
 check "  and reachable at the path the hooks use" "1" \
-    "$([ -x "$H/.claude/bin/agent-telemetry" ] && echo 1 || echo 0)"
+  "$([ -x "$H/.claude/bin/agent-telemetry" ] && echo 1 || echo 0)"
 check "  and the manifest is on the spool as a bootstrap record" "bootstrap ok" \
-    "$(jq -r '.kind + " " + .fields.status' "$H/.agents/telemetry/spool.jsonl" 2> /dev/null | head -1)"
+  "$(jq -r '.kind + " " + .fields.status' "$H/.agents/telemetry/spool.jsonl" 2>/dev/null | head -1)"
 
-first_line_of() { grep -n "$1" "$LOG" 2> /dev/null | head -1 | cut -d: -f1; }
+first_line_of() { grep -n "$1" "$LOG" 2>/dev/null | head -1 | cut -d: -f1; }
 skills_at=$(first_line_of 'skill   -> .*start-session')
 policy_at=$(first_line_of 'policy  ->')
 manifest_at=$(first_line_of 'manifst ->')
 if [ -n "$skills_at" ] && [ -n "$policy_at" ] && [ -n "$manifest_at" ]; then
-    ok "toolkit sections ran (policy, skills, manifest all logged)"
-    if [ "$policy_at" -lt "$skills_at" ]; then
-        ok "  policy lands before skills"
-    else
-        no "  policy lands before skills"
-    fi
-    if [ "$skills_at" -lt "$manifest_at" ]; then
-        ok "  manifest is written last"
-    else
-        no "  manifest is written last"
-    fi
+  ok "toolkit sections ran (policy, skills, manifest all logged)"
+  if [ "$policy_at" -lt "$skills_at" ]; then
+    ok "  policy lands before skills"
+  else
+    no "  policy lands before skills"
+  fi
+  if [ "$skills_at" -lt "$manifest_at" ]; then
+    ok "  manifest is written last"
+  else
+    no "  manifest is written last"
+  fi
 else
-    no "toolkit sections ran (policy, skills, manifest all logged)"
+  no "toolkit sections ran (policy, skills, manifest all logged)"
 fi
 check "a clean run records status=ok" "ok" \
-    "$(sed -n 's/^status=//p' "$H/.agents/.bootstrap-manifest")"
+  "$(sed -n 's/^status=//p' "$H/.agents/.bootstrap-manifest")"
 check "  and an empty degraded list" "" \
-    "$(sed -n 's/^degraded=//p' "$H/.agents/.bootstrap-manifest")"
+  "$(sed -n 's/^degraded=//p' "$H/.agents/.bootstrap-manifest")"
 check "  and leaves no failure banner" "0" \
-    "$(count 'acc:bootstrap-failed' "$H/.claude/CLAUDE.md")"
+  "$(count 'acc:bootstrap-failed' "$H/.claude/CLAUDE.md")"
 # devknowledge is on by default for claude-cloud-sandbox, the profile this run
 # took by default, so the same run registered the server with no flag.
 check "  devknowledge is on by profile default" "1" \
-    "$(sed -n 's/^devknowledge=//p' "$H/.agents/.bootstrap-manifest")"
+  "$(sed -n 's/^devknowledge=//p' "$H/.agents/.bootstrap-manifest")"
 check "  and google-developer-knowledge is registered" "http" \
-    "$(jq -r '.mcpServers["google-developer-knowledge"].type' "$H/.claude.json" 2> /dev/null)"
+  "$(jq -r '.mcpServers["google-developer-knowledge"].type' "$H/.claude.json" 2>/dev/null)"
 rm -rf "$H"
 
 # The default is claude-cloud-sandbox's alone. Codex does not read
 # ~/.claude.json, so its profile must not write one.
 H=$(mktemp -d)
 HOME="$H" sh "$BOOTSTRAP_FULL" "$BOOTSTRAP_TEST_REF" --profile codex-cloud-sandbox \
-    --no-gcloud --no-precommit --no-hooks --no-terraform > "$H/run.log" 2>&1
+  --no-gcloud --no-precommit --no-hooks --no-terraform >"$H/run.log" 2>&1
 check "codex-cloud-sandbox leaves devknowledge off" "0" \
-    "$(sed -n 's/^devknowledge=//p' "$H/.agents/.bootstrap-manifest")"
+  "$(sed -n 's/^devknowledge=//p' "$H/.agents/.bootstrap-manifest")"
 check "  and writes no ~/.claude.json" "0" \
-    "$([ -f "$H/.claude.json" ] && echo 1 || echo 0)"
+  "$([ -f "$H/.claude.json" ] && echo 1 || echo 0)"
 rm -rf "$H"
 
 # --- 6b. one resolved commit per run (#610) --------------------------------
@@ -394,7 +400,7 @@ rm -rf "$H"
 # than whatever the branch carries on the remote.
 H=$(mktemp -d)
 mkdir -p "$H/stub"
-cat > "$H/stub/git" << EOF
+cat >"$H/stub/git" <<EOF
 #!/bin/sh
 # Fails the one subcommand the resolution uses and passes the rest through.
 [ "\${1:-}" = ls-remote ] && exit 128
@@ -402,10 +408,10 @@ exec $(command -v git) "\$@"
 EOF
 chmod +x "$H/stub/git"
 HOME="$H" PATH="$H/stub:$PATH" sh "$BOOTSTRAP_FULL" "$BOOTSTRAP_TEST_REF" \
-    --no-gcloud --no-precommit --no-hooks --no-terraform > "$H/run.log" 2>&1
+  --no-gcloud --no-precommit --no-hooks --no-terraform >"$H/run.log" 2>&1
 check "an unresolvable ref still completes the run" "0" "$?"
 check "  and the manifest says unresolved" "ref_kind=unresolved sha=unresolved" \
-    "$(sed -n -e 's/^\(ref_kind=.*\)$/\1/p' -e 's/^\(sha=.*\)$/\1/p' "$H/.agents/.bootstrap-manifest" | tr '\n' ' ' | sed 's/ $//')"
+  "$(sed -n -e 's/^\(ref_kind=.*\)$/\1/p' -e 's/^\(sha=.*\)$/\1/p' "$H/.agents/.bootstrap-manifest" | tr '\n' ' ' | sed 's/ $//')"
 rm -rf "$H"
 
 # A sha-addressed copy that differs from the running one is handed the original
@@ -413,31 +419,31 @@ rm -rf "$H"
 # happens; RAW is the harness seam that points the self-check at it.
 H=$(mktemp -d)
 mkdir -p "$H/raw/cloud"
-cat > "$H/raw/cloud/bootstrap.sh" << 'EOF'
+cat >"$H/raw/cloud/bootstrap.sh" <<'EOF'
 #!/bin/sh
 echo "REEXEC-RAN guard=${BOOTSTRAP_REEXEC:+set} args=$*"
 EOF
 (
-    unset BOOTSTRAP_REEXEC
-    HOME="$H" RAW="file://$H/raw" sh "$BOOTSTRAP_FULL" "$BOOTSTRAP_TEST_REF" \
-        --no-gcloud --no-precommit --profile codex-cloud-sandbox
-) > "$H/run.log" 2>&1
+  unset BOOTSTRAP_REEXEC
+  HOME="$H" RAW="file://$H/raw" sh "$BOOTSTRAP_FULL" "$BOOTSTRAP_TEST_REF" \
+    --no-gcloud --no-precommit --profile codex-cloud-sandbox
+) >"$H/run.log" 2>&1
 check "a stale copy re-runs the sha-addressed one once" "1" "$(count '^REEXEC-RAN ' "$H/run.log")"
 check "  with the guard set, so the next run cannot re-exec again" "1" \
-    "$(count '^REEXEC-RAN guard=set ' "$H/run.log")"
+  "$(count '^REEXEC-RAN guard=set ' "$H/run.log")"
 check "  and with the original arguments, in order" "1" \
-    "$(count "args=$BOOTSTRAP_TEST_REF --no-gcloud --no-precommit --profile codex-cloud-sandbox\$" "$H/run.log")"
+  "$(count "args=$BOOTSTRAP_TEST_REF --no-gcloud --no-precommit --profile codex-cloud-sandbox\$" "$H/run.log")"
 check "  and says so" "1" "$(count 're-running' "$H/run.log")"
 
 # With the guard already set the same difference is ignored.
 (
-    BOOTSTRAP_REEXEC=1
-    export BOOTSTRAP_REEXEC
-    HOME="$H" RAW="file://$H/raw" sh "$BOOTSTRAP_FULL" "$BOOTSTRAP_TEST_REF" \
-        --no-gcloud --no-precommit --profile codex-cloud-sandbox
-) > "$H/guarded.log" 2>&1
+  BOOTSTRAP_REEXEC=1
+  export BOOTSTRAP_REEXEC
+  HOME="$H" RAW="file://$H/raw" sh "$BOOTSTRAP_FULL" "$BOOTSTRAP_TEST_REF" \
+    --no-gcloud --no-precommit --profile codex-cloud-sandbox
+) >"$H/guarded.log" 2>&1
 check "a run that was already handed over does not re-exec" "0" \
-    "$(count 'REEXEC-RAN\|re-running' "$H/guarded.log")"
+  "$(count 'REEXEC-RAN\|re-running' "$H/guarded.log")"
 rm -rf "$H"
 
 # --- 7. a capability that cannot install degrades, it does not abort -------
@@ -456,12 +462,12 @@ rm -rf "$H"
 H=$(mktemp -d)
 LOG="$H/run.log"
 sed -e 's#https://github.com/cli/cli/releases#https://bootstrap-test.invalid/cli#' \
-    -e 's#if command -v gh > /dev/null 2>&1; then#if false; then#' \
-    "$BOOTSTRAP_FULL" > "$H/bootstrap.sh"
+  -e 's#if command -v gh > /dev/null 2>&1; then#if false; then#' \
+  "$BOOTSTRAP_FULL" >"$H/bootstrap.sh"
 check "the gh fixture neutered the already-present guard" "0" \
-    "$(count 'command -v gh > /dev/null 2>&1; then' "$H/bootstrap.sh")"
+  "$(count 'command -v gh > /dev/null 2>&1; then' "$H/bootstrap.sh")"
 HOME="$H" sh "$H/bootstrap.sh" "$BOOTSTRAP_TEST_REF" --with-gh --no-gcloud --no-precommit --no-hooks \
-    > "$LOG" 2>&1
+  >"$LOG" 2>&1
 check "a failing capability does not fail the run" "0" "$?"
 
 M="$H/.agents/.bootstrap-manifest"
@@ -471,22 +477,22 @@ check "  and it names the capability" "gh" "$(sed -n 's/^degraded=//p' "$M")"
 # A degraded container is not a broken one: the banner is for a dead run only,
 # or every sandbox without gh would come up shouting.
 check "  no failure banner for a degraded run" "0" \
-    "$(count 'acc:bootstrap-failed' "$H/.claude/CLAUDE.md")"
+  "$(count 'acc:bootstrap-failed' "$H/.claude/CLAUDE.md")"
 # The toolkit must still be complete -- that is what the tier split buys.
 check "  the skills still installed" "1" \
-    "$([ -f "$H/.agents/skills/start-session/SKILL.md" ] && echo 1 || echo 0)"
+  "$([ -f "$H/.agents/skills/start-session/SKILL.md" ] && echo 1 || echo 0)"
 check "  the policy still installed" "1" \
-    "$([ -f "$H/.claude/CLAUDE.md" ] && echo 1 || echo 0)"
+  "$([ -f "$H/.claude/CLAUDE.md" ] && echo 1 || echo 0)"
 check "the run says DEGRADED out loud" "1" "$(grep -c 'DEGRADED' "$LOG")"
 
 # And start-session must surface it without calling the container broken.
 mkdir -p "$H/.agents/skills"
-cur=$(HOME="$H" "$GATHER" 2> /dev/null |
-    sed -n '/^===bootstrap_currency/,/^===[a-z]/p')
+cur=$(HOME="$H" "$GATHER" 2>/dev/null \
+  | sed -n '/^===bootstrap_currency/,/^===[a-z]/p')
 check "gather emits a degraded= line" "degraded=gh" \
-    "$(printf '%s\n' "$cur" | sed -n 's/^\(degraded=.*\)$/\1/p')"
+  "$(printf '%s\n' "$cur" | sed -n 's/^\(degraded=.*\)$/\1/p')"
 check "  and does NOT report state=failed" "0" \
-    "$(printf '%s\n' "$cur" | grep -c 'state=failed')"
+  "$(printf '%s\n' "$cur" | grep -c 'state=failed')"
 rm -rf "$H"
 
 # --- 8. the pre-commit warm ------------------------------------------------
@@ -512,22 +518,22 @@ repo_lines=$(count '^  - repo: https://' "$WARM_YAML")
 rev_lines=$(count '^    rev: ' "$WARM_YAML")
 check "every repo carries a rev" "$repo_lines" "$rev_lines"
 check "  and none of them float" "0" \
-    "$(count '^    rev: \(main\|master\|HEAD\)$' "$WARM_YAML")"
+  "$(count '^    rev: \(main\|master\|HEAD\)$' "$WARM_YAML")"
 
 # gitleaks and actionlint stay in the set through their `-system` ids, which
 # build nothing (#609). The plain ids are `language: golang` and compile from
 # source, ~30 s each, so one creeping back in is the regression to catch.
 for r in gitleaks actionlint; do
-    check "  lists $r" "1" "$(count "/$r\$" "$WARM_YAML")"
-    check "  as $r-system, not the golang id" "1 0" \
-        "$(count "id: $r-system\$" "$WARM_YAML") $(count "id: $r\$" "$WARM_YAML")"
+  check "  lists $r" "1" "$(count "/$r\$" "$WARM_YAML")"
+  check "  as $r-system, not the golang id" "1 0" \
+    "$(count "id: $r-system\$" "$WARM_YAML") $(count "id: $r\$" "$WARM_YAML")"
 done
 
 # semgrep is #316's, provisioned as a system binary. Its pre-commit hook clones
 # the whole monorepo -- 1.1 G of cache and ~190 s -- which would not fit the
 # snapshot budget and would cache something the estate decided not to use.
 check "  and does not warm semgrep" "0" \
-    "$(count '^  - repo: .*semgrep' "$WARM_YAML")"
+  "$(count '^  - repo: .*semgrep' "$WARM_YAML")"
 
 echo
 echo "cloud/bootstrap.sh — warming the cache at bootstrap time"
@@ -537,17 +543,17 @@ echo "cloud/bootstrap.sh — warming the cache at bootstrap time"
 # markdownlint-cli2 first, and the warm is what is under test.
 H=$(mktemp -d)
 {
-    for fn in precommit_home warm_install cap_precommit_warm fetch now_s record_timing capability; do
-        sed -n "/^$fn() {/,/^}\$/p" "$BOOTSTRAP"
-    done
-} > "$H/fn.sh"
+  for fn in precommit_home warm_install cap_precommit_warm fetch now_s record_timing capability; do
+    sed -n "/^$fn() {/,/^}\$/p" "$BOOTSTRAP"
+  done
+} >"$H/fn.sh"
 for f in precommit_home warm_install cap_precommit_warm fetch capability; do
-    check "$f was extractable from the script" "1" "$(count "^$f() {" "$H/fn.sh")"
+  check "$f was extractable from the script" "1" "$(count "^$f() {" "$H/fn.sh")"
 done
 
 # The harness the extracted functions expect. `die` is the real contract --
 # write the reason where capability() reads it, then leave the subshell.
-cat > "$H/harness.sh" << 'HARNESS'
+cat >"$H/harness.sh" <<'HARNESS'
 set -eu
 log() { echo "[bootstrap] $*"; }
 die() {
@@ -565,7 +571,7 @@ HARNESS
 # fetch, scratch repo, cache, count, manifest field -- and a golang hook would
 # spend two minutes proving nothing this does not.
 mkdir -p "$H/raw/cloud"
-cat > "$H/raw/cloud/precommit-warm.yaml" << 'CFG'
+cat >"$H/raw/cloud/precommit-warm.yaml" <<'CFG'
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v6.0.0
@@ -583,11 +589,11 @@ CFG
 mkdir -p "$H/t8a" "$H/nopc"
 ln -sf "$(command -v sh)" "$H/nopc/sh"
 out=$(TMP="$H/t8a" FAIL_FILE="$H/t8a.fail" RAW="file://$H/raw" REF=test \
-    FNS="$H/fn.sh" PATH="$H/nopc" \
-    sh -c '. "$0"; cap_precommit_warm' "$H/harness.sh" 2>&1)
+  FNS="$H/fn.sh" PATH="$H/nopc" \
+  sh -c '. "$0"; cap_precommit_warm' "$H/harness.sh" 2>&1)
 check "with no pre-commit on PATH the warm stands down" "0" "$?"
 check "  and says so rather than failing silently" "1" \
-    "$(printf '%s\n' "$out" | grep -c 'nothing to warm')"
+  "$(printf '%s\n' "$out" | grep -c 'nothing to warm')"
 
 # --- 8b. the real thing, from a directory that is not a checkout ------------
 #
@@ -596,75 +602,75 @@ check "  and says so rather than failing silently" "1" \
 # directory?", exit 1). A setup script's cwd belongs to the harness and is
 # frequently not a checkout, so the function makes its own scratch repo. Before
 # it did, the warm failed on every container whose cwd happened to be /.
-if command -v pre-commit > /dev/null 2>&1; then
-    mkdir -p "$H/t8b" "$H/notarepo" "$H/cache"
-    # A planted checkout for mechanism 2, under the cwd because $PWD is one of
-    # the roots the scan walks. It goes there rather than under a redirected
-    # $HOME -- which would be the more obvious way to bound the scan -- because
-    # HOME is where Python resolves its user site-packages from, and a
-    # `pip install --user pre-commit` (what a non-root CI runner gets) stops
-    # being importable the moment HOME moves. That failure is instant and its
-    # message is about a missing module, which reads as a broken warm rather
-    # than a broken test.
-    mkdir -p "$H/notarepo/repo-a"
-    git -C "$H/notarepo/repo-a" init -q 2> /dev/null
-    cp "$H/raw/cloud/precommit-warm.yaml" "$H/notarepo/repo-a/.pre-commit-config.yaml"
+if command -v pre-commit >/dev/null 2>&1; then
+  mkdir -p "$H/t8b" "$H/notarepo" "$H/cache"
+  # A planted checkout for mechanism 2, under the cwd because $PWD is one of
+  # the roots the scan walks. It goes there rather than under a redirected
+  # $HOME -- which would be the more obvious way to bound the scan -- because
+  # HOME is where Python resolves its user site-packages from, and a
+  # `pip install --user pre-commit` (what a non-root CI runner gets) stops
+  # being importable the moment HOME moves. That failure is instant and its
+  # message is about a missing module, which reads as a broken warm rather
+  # than a broken test.
+  mkdir -p "$H/notarepo/repo-a"
+  git -C "$H/notarepo/repo-a" init -q 2>/dev/null
+  cp "$H/raw/cloud/precommit-warm.yaml" "$H/notarepo/repo-a/.pre-commit-config.yaml"
 
-    log8b="$H/t8b.log"
-    # WARM_ROOTS bounds the scan to the planted checkout. Without it the scan
-    # also walks /home/user and $HOME, and a container holding five clones fills
-    # the warm's 5-checkout cap before it reaches repo-a.
-    ( cd "$H/notarepo" && TMP="$H/t8b" FAIL_FILE="$H/t8b.fail" RAW="file://$H/raw" \
-        REF=test FNS="$H/fn.sh" PRE_COMMIT_HOME="$H/cache" WARM_ROOTS="$H/notarepo" \
-        sh -c '. "$0"; cap_precommit_warm' "$H/harness.sh" ) > "$log8b" 2>&1
-    warm_rc=$?
-    check "a warm from a non-checkout cwd succeeds" "0" "$warm_rc"
-    # What the warm said, when it did not work. Without this the whole section
-    # reports six expected-1-actual-0 lines and nothing about the cause, which
-    # is a CI failure that has to be reproduced before it can be read.
-    if [ "$warm_rc" -ne 0 ]; then
-        printf '        --- warm output ---\n'
-        sed 's/^/        /' "$log8b"
-    fi
-    if grep -q 'more than 5 checkouts found' "$log8b"; then
-        printf '        the warm hit its 5-checkout cap: %s\n' \
-            "$(grep 'more than 5 checkouts found' "$log8b" | head -1)"
-    fi
-    check "  it warmed the estate hook set" "1" \
-        "$(count 'warm    -> estate hook set' "$log8b")"
-    check "  and the checkout it found in the workspace" "1" \
-        "$(count 'warm    -> .*repo-a/.pre-commit-config.yaml' "$log8b")"
-    # Per-repo timing: the estate set built pre-commit-hooks from an empty
-    # cache, so it is timed along with the clone before it. repo-a uses the same
-    # config, finds it cached, and so adds nothing.
-    check "  the hook repo it built is timed" "1" \
-        "$(count '^warm\.pre-commit-hooks=[0-9][0-9]*s$' "$H/t8b/step-timings")"
-    check "  as is the clone before the first build" "1" \
-        "$(count '^warm\.clone=[0-9][0-9]*s$' "$H/t8b/step-timings")"
-    check "  and a cached checkout adds no entries" "0" \
-        "$(count '^warm\.repo-a\.' "$H/t8b/step-timings")"
+  log8b="$H/t8b.log"
+  # WARM_ROOTS bounds the scan to the planted checkout. Without it the scan
+  # also walks /home/user and $HOME, and a container holding five clones fills
+  # the warm's 5-checkout cap before it reaches repo-a.
+  (cd "$H/notarepo" && TMP="$H/t8b" FAIL_FILE="$H/t8b.fail" RAW="file://$H/raw" \
+    REF=test FNS="$H/fn.sh" PRE_COMMIT_HOME="$H/cache" WARM_ROOTS="$H/notarepo" \
+    sh -c '. "$0"; cap_precommit_warm' "$H/harness.sh") >"$log8b" 2>&1
+  warm_rc=$?
+  check "a warm from a non-checkout cwd succeeds" "0" "$warm_rc"
+  # What the warm said, when it did not work. Without this the whole section
+  # reports six expected-1-actual-0 lines and nothing about the cause, which
+  # is a CI failure that has to be reproduced before it can be read.
+  if [ "$warm_rc" -ne 0 ]; then
+    printf '        --- warm output ---\n'
+    sed 's/^/        /' "$log8b"
+  fi
+  if grep -q 'more than 5 checkouts found' "$log8b"; then
+    printf '        the warm hit its 5-checkout cap: %s\n' \
+      "$(grep 'more than 5 checkouts found' "$log8b" | head -1)"
+  fi
+  check "  it warmed the estate hook set" "1" \
+    "$(count 'warm    -> estate hook set' "$log8b")"
+  check "  and the checkout it found in the workspace" "1" \
+    "$(count 'warm    -> .*repo-a/.pre-commit-config.yaml' "$log8b")"
+  # Per-repo timing: the estate set built pre-commit-hooks from an empty
+  # cache, so it is timed along with the clone before it. repo-a uses the same
+  # config, finds it cached, and so adds nothing.
+  check "  the hook repo it built is timed" "1" \
+    "$(count '^warm\.pre-commit-hooks=[0-9][0-9]*s$' "$H/t8b/step-timings")"
+  check "  as is the clone before the first build" "1" \
+    "$(count '^warm\.clone=[0-9][0-9]*s$' "$H/t8b/step-timings")"
+  check "  and a cached checkout adds no entries" "0" \
+    "$(count '^warm\.repo-a\.' "$H/t8b/step-timings")"
 
-    # The acceptance criterion this file exists to hold: cache present after the
-    # bootstrap, asserted from the cache rather than inferred from an exit code.
-    envs=$(find "$H/cache" -maxdepth 1 -type d -name 'repo*' 2> /dev/null | wc -l | tr -d ' ')
-    if [ "${envs:-0}" -gt 0 ]; then
-        ok "the cache really holds a hook environment ($envs)"
-    else
-        no "the cache really holds a hook environment"
-    fi
-    # And the same number reaches the manifest, through the file that carries it
-    # out of capability()'s subshell.
-    check "  the count reaches the manifest field" "$envs" \
-        "$(cat "$H/t8b/warm-envs" 2> /dev/null || echo missing)"
+  # The acceptance criterion this file exists to hold: cache present after the
+  # bootstrap, asserted from the cache rather than inferred from an exit code.
+  envs=$(find "$H/cache" -maxdepth 1 -type d -name 'repo*' 2>/dev/null | wc -l | tr -d ' ')
+  if [ "${envs:-0}" -gt 0 ]; then
+    ok "the cache really holds a hook environment ($envs)"
+  else
+    no "the cache really holds a hook environment"
+  fi
+  # And the same number reaches the manifest, through the file that carries it
+  # out of capability()'s subshell.
+  check "  the count reaches the manifest field" "$envs" \
+    "$(cat "$H/t8b/warm-envs" 2>/dev/null || echo missing)"
 
-    # A hook that runs without building anything is the whole point.
-    ( cd "$H/notarepo/repo-a" && PRE_COMMIT_HOME="$H/cache" \
-        pre-commit run --all-files ) > "$H/t8b-run.log" 2>&1 || true
-    check "  a later run builds no environment" "0" \
-        "$(count 'Installing environment' "$H/t8b-run.log")"
+  # A hook that runs without building anything is the whole point.
+  (cd "$H/notarepo/repo-a" && PRE_COMMIT_HOME="$H/cache" \
+    pre-commit run --all-files) >"$H/t8b-run.log" 2>&1 || true
+  check "  a later run builds no environment" "0" \
+    "$(count 'Installing environment' "$H/t8b-run.log")"
 else
-    no "pre-commit is not on PATH — the warm assertions did not run"
-    echo "        install it (pip install pre-commit); CI does this deliberately"
+  no "pre-commit is not on PATH — the warm assertions did not run"
+  echo "        install it (pip install pre-commit); CI does this deliberately"
 fi
 
 # --- 8c. a warm that cannot run degrades, it does not abort ----------------
@@ -674,7 +680,7 @@ fi
 # gate is present and the first commit pays for it. Those are different
 # failures and `degraded=` has to be able to say which.
 mkdir -p "$H/t8c"
-cat > "$H/t8c-run.sh" << 'RUN'
+cat >"$H/t8c-run.sh" <<'RUN'
 set -eu
 FAIL_FILE="$TMP/fail-reason"
 . "$HARNESS_PATH"
@@ -685,14 +691,14 @@ echo "degraded=$DEGRADED"
 echo "timings=$TIMINGS"
 RUN
 out=$(TMP="$H/t8c" RAW="file://$H/raw-does-not-exist" REF=test FNS="$H/fn.sh" \
-    HARNESS_PATH="$H/harness.sh" PRE_COMMIT_HOME="$H/cache-8c" \
-    sh "$H/t8c-run.sh" 2>&1) || true
+  HARNESS_PATH="$H/harness.sh" PRE_COMMIT_HOME="$H/cache-8c" \
+  sh "$H/t8c-run.sh" 2>&1) || true
 check "a warm that cannot fetch its config does not kill the run" "1" \
-    "$(printf '%s\n' "$out" | grep -c '^SURVIVED$')"
+  "$(printf '%s\n' "$out" | grep -c '^SURVIVED$')"
 check "  it names itself in degraded=" "1" \
-    "$(printf '%s\n' "$out" | grep -c '^degraded=precommit-warm$')"
+  "$(printf '%s\n' "$out" | grep -c '^degraded=precommit-warm$')"
 check "  and it is timed even though it failed" "1" \
-    "$(printf '%s\n' "$out" | grep -c '^timings=precommit-warm=')"
+  "$(printf '%s\n' "$out" | grep -c '^timings=precommit-warm=')"
 
 # --- 8c'. per-tool timings survive the capability subshell -------------------
 #
@@ -700,12 +706,12 @@ check "  and it is timed even though it failed" "1" \
 # its subshell; capability() has to fold that file into TIMINGS, after the
 # capability's own entry, and empty it for the next one.
 {
-    for fn in now_s record_timing step_begin step_end capability; do
-        sed -n "/^$fn() {/,/^}\$/p" "$BOOTSTRAP"
-    done
-} > "$H/fn-steps.sh"
+  for fn in now_s record_timing step_begin step_end capability; do
+    sed -n "/^$fn() {/,/^}\$/p" "$BOOTSTRAP"
+  done
+} >"$H/fn-steps.sh"
 mkdir -p "$H/t8e"
-cat > "$H/t8e-run.sh" << 'RUN'
+cat >"$H/t8e-run.sh" <<'RUN'
 set -eu
 log() { :; }
 TIMINGS=
@@ -724,8 +730,8 @@ echo "timings=$TIMINGS"
 RUN
 out=$(TMP="$H/t8e" FNS="$H/fn-steps.sh" sh "$H/t8e-run.sh" 2>&1)
 check "step timings are folded in after the capability's own entry" \
-    "timings=fake=0s fake.one=0s fake.two=0s fake.two.pip-attempt=2 other=0s" \
-    "$(printf '%s\n' "$out" | sed 's/=[0-9]*s/=0s/g' | grep '^timings=')"
+  "timings=fake=0s fake.one=0s fake.two=0s fake.two.pip-attempt=2 other=0s" \
+  "$(printf '%s\n' "$out" | sed 's/=[0-9]*s/=0s/g' | grep '^timings=')"
 
 # --- 8d. the core.hooksPath claim cloud/README.md now makes ----------------
 #
@@ -736,34 +742,34 @@ check "step timings are folded in after the capability's own entry" \
 # exactly the containers the bootstrap got right, so the two have to be called
 # separately (#441). It is third-party behaviour, which is why it is asserted
 # here rather than trusted to stay true.
-if command -v pre-commit > /dev/null 2>&1; then
-    mkdir -p "$H/hp/repo" "$H/hp/hooks"
-    git -C "$H/hp/repo" init -q 2> /dev/null
-    git -C "$H/hp/repo" config core.hooksPath "$H/hp/hooks"
-    cp "$H/raw/cloud/precommit-warm.yaml" "$H/hp/repo/.pre-commit-config.yaml"
+if command -v pre-commit >/dev/null 2>&1; then
+  mkdir -p "$H/hp/repo" "$H/hp/hooks"
+  git -C "$H/hp/repo" init -q 2>/dev/null
+  git -C "$H/hp/repo" config core.hooksPath "$H/hp/hooks"
+  cp "$H/raw/cloud/precommit-warm.yaml" "$H/hp/repo/.pre-commit-config.yaml"
 
-    ( cd "$H/hp/repo" && pre-commit install ) > "$H/hp/install.log" 2>&1
-    check "pre-commit install refuses under core.hooksPath" "1" "$?"
-    check "  in the words the README quotes" "1" \
-        "$(count 'Cowardly refusing to install hooks' "$H/hp/install.log")"
+  (cd "$H/hp/repo" && pre-commit install) >"$H/hp/install.log" 2>&1
+  check "pre-commit install refuses under core.hooksPath" "1" "$?"
+  check "  in the words the README quotes" "1" \
+    "$(count 'Cowardly refusing to install hooks' "$H/hp/install.log")"
 
-    # The other half, and the reason the warm can use it safely: exit 0, and no
-    # hook written anywhere. The cache from §8b covers this config already, so
-    # this builds nothing.
-    ( cd "$H/hp/repo" && PRE_COMMIT_HOME="$H/cache" pre-commit install-hooks ) \
-        > "$H/hp/install-hooks.log" 2>&1
-    check "install-hooks is unaffected by it" "0" "$?"
-    check "  and writes no hook" "0" \
-        "$(find "$H/hp/hooks" -type f 2> /dev/null | wc -l | tr -d ' ')"
+  # The other half, and the reason the warm can use it safely: exit 0, and no
+  # hook written anywhere. The cache from §8b covers this config already, so
+  # this builds nothing.
+  (cd "$H/hp/repo" && PRE_COMMIT_HOME="$H/cache" pre-commit install-hooks) \
+    >"$H/hp/install-hooks.log" 2>&1
+  check "install-hooks is unaffected by it" "0" "$?"
+  check "  and writes no hook" "0" \
+    "$(find "$H/hp/hooks" -type f 2>/dev/null | wc -l | tr -d ' ')"
 fi
 
 # The doc half of the same criterion: the README used to say `pre-commit
 # install` "will warn that it is being overridden", which is wrong in the way
 # that matters -- a warning is survivable and a non-zero exit is not.
 check "cloud/README.md documents the refusal, not a warning" "1" \
-    "$(count 'Cowardly refusing to install hooks' "$ROOT/cloud/README.md")"
+  "$(count 'Cowardly refusing to install hooks' "$ROOT/cloud/README.md")"
 check "  and no longer calls it a warning" "0" \
-    "$(count 'will warn that it is being overridden' "$ROOT/cloud/README.md")"
+  "$(count 'will warn that it is being overridden' "$ROOT/cloud/README.md")"
 rm -rf "$H"
 
 # --- 9. --with-devknowledge: one key in ~/.claude.json, nothing else ---------
@@ -776,18 +782,18 @@ rm -rf "$H"
 echo
 echo "cloud/bootstrap.sh — --with-devknowledge"
 
-command -v jq > /dev/null 2>&1 || no "jq is not on PATH — the devknowledge assertions cannot run"
+command -v jq >/dev/null 2>&1 || no "jq is not on PATH — the devknowledge assertions cannot run"
 
 H=$(mktemp -d)
 {
-    for fn in cap_devknowledge now_s record_timing capability; do
-        sed -n "/^$fn() {/,/^}\$/p" "$BOOTSTRAP"
-    done
-} > "$H/fn.sh"
+  for fn in cap_devknowledge now_s record_timing capability; do
+    sed -n "/^$fn() {/,/^}\$/p" "$BOOTSTRAP"
+  done
+} >"$H/fn.sh"
 check "cap_devknowledge was extractable from the script" "1" \
-    "$(count '^cap_devknowledge() {' "$H/fn.sh")"
+  "$(count '^cap_devknowledge() {' "$H/fn.sh")"
 
-cat > "$H/harness.sh" << 'HARNESS'
+cat >"$H/harness.sh" <<'HARNESS'
 set -eu
 log() { echo "[bootstrap] $*"; }
 die() {
@@ -805,64 +811,64 @@ echo "degraded=$DEGRADED"
 HARNESS
 
 run_dk() { # run_dk <home> -- runs the capability through capability(), as the bootstrap does
-    mkdir -p "$1/tmp"
-    HOME="$1" TMP="$1/tmp" FNS="$H/fn.sh" sh "$H/harness.sh" 2>&1
+  mkdir -p "$1/tmp"
+  HOME="$1" TMP="$1/tmp" FNS="$H/fn.sh" sh "$H/harness.sh" 2>&1
 }
 dk_entry='.mcpServers["google-developer-knowledge"]'
-file_mode() { stat -c '%a' "$1" 2> /dev/null || stat -f '%Lp' "$1"; }
+file_mode() { stat -c '%a' "$1" 2>/dev/null || stat -f '%Lp' "$1"; }
 
 # 9a. No ~/.claude.json yet: created, holding only the one server, 0600.
 mkdir -p "$H/a"
 out=$(run_dk "$H/a")
 check "no ~/.claude.json: the capability succeeds" "degraded=" \
-    "$(printf '%s\n' "$out" | grep '^degraded=')"
+  "$(printf '%s\n' "$out" | grep '^degraded=')"
 check "  the entry is type http at the MCP URL" \
-    '{"type":"http","url":"https://developerknowledge.googleapis.com/mcp"}' \
-    "$(jq -c "$dk_entry" "$H/a/.claude.json" 2> /dev/null)"
+  '{"type":"http","url":"https://developerknowledge.googleapis.com/mcp"}' \
+  "$(jq -c "$dk_entry" "$H/a/.claude.json" 2>/dev/null)"
 check "  and carries no headers, so no key" "null" \
-    "$(jq -c "$dk_entry.headers" "$H/a/.claude.json" 2> /dev/null)"
+  "$(jq -c "$dk_entry.headers" "$H/a/.claude.json" 2>/dev/null)"
 check "  the file is created 0600" "600" "$(file_mode "$H/a/.claude.json")"
 
 # 9b. An existing file: every other key and server survives.
 mkdir -p "$H/b"
-cat > "$H/b/.claude.json" << 'JSON'
+cat >"$H/b/.claude.json" <<'JSON'
 {"userID": "u-123", "oauthAccount": {"emailAddress": "x@example.com"},
  "mcpServers": {"other-server": {"type": "stdio", "command": "other"}},
  "projects": {"/repo": {"mcpServers": {"local-one": {"type": "http", "url": "https://l"}}}}}
 JSON
 chmod 600 "$H/b/.claude.json"
 before=$(jq -S -c "del($dk_entry)" "$H/b/.claude.json")
-run_dk "$H/b" > /dev/null
+run_dk "$H/b" >/dev/null
 check "existing file: everything but the new entry is unchanged" "$before" \
-    "$(jq -S -c "del($dk_entry)" "$H/b/.claude.json" 2> /dev/null)"
+  "$(jq -S -c "del($dk_entry)" "$H/b/.claude.json" 2>/dev/null)"
 check "  the other user-scope server is still there" "other" \
-    "$(jq -r '.mcpServers["other-server"].command' "$H/b/.claude.json" 2> /dev/null)"
+  "$(jq -r '.mcpServers["other-server"].command' "$H/b/.claude.json" 2>/dev/null)"
 check "  and the new one was added" "http" \
-    "$(jq -r "$dk_entry.type" "$H/b/.claude.json" 2> /dev/null)"
+  "$(jq -r "$dk_entry.type" "$H/b/.claude.json" 2>/dev/null)"
 check "  the file stays 0600" "600" "$(file_mode "$H/b/.claude.json")"
 
 # 9c. Idempotent: a second run changes nothing.
 once=$(jq -S -c . "$H/b/.claude.json")
-run_dk "$H/b" > /dev/null
+run_dk "$H/b" >/dev/null
 check "a re-run leaves the file equivalent" "$once" \
-    "$(jq -S -c . "$H/b/.claude.json" 2> /dev/null)"
+  "$(jq -S -c . "$H/b/.claude.json" 2>/dev/null)"
 check "  still exactly two user-scope servers" "2" \
-    "$(jq '.mcpServers | length' "$H/b/.claude.json" 2> /dev/null)"
+  "$(jq '.mcpServers | length' "$H/b/.claude.json" 2>/dev/null)"
 
 # 9d. A file that is not a JSON object is left alone, and the run degrades
 # rather than dying. Replacing it would throw away whatever it held.
 for bad in 'not json at all' '["an", "array"]'; do
-    mkdir -p "$H/d"
-    printf '%s\n' "$bad" > "$H/d/.claude.json"
-    out=$(run_dk "$H/d")
-    check "unusable ~/.claude.json ($bad): the run survives" "1" \
-        "$(printf '%s\n' "$out" | grep -c '^SURVIVED$')"
-    check "  it names itself in degraded=" "degraded=devknowledge" \
-        "$(printf '%s\n' "$out" | grep '^degraded=')"
-    check "  and the file is untouched" "$bad" "$(cat "$H/d/.claude.json")"
-    check "  with no temp file left beside it" "0" \
-        "$(find "$H/d" -maxdepth 1 -name '.claude.json.bootstrap-tmp' | wc -l | tr -d ' ')"
-    rm -rf "$H/d"
+  mkdir -p "$H/d"
+  printf '%s\n' "$bad" >"$H/d/.claude.json"
+  out=$(run_dk "$H/d")
+  check "unusable ~/.claude.json ($bad): the run survives" "1" \
+    "$(printf '%s\n' "$out" | grep -c '^SURVIVED$')"
+  check "  it names itself in degraded=" "degraded=devknowledge" \
+    "$(printf '%s\n' "$out" | grep '^degraded=')"
+  check "  and the file is untouched" "$bad" "$(cat "$H/d/.claude.json")"
+  check "  with no temp file left beside it" "0" \
+    "$(find "$H/d" -maxdepth 1 -name '.claude.json.bootstrap-tmp' | wc -l | tr -d ' ')"
+  rm -rf "$H/d"
 done
 
 # 9e. The flag parses. A trailing unknown argument makes the run die in the
@@ -871,10 +877,10 @@ done
 # be the one named.
 mkdir -p "$H/e"
 HOME="$H/e" sh "$BOOTSTRAP" "$BOOTSTRAP_TEST_REF" --with-devknowledge --no-devknowledge \
-    --a-flag-that-does-not-exist > /dev/null 2>&1
+  --a-flag-that-does-not-exist >/dev/null 2>&1
 check "--with-devknowledge and --no-devknowledge are accepted arguments" \
-    "failed_step=unknown argument: --a-flag-that-does-not-exist" \
-    "$(grep '^failed_step=' "$H/e/.agents/.bootstrap-manifest" 2> /dev/null)"
+  "failed_step=unknown argument: --a-flag-that-does-not-exist" \
+  "$(grep '^failed_step=' "$H/e/.agents/.bootstrap-manifest" 2>/dev/null)"
 
 rm -rf "$H"
 
@@ -883,11 +889,11 @@ echo
 echo "cloud/bootstrap.sh — golangci-lint"
 
 check "golangci-lint is installed unconditionally" "1" \
-    "$(count '^capability 1 golangci cap_golangci$' "$BOOTSTRAP")"
+  "$(count '^capability 1 golangci cap_golangci$' "$BOOTSTRAP")"
 check "  and the full runs above really did skip it" "1" \
-    "$(count '^capability 0 golangci cap_golangci$' "$BOOTSTRAP_FULL")"
+  "$(count '^capability 0 golangci cap_golangci$' "$BOOTSTRAP_FULL")"
 check "  the manifest records its version" "1" \
-    "$(count 'echo "golangci=' "$BOOTSTRAP")"
+  "$(count 'echo "golangci=' "$BOOTSTRAP")"
 
 # Extracted and run against stubs, so no case downloads anything or writes
 # /usr/local/bin. fetch always fails: reaching it at all is the signal that an
@@ -895,44 +901,44 @@ check "  the manifest records its version" "1" \
 H=$(mktemp -d)
 mkdir -p "$H/stub"
 {
-    sed -n '/^GCL_VER=/p' "$BOOTSTRAP"
-    for fn in golangci_ver cap_golangci; do
-        sed -n "/^$fn() {/,/^}\$/p" "$BOOTSTRAP"
-    done
-    cat << 'FNS'
+  sed -n '/^GCL_VER=/p' "$BOOTSTRAP"
+  for fn in golangci_ver cap_golangci; do
+    sed -n "/^$fn() {/,/^}\$/p" "$BOOTSTRAP"
+  done
+  cat <<'FNS'
 log() { :; }
 die() { echo "$*" > "$DIEF"; exit 1; }
 fetch() { echo "$1" >> "$LOGF"; return 1; }
 FNS
-} > "$H/fn.sh"
+} >"$H/fn.sh"
 check "cap_golangci was extractable from the script" "1" \
-    "$(grep -c '^cap_golangci() {' "$H/fn.sh")"
+  "$(grep -c '^cap_golangci() {' "$H/fn.sh")"
 GCL_PIN=$(sed -n 's/^GCL_VER=//p' "$H/fn.sh")
 
 gcl_run() {
-    # gcl_run <stubbed --version line, or "" for no golangci-lint on PATH>
-    rm -f "$H/stub/golangci-lint" "$H/calls.log" "$H/die"
-    if [ -n "$1" ]; then
-        printf '#!/bin/sh\necho "%s"\n' "$1" > "$H/stub/golangci-lint"
-        chmod +x "$H/stub/golangci-lint"
-    fi
-    # PATH leaves out /usr/local/bin, where a real copy may live.
-    PATH="$H/stub:/usr/bin:/bin" LOGF="$H/calls.log" DIEF="$H/die" TMP="$H" \
-        sh -c '. "$0/fn.sh"; cap_golangci' "$H" > /dev/null 2>&1
+  # gcl_run <stubbed --version line, or "" for no golangci-lint on PATH>
+  rm -f "$H/stub/golangci-lint" "$H/calls.log" "$H/die"
+  if [ -n "$1" ]; then
+    printf '#!/bin/sh\necho "%s"\n' "$1" >"$H/stub/golangci-lint"
+    chmod +x "$H/stub/golangci-lint"
+  fi
+  # PATH leaves out /usr/local/bin, where a real copy may live.
+  PATH="$H/stub:/usr/bin:/bin" LOGF="$H/calls.log" DIEF="$H/die" TMP="$H" \
+    sh -c '. "$0/fn.sh"; cap_golangci' "$H" >/dev/null 2>&1
 }
 
 printf '#!/bin/sh\necho "golangci-lint has version 2.5.0 built with go1.25.1 from ff63786c on 2025-09-21T19:04:05Z"\n' \
-    > "$H/stub/golangci-lint"
+  >"$H/stub/golangci-lint"
 chmod +x "$H/stub/golangci-lint"
 check "golangci_ver reads the image's version line" "2.5.0" \
-    "$(PATH="$H/stub:/usr/bin:/bin" sh -c '. "$0/fn.sh"; golangci_ver' "$H")"
+  "$(PATH="$H/stub:/usr/bin:/bin" sh -c '. "$0/fn.sh"; golangci_ver' "$H")"
 
 gcl_run "golangci-lint has version 2.5.0 built with go1.25.1 from ff63786c on 2025-09-21T19:04:05Z"
 check "an older copy is replaced: the install fails as a die" "1" "$?"
 check "  having fetched the pinned release" "1" \
-    "$(count "/download/v${GCL_PIN}/golangci-lint-${GCL_PIN}-linux-amd64.tar.gz\$" "$H/calls.log")"
+  "$(count "/download/v${GCL_PIN}/golangci-lint-${GCL_PIN}-linux-amd64.tar.gz\$" "$H/calls.log")"
 check "  and the reason names the version" "could not download golangci-lint ${GCL_PIN}" \
-    "$(cat "$H/die" 2> /dev/null)"
+  "$(cat "$H/die" 2>/dev/null)"
 
 gcl_run ""
 check "a missing copy is installed" "1" "$(count 'golangci-lint' "$H/calls.log")"
@@ -962,35 +968,35 @@ echo
 echo "cloud/bootstrap.sh — where binaries go"
 
 # 11a. No install names a system path except through the decision.
-stray=$(grep -nE '(^|[ "=])(/usr/local/bin|/opt)([/" ]|$)' "$BOOTSTRAP" |
-    grep -vE '^[0-9]+:[[:space:]]*#' |
-    grep -vE '^[0-9]+:SYSTEM_(BIN|OPT)=')
+stray=$(grep -nE '(^|[ "=])(/usr/local/bin|/opt)([/" ]|$)' "$BOOTSTRAP" \
+  | grep -vE '^[0-9]+:[[:space:]]*#' \
+  | grep -vE '^[0-9]+:SYSTEM_(BIN|OPT)=')
 check "no install hard-codes /usr/local/bin or /opt" "" "$stray"
 check "  the two SYSTEM_ lines are the decision's only inputs" "2" \
-    "$(count '^SYSTEM_\(BIN\|OPT\)=' "$BOOTSTRAP")"
+  "$(count '^SYSTEM_\(BIN\|OPT\)=' "$BOOTSTRAP")"
 
 # with_system <bin> <opt> <src> <dest> -- a copy whose system paths are moved.
 with_system() {
-    sed -e "s#^SYSTEM_BIN=.*#SYSTEM_BIN=$1#" -e "s#^SYSTEM_OPT=.*#SYSTEM_OPT=$2#" "$3" > "$4"
+  sed -e "s#^SYSTEM_BIN=.*#SYSTEM_BIN=$1#" -e "s#^SYSTEM_OPT=.*#SYSTEM_OPT=$2#" "$3" >"$4"
 }
-mval() { sed -n "s/^$1=//p" "$2" 2> /dev/null; }
+mval() { sed -n "s/^$1=//p" "$2" 2>/dev/null; }
 
 # 11b. System paths unwritable, no --prefix: $HOME/.local, and said so.
 H=$(mktemp -d)
 with_system "$H/sys/bin" "$H/sys/opt" "$BOOTSTRAP_FULL" "$H/bootstrap.sh"
 check "the fixture moved the system paths" "1" "$(count "^SYSTEM_BIN=$H/sys/bin\$" "$H/bootstrap.sh")"
 HOME="$H" sh "$H/bootstrap.sh" "$BOOTSTRAP_TEST_REF" --no-gcloud --no-precommit --no-hooks \
-    --no-devknowledge > "$H/run.log" 2>&1
+  --no-devknowledge >"$H/run.log" 2>&1
 check "unwritable system paths: the run succeeds" "0" "$?"
 M="$H/.agents/.bootstrap-manifest"
 check "  install_mode=user" "user" "$(mval install_mode "$M")"
 check "  bin_dir is \$HOME/.local/bin" "$H/.local/bin" "$(mval bin_dir "$M")"
 check "  the helper landed there" "1" \
-    "$([ -x "$H/.local/bin/gcp-credentials" ] && echo 1 || echo 0)"
+  "$([ -x "$H/.local/bin/gcp-credentials" ] && echo 1 || echo 0)"
 check "  bin_dir_on_path=no is recorded" "no" "$(mval bin_dir_on_path "$M")"
 check "  and the log says so loudly" "1" "$(count 'is NOT on PATH' "$H/run.log")"
 check "  nothing was created at the system paths" "0" \
-    "$([ -e "$H/sys" ] && echo 1 || echo 0)"
+  "$([ -e "$H/sys" ] && echo 1 || echo 0)"
 rm -rf "$H"
 
 # 11c. System paths writable: the system layout, unchanged. The paths are the
@@ -999,16 +1005,16 @@ H=$(mktemp -d)
 mkdir -p "$H/sys/bin" "$H/sys/opt"
 with_system "$H/sys/bin" "$H/sys/opt" "$BOOTSTRAP_FULL" "$H/bootstrap.sh"
 HOME="$H" PATH="$H/sys/bin:$PATH" sh "$H/bootstrap.sh" "$BOOTSTRAP_TEST_REF" \
-    --no-gcloud --no-precommit --no-hooks --no-devknowledge > "$H/run.log" 2>&1
+  --no-gcloud --no-precommit --no-hooks --no-devknowledge >"$H/run.log" 2>&1
 check "writable system paths: the run succeeds" "0" "$?"
 M="$H/.agents/.bootstrap-manifest"
 check "  install_mode=system" "system" "$(mval install_mode "$M")"
 check "  the helper is in the system bin" "1" \
-    "$([ -x "$H/sys/bin/gcp-credentials" ] && echo 1 || echo 0)"
+  "$([ -x "$H/sys/bin/gcp-credentials" ] && echo 1 || echo 0)"
 check "  and not in \$HOME/.local/bin" "0" \
-    "$([ -e "$H/.local/bin/gcp-credentials" ] && echo 1 || echo 0)"
+  "$([ -e "$H/.local/bin/gcp-credentials" ] && echo 1 || echo 0)"
 check "  bin_dir_on_path=yes, and no warning" "yes 0" \
-    "$(mval bin_dir_on_path "$M") $(count 'NOT on PATH' "$H/run.log")"
+  "$(mval bin_dir_on_path "$M") $(count 'NOT on PATH' "$H/run.log")"
 rm -rf "$H"
 
 # 11d. The unprivileged Codex shape end to end: --prefix, every capability the
@@ -1026,12 +1032,12 @@ pin() { sed -n "s/^[[:space:]]*$1=\([0-9.]*\)\$/\1/p" "$BOOTSTRAP" | head -1; }
 AL=$(pin AL_VER) SC=$(pin SC_VER) TF=$(pin TF_VER) TFL=$(pin TFL_VER)
 TFG=$(pin TFL_GOOGLE_VER) GHV=$(pin GH_VER) GCL=$(pin GCL_VER) GL=$(pin GL_VER)
 check "every pin the fixture needs was found" "8" \
-    "$(printf '%s\n' "$AL" "$SC" "$TF" "$TFL" "$TFG" "$GHV" "$GCL" "$GL" | grep -c .)"
+  "$(printf '%s\n' "$AL" "$SC" "$TF" "$TFL" "$TFG" "$GHV" "$GCL" "$GL" | grep -c .)"
 
 fake() { # fake <path> <version line>
-    mkdir -p "$(dirname "$1")"
-    printf '#!/bin/sh\necho "%s"\n' "$2" > "$1"
-    chmod +x "$1"
+  mkdir -p "$(dirname "$1")"
+  printf '#!/bin/sh\necho "%s"\n' "$2" >"$1"
+  chmod +x "$1"
 }
 S="$H/stage"
 fake "$S/al/actionlint" "actionlint $AL"
@@ -1069,11 +1075,11 @@ tar -czf "$FIX/dl.google.com/dl/cloudsdk/channels/rapid/downloads/google-cloud-c
 FARM="$H/farm"
 mkdir -p "$FARM"
 for t in sh cat cp mv rm ln mkdir chmod install mktemp date sed awk grep head tail \
-    cut tr wc sort dirname basename find env stat tar gzip xz unzip curl git jq \
-    id uname tee touch readlink ls true false; do
-    _p=$(command -v "$t" 2> /dev/null) && ln -s "$_p" "$FARM/$t"
+  cut tr wc sort dirname basename find env stat tar gzip xz unzip curl git jq \
+  id uname tee touch readlink ls true false; do
+  _p=$(command -v "$t" 2>/dev/null) && ln -s "$_p" "$FARM/$t"
 done
-cat > "$FARM/npm" << 'STUB'
+cat >"$FARM/npm" <<'STUB'
 #!/bin/sh
 echo "$*" >> "$STUB_LOG/npm.log"
 prefix= pkg=
@@ -1091,7 +1097,7 @@ mkdir -p "$prefix/bin"
 printf '#!/bin/sh\necho "%s fixture"\n' "$name" > "$prefix/bin/$name"
 chmod +x "$prefix/bin/$name"
 STUB
-cat > "$FARM/uv" << 'STUB'
+cat >"$FARM/uv" <<'STUB'
 #!/bin/sh
 echo "$3 UV_TOOL_DIR=${UV_TOOL_DIR:-} UV_TOOL_BIN_DIR=${UV_TOOL_BIN_DIR:-} UV_PYTHON_INSTALL_DIR=${UV_PYTHON_INSTALL_DIR:-}" >> "$STUB_LOG/uv.log"
 [ "$1 $2" = "tool install" ] && [ -n "${UV_TOOL_BIN_DIR:-}" ] || exit 1
@@ -1111,60 +1117,60 @@ chmod +x "$FARM/npm" "$FARM/uv"
 # golangci-lint included: the unmodified script, not BOOTSTRAP_FULL.
 with_system "$H/sys/bin" "$H/sys/opt" "$BOOTSTRAP" "$H/bs-sys.sh"
 sed -e "s#https://github.com/\([^\"]*\)/releases/download/#file://$FIX/github.com/\1/releases/download/#g" \
-    -e "s#https://releases.hashicorp.com/#file://$FIX/releases.hashicorp.com/#g" \
-    -e "s#https://dl.google.com/#file://$FIX/dl.google.com/#g" \
-    "$H/bs-sys.sh" > "$H/bootstrap.sh"
+  -e "s#https://releases.hashicorp.com/#file://$FIX/releases.hashicorp.com/#g" \
+  -e "s#https://dl.google.com/#file://$FIX/dl.google.com/#g" \
+  "$H/bs-sys.sh" >"$H/bootstrap.sh"
 check "the fixture rewrote every release download" "0" \
-    "$(grep -cE 'https://(github.com/[^ ]*/releases/download|releases.hashicorp.com|dl.google.com)/' "$H/bootstrap.sh")"
+  "$(grep -cE 'https://(github.com/[^ ]*/releases/download|releases.hashicorp.com|dl.google.com)/' "$H/bootstrap.sh")"
 
 P="$H/tools"
 mkdir -p "$H/home" "$H/cwd"
-( cd "$H/cwd" && HOME="$H/home" PATH="$FARM" STUB_LOG="$H" PRE_COMMIT_HOME="$H/pc-cache" \
-    sh "$H/bootstrap.sh" "$BOOTSTRAP_TEST_REF" --profile codex-cloud-sandbox --with-gh \
-    --prefix "$P" ) > "$H/run.log" 2>&1
+(cd "$H/cwd" && HOME="$H/home" PATH="$FARM" STUB_LOG="$H" PRE_COMMIT_HOME="$H/pc-cache" \
+  sh "$H/bootstrap.sh" "$BOOTSTRAP_TEST_REF" --profile codex-cloud-sandbox --with-gh \
+  --prefix "$P") >"$H/run.log" 2>&1
 p_rc=$?
 check "an unprivileged --prefix run succeeds" "0" "$p_rc"
 M="$H/home/.agents/.bootstrap-manifest"
 check "  status=ok, not degraded" "ok" "$(mval status "$M")"
 check "  with nothing degraded" "" "$(mval degraded "$M")"
 if [ "$(mval status "$M")" != ok ]; then
-    printf '        --- run log (tail) ---\n'
-    tail -25 "$H/run.log" | sed 's/^/        /'
+  printf '        --- run log (tail) ---\n'
+  tail -25 "$H/run.log" | sed 's/^/        /'
 fi
 check "  install_mode=prefix" "prefix" "$(mval install_mode "$M")"
 check "  bin_dir is the prefix's bin" "$P/bin" "$(mval bin_dir "$M")"
 check "  bin_dir_on_path=no is recorded" "no" "$(mval bin_dir_on_path "$M")"
 missing=
 for t in gcp-credentials gcloud gsutil shellcheck actionlint gitleaks markdownlint-cli2 cspell \
-    semgrep terraform tflint checkov pre-commit gh golangci-lint; do
-    [ -x "$P/bin/$t" ] || missing="$missing $t"
+  semgrep terraform tflint checkov pre-commit gh golangci-lint; do
+  [ -x "$P/bin/$t" ] || missing="$missing $t"
 done
 check "  every command landed in the prefix's bin" "" "$missing"
 check "  the gcloud SDK is under the prefix" "1" \
-    "$([ -x "$P/opt/google-cloud-sdk/bin/gcloud" ] && echo 1 || echo 0)"
+  "$([ -x "$P/opt/google-cloud-sdk/bin/gcloud" ] && echo 1 || echo 0)"
 check "  the wrapper execs the prefix's SDK" "2" \
-    "$(count "$P/opt/google-cloud-sdk/bin/gcloud \"\$@\"" "$P/bin/gcloud")"
+  "$(count "$P/opt/google-cloud-sdk/bin/gcloud \"\$@\"" "$P/bin/gcloud")"
 check "  and still strips the preset token for a broker grant" "1" \
-    "$(count 'exec env -u CLOUDSDK_AUTH_ACCESS_TOKEN' "$P/bin/gcloud")"
+  "$(count 'exec env -u CLOUDSDK_AUTH_ACCESS_TOKEN' "$P/bin/gcloud")"
 check "  the wrapper runs the SDK it names" "Google Cloud SDK 999.0.0 (fixture)" \
-    "$(HOME="$H/home" PATH="$FARM" "$P/bin/gcloud" --version 2> /dev/null)"
+  "$(HOME="$H/home" PATH="$FARM" "$P/bin/gcloud" --version 2>/dev/null)"
 check "  uv installed all three Python tools" "3" "$(count . "$H/uv.log")"
 check "  each with its tools and Python under the prefix" "3" \
-    "$(count "UV_TOOL_DIR=$P/share/uv/tools UV_TOOL_BIN_DIR=$P/bin UV_PYTHON_INSTALL_DIR=$P/share/uv/python\$" "$H/uv.log")"
+  "$(count "UV_TOOL_DIR=$P/share/uv/tools UV_TOOL_BIN_DIR=$P/bin UV_PYTHON_INSTALL_DIR=$P/share/uv/python\$" "$H/uv.log")"
 check "  both npm installs were given the prefix" "2 2" \
-    "$(count . "$H/npm.log") $(count "prefix $P " "$H/npm.log")"
+  "$(count . "$H/npm.log") $(count "prefix $P " "$H/npm.log")"
 check "  an explicit prefix beats the \$HOME/.local default" "0" \
-    "$([ -e "$H/home/.local/bin" ] && echo 1 || echo 0)"
+  "$([ -e "$H/home/.local/bin" ] && echo 1 || echo 0)"
 
 # And start-session tells the session its tools are off PATH.
-cur=$(HOME="$H/home" "$GATHER" 2> /dev/null |
-    sed -n '/^===bootstrap_currency/,/^===[a-z]/p')
+cur=$(HOME="$H/home" "$GATHER" 2>/dev/null \
+  | sed -n '/^===bootstrap_currency/,/^===[a-z]/p')
 check "gather names a bin dir that is off this session's PATH" "bin_dir_off_path=$P/bin" \
-    "$(printf '%s\n' "$cur" | grep '^bin_dir_off_path=')"
-cur=$(HOME="$H/home" PATH="$P/bin:$PATH" "$GATHER" 2> /dev/null |
-    sed -n '/^===bootstrap_currency/,/^===[a-z]/p')
+  "$(printf '%s\n' "$cur" | grep '^bin_dir_off_path=')"
+cur=$(HOME="$H/home" PATH="$P/bin:$PATH" "$GATHER" 2>/dev/null \
+  | sed -n '/^===bootstrap_currency/,/^===[a-z]/p')
 check "  and is silent once it is on PATH" "0" \
-    "$(printf '%s\n' "$cur" | grep -c '^bin_dir_off_path=')"
+  "$(printf '%s\n' "$cur" | grep -c '^bin_dir_off_path=')"
 
 # An image that already ships gcloud, as a symlink in the very bin dir the
 # wrapper is written to. The SDK must be wrapped rather than skipped, and the
@@ -1173,30 +1179,30 @@ Q="$H/preinstalled"
 mkdir -p "$Q/sdk" "$Q/bin" "$H/home2" "$H/cwd2"
 cp -R "$S/gc/google-cloud-sdk" "$Q/sdk/"
 ln -s "$Q/sdk/google-cloud-sdk/bin/gcloud" "$Q/bin/gcloud"
-( cd "$H/cwd2" && HOME="$H/home2" PATH="$Q/bin:$FARM" STUB_LOG="$H" PRE_COMMIT_HOME="$H/pc-cache" \
-    sh "$H/bootstrap.sh" "$BOOTSTRAP_TEST_REF" --profile codex-cloud-sandbox \
-    --no-precommit --no-hooks --no-terraform --no-devknowledge --prefix "$Q" ) > "$H/run2.log" 2>&1
+(cd "$H/cwd2" && HOME="$H/home2" PATH="$Q/bin:$FARM" STUB_LOG="$H" PRE_COMMIT_HOME="$H/pc-cache" \
+  sh "$H/bootstrap.sh" "$BOOTSTRAP_TEST_REF" --profile codex-cloud-sandbox \
+  --no-precommit --no-hooks --no-terraform --no-devknowledge --prefix "$Q") >"$H/run2.log" 2>&1
 check "a preinstalled gcloud run succeeds" "0" "$?"
 check "  gcloud is not degraded" "" "$(mval degraded "$H/home2/.agents/.bootstrap-manifest")"
 check "  the image's symlink was replaced by the wrapper" "0 1" \
-    "$([ -L "$Q/bin/gcloud" ] && echo 1 || echo 0) $(count '^# Installed by agentic-coding-config cloud/bootstrap.sh' "$Q/bin/gcloud")"
+  "$([ -L "$Q/bin/gcloud" ] && echo 1 || echo 0) $(count '^# Installed by agentic-coding-config cloud/bootstrap.sh' "$Q/bin/gcloud")"
 check "  the wrapper execs the preinstalled SDK" "2" \
-    "$(count "$Q/sdk/google-cloud-sdk/bin/gcloud \"\$@\"" "$Q/bin/gcloud")"
+  "$(count "$Q/sdk/google-cloud-sdk/bin/gcloud \"\$@\"" "$Q/bin/gcloud")"
 check "  the SDK's own gcloud was not overwritten" "0" \
-    "$(count 'Installed by agentic-coding-config' "$Q/sdk/google-cloud-sdk/bin/gcloud")"
+  "$(count 'Installed by agentic-coding-config' "$Q/sdk/google-cloud-sdk/bin/gcloud")"
 check "  nothing was downloaded into the prefix" "0" \
-    "$([ -e "$Q/opt/google-cloud-sdk" ] && echo 1 || echo 0)"
+  "$([ -e "$Q/opt/google-cloud-sdk" ] && echo 1 || echo 0)"
 check "  the wrapper runs the SDK it names" "Google Cloud SDK 999.0.0 (fixture)" \
-    "$(HOME="$H/home2" PATH="$FARM" "$Q/bin/gcloud" --version 2> /dev/null)"
+  "$(HOME="$H/home2" PATH="$FARM" "$Q/bin/gcloud" --version 2>/dev/null)"
 # A second run finds its own wrapper and keeps the SDK it points at.
-( cd "$H/cwd2" && HOME="$H/home2" PATH="$Q/bin:$FARM" STUB_LOG="$H" PRE_COMMIT_HOME="$H/pc-cache" \
-    sh "$H/bootstrap.sh" "$BOOTSTRAP_TEST_REF" --profile codex-cloud-sandbox \
-    --no-precommit --no-hooks --no-terraform --no-devknowledge --prefix "$Q" ) > "$H/run3.log" 2>&1
+(cd "$H/cwd2" && HOME="$H/home2" PATH="$Q/bin:$FARM" STUB_LOG="$H" PRE_COMMIT_HOME="$H/pc-cache" \
+  sh "$H/bootstrap.sh" "$BOOTSTRAP_TEST_REF" --profile codex-cloud-sandbox \
+  --no-precommit --no-hooks --no-terraform --no-devknowledge --prefix "$Q") >"$H/run3.log" 2>&1
 check "  a re-run still wraps the same SDK" "2" \
-    "$(count "$Q/sdk/google-cloud-sdk/bin/gcloud \"\$@\"" "$Q/bin/gcloud")"
+  "$(count "$Q/sdk/google-cloud-sdk/bin/gcloud \"\$@\"" "$Q/bin/gcloud")"
 if [ "$FAIL" -gt 0 ]; then
-    printf '        --- preinstalled run log (tail) ---\n'
-    tail -25 "$H/run2.log" | sed 's/^/        /'
+  printf '        --- preinstalled run log (tail) ---\n'
+  tail -25 "$H/run2.log" | sed 's/^/        /'
 fi
 rm -rf "$H"
 
