@@ -953,7 +953,7 @@ cat >"$WR/bin/gcp-credentials" <<'STUB'
 #!/bin/sh
 printf '%s\n' "$*" >> "$WRAPPER_HELPER_LOG"
 STUB
-sed -n '/<< .WRAPPER.$/,/^WRAPPER$/p' "$ROOT/cloud/bootstrap.sh" | sed '1d;$d' \
+sed -n '/<< *.WRAPPER.$/,/^WRAPPER$/p' "$ROOT/cloud/bootstrap.sh" | sed '1d;$d' \
   | sed "s#@GCLOUD_SDK@#$WR/sdk#g" >"$WR/bin/gcloud"
 chmod 0755 "$WR/sdk/bin/gcloud" "$WR/bin/gcp-credentials" "$WR/bin/gcloud"
 WRAPPER_HELPER_LOG="$WR/helper.log"
