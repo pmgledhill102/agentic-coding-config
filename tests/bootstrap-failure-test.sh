@@ -462,10 +462,13 @@ rm -rf "$H"
 H=$(mktemp -d)
 LOG="$H/run.log"
 sed -e 's#https://github.com/cli/cli/releases#https://bootstrap-test.invalid/cli#' \
-  -e 's#if command -v gh > /dev/null 2>&1; then#if false; then#' \
+  -e 's#if command -v gh *> */dev/null 2>&1; then#if false; then#' \
   "$BOOTSTRAP_FULL" >"$H/bootstrap.sh"
+# The pattern tolerates both spellings of the redirect (`> /dev/null` and
+# shfmt's `>/dev/null`): a pattern that stops matching neutralises nothing,
+# and this count would then report 0 for the wrong reason.
 check "the gh fixture neutered the already-present guard" "0" \
-  "$(count 'command -v gh > /dev/null 2>&1; then' "$H/bootstrap.sh")"
+  "$(count 'if command -v gh *> */dev/null 2>&1; then' "$H/bootstrap.sh")"
 HOME="$H" sh "$H/bootstrap.sh" "$BOOTSTRAP_TEST_REF" --with-gh --no-gcloud --no-precommit --no-hooks \
   >"$LOG" 2>&1
 check "a failing capability does not fail the run" "0" "$?"
