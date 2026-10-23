@@ -30,3 +30,21 @@ repos:
         entry: actionlint
         files: ^\.github/workflows/
         types: [yaml]
+
+  - repo: https://github.com/streetsidesoftware/cspell-cli
+    rev: v10.3.0
+    hooks:
+      - id: cspell
+        types_or: [markdown, plain-text, yaml]
+
+  # No semgrep hook yet: `semgrep --config auto --error` blocks on
+  # bash.lang.security.ifs-tampering in home/bin/precommit-claude-hook (4
+  # findings), which is delivered config this change does not touch.
+
+  - repo: https://github.com/scop/pre-commit-shfmt
+    rev: v3.14.1-1
+    hooks:
+      - id: shfmt
+        # home/ and context/ are the estate's delivered and composed agent config;
+        # this change does not reformat them.
+        exclude: ^(home|context)/
