@@ -30,24 +30,24 @@ ROOT=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
 
 # check <root> — print each unwired test; exit 1 if there are any.
 check() {
-    _ci="$1/.github/workflows/ci.yml"
-    _doc="$1/CLAUDE.md"
-    _bad=0
-    for _t in "$1"/tests/*.sh; do
-        [ -f "$_t" ] || continue
-        _n=$(basename -- "$_t")
-        if grep -Eq '^# gate: not-wired .*[^[:space:]]' "$_t"; then
-            continue
-        fi
-        _missing=""
-        grep -Fq "sh tests/$_n" "$_ci" || _missing="ci.yml"
-        grep -Fq "sh tests/$_n" "$_doc" || _missing="${_missing:+$_missing, }CLAUDE.md"
-        if [ -n "$_missing" ]; then
-            echo "unwired: tests/$_n (not invoked in: $_missing)"
-            _bad=1
-        fi
-    done
-    return "$_bad"
+  _ci="$1/.github/workflows/ci.yml"
+  _doc="$1/CLAUDE.md"
+  _bad=0
+  for _t in "$1"/tests/*.sh; do
+    [ -f "$_t" ] || continue
+    _n=$(basename -- "$_t")
+    if grep -Eq '^# gate: not-wired .*[^[:space:]]' "$_t"; then
+      continue
+    fi
+    _missing=""
+    grep -Fq "sh tests/$_n" "$_ci" || _missing="ci.yml"
+    grep -Fq "sh tests/$_n" "$_doc" || _missing="${_missing:+$_missing, }CLAUDE.md"
+    if [ -n "$_missing" ]; then
+      echo "unwired: tests/$_n (not invoked in: $_missing)"
+      _bad=1
+    fi
+  done
+  return "$_bad"
 }
 
 # --- Negative controls: the check must be able to fail. -------------------
@@ -58,26 +58,26 @@ control_failed=0
 
 # control <label> <expected-exit> <planted-file-body> [wire-into...]
 control() {
-    _label=$1
-    _want=$2
-    _body=$3
-    shift 3
-    rm -rf "$WORK/r"
-    mkdir -p "$WORK/r/tests" "$WORK/r/.github/workflows"
-    cp "$ROOT/.github/workflows/ci.yml" "$WORK/r/.github/workflows/ci.yml"
-    cp "$ROOT/CLAUDE.md" "$WORK/r/CLAUDE.md"
-    printf '%s\n' "$_body" > "$WORK/r/tests/zz-planted-test.sh"
-    for _w in "$@"; do
-        printf '        run: sh tests/zz-planted-test.sh\n' >> "$WORK/r/$_w"
-    done
-    check "$WORK/r" > /dev/null
-    _got=$?
-    if [ "$_got" -eq "$_want" ]; then
-        printf '  ok    control: %s\n' "$_label"
-    else
-        printf '  FAIL  control: %s (want exit %s, got %s)\n' "$_label" "$_want" "$_got"
-        control_failed=1
-    fi
+  _label=$1
+  _want=$2
+  _body=$3
+  shift 3
+  rm -rf "$WORK/r"
+  mkdir -p "$WORK/r/tests" "$WORK/r/.github/workflows"
+  cp "$ROOT/.github/workflows/ci.yml" "$WORK/r/.github/workflows/ci.yml"
+  cp "$ROOT/CLAUDE.md" "$WORK/r/CLAUDE.md"
+  printf '%s\n' "$_body" >"$WORK/r/tests/zz-planted-test.sh"
+  for _w in "$@"; do
+    printf '        run: sh tests/zz-planted-test.sh\n' >>"$WORK/r/$_w"
+  done
+  check "$WORK/r" >/dev/null
+  _got=$?
+  if [ "$_got" -eq "$_want" ]; then
+    printf '  ok    control: %s\n' "$_label"
+  else
+    printf '  FAIL  control: %s (want exit %s, got %s)\n' "$_label" "$_want" "$_got"
+    control_failed=1
+  fi
 }
 
 PLAIN='#!/bin/sh
@@ -94,15 +94,15 @@ control "opt-out without a reason fails" 1 '#!/bin/sh
 exit 0'
 
 if [ "$control_failed" -ne 0 ]; then
-    echo "gates-wired: the check itself is broken; not trusting its verdict."
-    exit 1
+  echo "gates-wired: the check itself is broken; not trusting its verdict."
+  exit 1
 fi
 
 # --- The real check. -------------------------------------------------------
 if check "$ROOT"; then
-    echo "gates-wired: every tests/*.sh is run by CI and listed in CLAUDE.md."
+  echo "gates-wired: every tests/*.sh is run by CI and listed in CLAUDE.md."
 else
-    echo "Wire each into .github/workflows/ci.yml and CLAUDE.md's gate list,"
-    echo "or add '# gate: not-wired — <reason>' to its header."
-    exit 1
+  echo "Wire each into .github/workflows/ci.yml and CLAUDE.md's gate list,"
+  echo "or add '# gate: not-wired — <reason>' to its header."
+  exit 1
 fi

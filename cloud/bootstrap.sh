@@ -139,7 +139,7 @@ BOOT_START=$(now_s)
 TIMINGS=
 
 record_timing() { # name seconds
-    TIMINGS="${TIMINGS:+$TIMINGS }$1=$2s"
+  TIMINGS="${TIMINGS:+$TIMINGS }$1=$2s"
 }
 
 # Per-tool timing inside a capability. A capability runs in a subshell, so
@@ -148,20 +148,20 @@ record_timing() { # name seconds
 # records the time since the previous step_begin or step_end and restarts the
 # clock, so consecutive tools need one call each.
 step_begin() {
-    STEP_T0=$(now_s)
-    PIP_ATTEMPT=
+  STEP_T0=$(now_s)
+  PIP_ATTEMPT=
 }
 step_end() { # step_end <name>
-    _step_secs=$(( $(now_s) - STEP_T0 ))
-    echo "$1=${_step_secs}s" >> "$TMP/step-timings"
-    # Which pip attempt succeeded: 2 and 3 each re-resolve the whole
-    # dependency set after the one before failed, so a high number is time
-    # spent on fallbacks rather than on the tool.
-    if [ -n "${PIP_ATTEMPT:-}" ]; then
-        echo "$1.pip-attempt=$PIP_ATTEMPT" >> "$TMP/step-timings"
-    fi
-    log "time    : $1 ${_step_secs}s"
-    step_begin
+  _step_secs=$(($(now_s) - STEP_T0))
+  echo "$1=${_step_secs}s" >>"$TMP/step-timings"
+  # Which pip attempt succeeded: 2 and 3 each re-resolve the whole
+  # dependency set after the one before failed, so a high number is time
+  # spent on fallbacks rather than on the tool.
+  if [ -n "${PIP_ATTEMPT:-}" ]; then
+    echo "$1.pip-attempt=$PIP_ATTEMPT" >>"$TMP/step-timings"
+  fi
+  log "time    : $1 ${_step_secs}s"
+  step_begin
 }
 
 # Which session this run built for, so a later one can tell a cache rebuild from
@@ -187,10 +187,10 @@ FAILED_STEP=
 FAIL_FILE=
 
 die() {
-    FAILED_STEP="$*"
-    if [ -n "$FAIL_FILE" ]; then echo "$*" > "$FAIL_FILE" 2> /dev/null || true; fi
-    echo "[bootstrap] error: $*" >&2
-    exit 1
+  FAILED_STEP="$*"
+  if [ -n "$FAIL_FILE" ]; then echo "$*" >"$FAIL_FILE" 2>/dev/null || true; fi
+  echo "[bootstrap] error: $*" >&2
+  exit 1
 }
 
 # Where the caller's setup script tees this run's output. cloud/README.md's
@@ -203,10 +203,10 @@ BANNER_START="<!-- acc:bootstrap-failed:start -->"
 BANNER_END="<!-- acc:bootstrap-failed:end -->"
 
 strip_banner() {
-    # Drop a banner left by an earlier failed run, so repeated failures do not
-    # stack. Success needs no equivalent: both policy files are overwritten
-    # wholesale by a run that gets that far, which takes the banner with them.
-    sed "/^${BANNER_START}\$/,/^${BANNER_END}\$/d" "$1"
+  # Drop a banner left by an earlier failed run, so repeated failures do not
+  # stack. Success needs no equivalent: both policy files are overwritten
+  # wholesale by a run that gets that far, which takes the banner with them.
+  sed "/^${BANNER_START}\$/,/^${BANNER_END}\$/d" "$1"
 }
 
 # --- record_failure: leave something a session can actually find --------------
@@ -229,78 +229,81 @@ strip_banner() {
 # and a trap that dies on its own mkdir replaces a diagnosable failure with a
 # confusing one.
 record_failure() {
-    _rc="$1"
-    _step="${FAILED_STEP:-unknown - exited without reaching a die}"
-    _when=$(date -u +%Y-%m-%dT%H:%M:%SZ 2> /dev/null || echo unknown)
+  _rc="$1"
+  _step="${FAILED_STEP:-unknown - exited without reaching a die}"
+  _when=$(date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || echo unknown)
 
-    mkdir -p "$HOME/.agents" 2> /dev/null || return 0
+  mkdir -p "$HOME/.agents" 2>/dev/null || return 0
+  {
+    echo "status=failed"
+    echo "exit_code=$_rc"
+    echo "failed_step=$_step"
+    echo "failed_at=$_when"
+    echo "ref=$REF"
+    echo "profile=$PROFILE"
+    echo "log=$BOOTSTRAP_LOG"
+  } >"$HOME/.agents/.bootstrap-manifest" 2>/dev/null || true
+  # Spooled too, if the helper got installed before the failure: a bootstrap
+  # that died is the run most worth seeing.
+  if [ -x "${BIN_DIR:-/nonexistent}/agent-telemetry" ]; then
+    "$BIN_DIR/agent-telemetry" record bootstrap "$HOME/.agents/.bootstrap-manifest" >/dev/null 2>&1 || true
+  fi
+
+  # The one policy file this profile's agent reads: a banner anywhere else is
+  # one nothing ever overwrites, or one nobody reads.
+  case "$PROFILE" in
+    claude-*) _targets="$HOME/.claude/CLAUDE.md" ;;
+    *) _targets="$HOME/.agents/AGENTS.md" ;;
+  esac
+
+  for _t in $_targets; do
+    mkdir -p "$(dirname "$_t")" 2>/dev/null || continue
     {
-        echo "status=failed"
-        echo "exit_code=$_rc"
-        echo "failed_step=$_step"
-        echo "failed_at=$_when"
-        echo "ref=$REF"
-        echo "profile=$PROFILE"
-        echo "log=$BOOTSTRAP_LOG"
-    } > "$HOME/.agents/.bootstrap-manifest" 2> /dev/null || true
-    # Spooled too, if the helper got installed before the failure: a bootstrap
-    # that died is the run most worth seeing.
-    if [ -x "${BIN_DIR:-/nonexistent}/agent-telemetry" ]; then
-        "$BIN_DIR/agent-telemetry" record bootstrap "$HOME/.agents/.bootstrap-manifest" > /dev/null 2>&1 || true
+      echo "$BANNER_START"
+      echo "# This container's toolkit is incomplete"
+      echo
+      echo "\`cloud/bootstrap.sh\` exited $_rc before it finished, so an unknown"
+      echo "number of the skills, helper scripts, hooks and policy that normally"
+      echo "arrive with this file were never installed."
+      echo
+      echo "- failed step: $_step"
+      echo "- ref: $REF, profile: $PROFILE, at: $_when"
+      echo "- full log: $BOOTSTRAP_LOG"
+      echo
+      echo "Do not read a missing skill, command or helper as \"this machine does"
+      echo "not do that\" — check the log before concluding anything about what is"
+      echo "available. Say so before starting work that depends on the toolkit."
+      echo "Re-running the bootstrap fixes it and needs no restart, but it is the"
+      echo "human's call: never re-run it unasked."
+      echo "$BANNER_END"
+      echo
+    } >"$_t.bootstrap-tmp" 2>/dev/null || continue
+    if [ -f "$_t" ]; then
+      strip_banner "$_t" >>"$_t.bootstrap-tmp" 2>/dev/null || true
     fi
-
-    # The one policy file this profile's agent reads: a banner anywhere else is
-    # one nothing ever overwrites, or one nobody reads.
-    case "$PROFILE" in
-        claude-*) _targets="$HOME/.claude/CLAUDE.md" ;;
-        *) _targets="$HOME/.agents/AGENTS.md" ;;
-    esac
-
-    for _t in $_targets; do
-        mkdir -p "$(dirname "$_t")" 2> /dev/null || continue
-        {
-            echo "$BANNER_START"
-            echo "# This container's toolkit is incomplete"
-            echo
-            echo "\`cloud/bootstrap.sh\` exited $_rc before it finished, so an unknown"
-            echo "number of the skills, helper scripts, hooks and policy that normally"
-            echo "arrive with this file were never installed."
-            echo
-            echo "- failed step: $_step"
-            echo "- ref: $REF, profile: $PROFILE, at: $_when"
-            echo "- full log: $BOOTSTRAP_LOG"
-            echo
-            echo "Do not read a missing skill, command or helper as \"this machine does"
-            echo "not do that\" — check the log before concluding anything about what is"
-            echo "available. Say so before starting work that depends on the toolkit."
-            echo "Re-running the bootstrap fixes it and needs no restart, but it is the"
-            echo "human's call: never re-run it unasked."
-            echo "$BANNER_END"
-            echo
-        } > "$_t.bootstrap-tmp" 2> /dev/null || continue
-        if [ -f "$_t" ]; then
-            strip_banner "$_t" >> "$_t.bootstrap-tmp" 2> /dev/null || true
-        fi
-        mv "$_t.bootstrap-tmp" "$_t" 2> /dev/null || true
-    done
-    return 0
+    mv "$_t.bootstrap-tmp" "$_t" 2>/dev/null || true
+  done
+  return 0
 }
 
 # The arguments as given, quoted for eval, so the self-check below can replay
 # them into a fresh copy of this script after the loop has shifted them away.
 ORIG_ARGS=
 for _a in "$@"; do
-    _q=$(printf '%s' "$_a" | sed "s/'/'\\\\''/g")
-    ORIG_ARGS="$ORIG_ARGS '$_q'"
+  _q=$(printf '%s' "$_a" | sed "s/'/'\\\\''/g")
+  ORIG_ARGS="$ORIG_ARGS '$_q'"
 done
 
 # The ref is positional and first. A leading flag is left for the argument loop
 # rather than taken as the ref, so omitting the ref reports the real problem.
 REF=main
 case "${1:-}" in
-    "") ;;
-    -*) ;;
-    *) REF="$1"; shift ;;
+  "") ;;
+  -*) ;;
+  *)
+    REF="$1"
+    shift
+    ;;
 esac
 # Empty means "the caller did not say", which is distinct from --no-X. The
 # profile fills in only the ones still empty, so a flag wins wherever it
@@ -324,12 +327,12 @@ PREFIX=
 # inside the handler.
 TMP=
 on_exit() {
-    _rc=$?
-    [ -n "$TMP" ] && rm -rf "$TMP"
-    if [ "$_rc" -ne 0 ]; then
-        record_failure "$_rc" || true
-    fi
-    return 0
+  _rc=$?
+  [ -n "$TMP" ] && rm -rf "$TMP"
+  if [ "$_rc" -ne 0 ]; then
+    record_failure "$_rc" || true
+  fi
+  return 0
 }
 # EXIT alone does not fire on a signal in every POSIX shell, so INT and TERM
 # re-exit rather than being trapped directly -- one handler, one code path.
@@ -338,34 +341,34 @@ trap 'exit 130' INT
 trap 'exit 143' TERM
 
 while [ $# -gt 0 ]; do
-    case "$1" in
-        --with-gcloud) WITH_GCLOUD=1 ;;
-        --no-gcloud) WITH_GCLOUD=0 ;;
-        --with-precommit) WITH_PRECOMMIT=1 ;;
-        --no-precommit) WITH_PRECOMMIT=0 ;;
-        --with-hooks) WITH_HOOKS=1 ;;
-        --no-hooks) WITH_HOOKS=0 ;;
-        --with-gh) WITH_GH=1 ;;
-        --no-gh) WITH_GH=0 ;;
-        --with-terraform) WITH_TERRAFORM=1 ;;
-        --no-terraform) WITH_TERRAFORM=0 ;;
-        --with-devknowledge) WITH_DEVKNOWLEDGE=1 ;;
-        --no-devknowledge) WITH_DEVKNOWLEDGE=0 ;;
-        --profile)
-            shift
-            [ $# -gt 0 ] || die "--profile needs a value"
-            PROFILE="$1"
-            ;;
-        --profile=*) PROFILE="${1#--profile=}" ;;
-        --prefix)
-            shift
-            [ $# -gt 0 ] || die "--prefix needs a value"
-            PREFIX="$1"
-            ;;
-        --prefix=*) PREFIX="${1#--prefix=}" ;;
-        *) die "unknown argument: $1" ;;
-    esac
-    shift
+  case "$1" in
+    --with-gcloud) WITH_GCLOUD=1 ;;
+    --no-gcloud) WITH_GCLOUD=0 ;;
+    --with-precommit) WITH_PRECOMMIT=1 ;;
+    --no-precommit) WITH_PRECOMMIT=0 ;;
+    --with-hooks) WITH_HOOKS=1 ;;
+    --no-hooks) WITH_HOOKS=0 ;;
+    --with-gh) WITH_GH=1 ;;
+    --no-gh) WITH_GH=0 ;;
+    --with-terraform) WITH_TERRAFORM=1 ;;
+    --no-terraform) WITH_TERRAFORM=0 ;;
+    --with-devknowledge) WITH_DEVKNOWLEDGE=1 ;;
+    --no-devknowledge) WITH_DEVKNOWLEDGE=0 ;;
+    --profile)
+      shift
+      [ $# -gt 0 ] || die "--profile needs a value"
+      PROFILE="$1"
+      ;;
+    --profile=*) PROFILE="${1#--profile=}" ;;
+    --prefix)
+      shift
+      [ $# -gt 0 ] || die "--prefix needs a value"
+      PREFIX="$1"
+      ;;
+    --prefix=*) PREFIX="${1#--prefix=}" ;;
+    *) die "unknown argument: $1" ;;
+  esac
+  shift
 done
 
 # --- what the profile implies ------------------------------------------------
@@ -399,17 +402,25 @@ done
 # so the flag was only restating what --profile already said. The 96 MB is the
 # price; --no-gcloud is the refund for an environment that does no GCP work.
 resolve() {
-    # resolve <current> <default> -- echo the caller's answer, or the default
-    if [ -n "$1" ]; then echo "$1"; else echo "$2"; fi
+  # resolve <current> <default> -- echo the caller's answer, or the default
+  if [ -n "$1" ]; then echo "$1"; else echo "$2"; fi
 }
 
 case "$PROFILE" in
-    claude-*) def_hooks=1 ;;
-    *) def_hooks=0 ;;
+  claude-*) def_hooks=1 ;;
+  *) def_hooks=0 ;;
 esac
 case "$PROFILE" in
-    *-cloud-sandbox) def_precommit=1; def_gcloud=1; def_terraform=1 ;;
-    *) def_precommit=0; def_gcloud=0; def_terraform=0 ;;
+  *-cloud-sandbox)
+    def_precommit=1
+    def_gcloud=1
+    def_terraform=1
+    ;;
+  *)
+    def_precommit=0
+    def_gcloud=0
+    def_terraform=0
+    ;;
 esac
 
 WITH_GCLOUD=$(resolve "$WITH_GCLOUD" "$def_gcloud")
@@ -439,18 +450,18 @@ WITH_TERRAFORM=$(resolve "$WITH_TERRAFORM" "$def_terraform")
 # non-Claude profile the flag is refused rather than honoured, because the
 # file it edits is Claude Code's.
 case "$PROFILE" in
-    claude-cloud-sandbox) def_devknowledge=1 ;;
-    *) def_devknowledge=0 ;;
+  claude-cloud-sandbox) def_devknowledge=1 ;;
+  *) def_devknowledge=0 ;;
 esac
 WITH_DEVKNOWLEDGE=$(resolve "$WITH_DEVKNOWLEDGE" "$def_devknowledge")
 case "$PROFILE" in
-    claude-*) ;;
-    *)
-        if [ "$WITH_DEVKNOWLEDGE" -eq 1 ]; then
-            log "WARN    : --with-devknowledge ignored: $PROFILE is not a Claude profile"
-            WITH_DEVKNOWLEDGE=0
-        fi
-        ;;
+  claude-*) ;;
+  *)
+    if [ "$WITH_DEVKNOWLEDGE" -eq 1 ]; then
+      log "WARN    : --with-devknowledge ignored: $PROFILE is not a Claude profile"
+      WITH_DEVKNOWLEDGE=0
+    fi
+    ;;
 esac
 
 # --- where binaries go: decided once, used by both tiers ------------------
@@ -476,24 +487,24 @@ esac
 SYSTEM_BIN=/usr/local/bin
 SYSTEM_OPT=/opt
 if [ -n "$PREFIX" ]; then
-    case "$PREFIX" in
-        /*) ;;
-        *) die "--prefix needs an absolute path, got: $PREFIX" ;;
-    esac
-    PREFIX="${PREFIX%/}"
-    INSTALL_MODE=prefix
+  case "$PREFIX" in
+    /*) ;;
+    *) die "--prefix needs an absolute path, got: $PREFIX" ;;
+  esac
+  PREFIX="${PREFIX%/}"
+  INSTALL_MODE=prefix
 elif [ -w "$SYSTEM_BIN" ] && [ -w "$SYSTEM_OPT" ]; then
-    INSTALL_MODE=system
+  INSTALL_MODE=system
 else
-    INSTALL_MODE=user
-    PREFIX="$HOME/.local"
+  INSTALL_MODE=user
+  PREFIX="$HOME/.local"
 fi
 if [ "$INSTALL_MODE" = system ]; then
-    BIN_DIR="$SYSTEM_BIN"
-    OPT_DIR="$SYSTEM_OPT"
+  BIN_DIR="$SYSTEM_BIN"
+  OPT_DIR="$SYSTEM_OPT"
 else
-    BIN_DIR="$PREFIX/bin"
-    OPT_DIR="$PREFIX/opt"
+  BIN_DIR="$PREFIX/bin"
+  OPT_DIR="$PREFIX/opt"
 fi
 mkdir -p "$BIN_DIR" || die "could not create $BIN_DIR"
 
@@ -504,12 +515,12 @@ mkdir -p "$BIN_DIR" || die "could not create $BIN_DIR"
 # and this process alone gets the bin dir prepended, which is what lets every
 # `command -v` check below see what the run itself installed.
 case ":$PATH:" in
-    *":$BIN_DIR:"*) BIN_ON_PATH=yes ;;
-    *)
-        BIN_ON_PATH=no
-        PATH="$BIN_DIR:$PATH"
-        export PATH
-        ;;
+  *":$BIN_DIR:"*) BIN_ON_PATH=yes ;;
+  *)
+    BIN_ON_PATH=no
+    PATH="$BIN_DIR:$PATH"
+    export PATH
+    ;;
 esac
 
 # Resolve REF to one commit now, and fetch everything from that commit. A branch
@@ -523,26 +534,32 @@ esac
 # "pinned" from "could not resolve". An annotated tag lists its tag object and,
 # on a `^{}` line, the commit it points at; only the commit is addressable under
 # raw.githubusercontent, so that line wins when present.
-resolved=$(git ls-remote "https://github.com/pmgledhill102/agentic-coding-config" "$REF" "$REF^{}" 2>/dev/null |
-    awk '{ if ($2 ~ /\^\{\}$/) peeled = $1; else if (first == "") first = $1 }
+resolved=$(git ls-remote "https://github.com/pmgledhill102/agentic-coding-config" "$REF" "$REF^{}" 2>/dev/null \
+  | awk '{ if ($2 ~ /\^\{\}$/) peeled = $1; else if (first == "") first = $1 }
          END { print (peeled != "" ? peeled : first) }')
 if [ -z "$resolved" ]; then
-    case "$REF" in
-        [0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]*) resolved="$REF" ; kind=pin ;;
-        *) resolved="unresolved" ; kind=unresolved ;;
-    esac
+  case "$REF" in
+    [0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]*)
+      resolved="$REF"
+      kind=pin
+      ;;
+    *)
+      resolved="unresolved"
+      kind=unresolved
+      ;;
+  esac
 else
-    kind=ref
+  kind=ref
 fi
 
 # An unresolved ref keeps today's behaviour and fetches by name. A harness may
 # preset RAW to serve the files from disk.
 case "$kind" in
-    unresolved) RAW="${RAW:-https://raw.githubusercontent.com/pmgledhill102/agentic-coding-config/${REF}}" ;;
-    *) RAW="${RAW:-https://raw.githubusercontent.com/pmgledhill102/agentic-coding-config/${resolved}}" ;;
+  unresolved) RAW="${RAW:-https://raw.githubusercontent.com/pmgledhill102/agentic-coding-config/${REF}}" ;;
+  *) RAW="${RAW:-https://raw.githubusercontent.com/pmgledhill102/agentic-coding-config/${resolved}}" ;;
 esac
 
-command -v curl > /dev/null 2>&1 || die "curl is required"
+command -v curl >/dev/null 2>&1 || die "curl is required"
 
 TMP=$(mktemp -d)
 FAIL_FILE="$TMP/fail-reason"
@@ -573,15 +590,15 @@ FAIL_FILE="$TMP/fail-reason"
 # wanted in that case anyway.
 CURL_RETRY_OPTS='--retry 3 --retry-delay 2 --retry-connrefused --retry-all-errors'
 if ! curl --help all 2>/dev/null | grep -q -- --retry-all-errors; then
-    CURL_RETRY_OPTS='--retry 3 --retry-delay 2'
+  CURL_RETRY_OPTS='--retry 3 --retry-delay 2'
 fi
 
 fetch() {
-    # fetch <url> <dest>
-    # shellcheck disable=SC2086  # CURL_RETRY_OPTS is a deliberate word list
-    curl -sSfL $CURL_RETRY_OPTS \
-        --connect-timeout 15 --speed-limit 1024 --speed-time 30 --max-time 600 \
-        "$1" -o "$2"
+  # fetch <url> <dest>
+  # shellcheck disable=SC2086  # CURL_RETRY_OPTS is a deliberate word list
+  curl -sSfL $CURL_RETRY_OPTS \
+    --connect-timeout 15 --speed-limit 1024 --speed-time 30 --max-time 600 \
+    "$1" -o "$2"
 }
 
 # --- self-check: is this the script the ref resolves to? -------------------
@@ -594,24 +611,24 @@ fetch() {
 # second hand-over; it holds the fetched copy's path so the new run removes it.
 # A fetch failure here is logged and skipped -- the run still has its own copy.
 case "${BOOTSTRAP_REEXEC:-}" in
-    /*) rm -f "$BOOTSTRAP_REEXEC" 2> /dev/null || true ;;
+  /*) rm -f "$BOOTSTRAP_REEXEC" 2>/dev/null || true ;;
 esac
 if [ "$kind" = ref ] && [ -z "${BOOTSTRAP_REEXEC:-}" ] && [ -f "$0" ]; then
-    _fresh=$(mktemp)
-    if fetch "$RAW/cloud/bootstrap.sh" "$_fresh" 2> /dev/null; then
-        if ! cmp -s "$0" "$_fresh"; then
-            log "ref     : /tmp copy is stale for $REF; re-running $(echo "$resolved" | cut -c1-12)"
-            BOOTSTRAP_REEXEC="$_fresh"
-            export BOOTSTRAP_REEXEC
-            rm -rf "$TMP"
-            TMP=
-            eval "set -- $ORIG_ARGS"
-            exec sh "$_fresh" "$@"
-        fi
-    else
-        log "ref     : could not fetch $REF to compare with this copy; carrying on"
+  _fresh=$(mktemp)
+  if fetch "$RAW/cloud/bootstrap.sh" "$_fresh" 2>/dev/null; then
+    if ! cmp -s "$0" "$_fresh"; then
+      log "ref     : /tmp copy is stale for $REF; re-running $(echo "$resolved" | cut -c1-12)"
+      BOOTSTRAP_REEXEC="$_fresh"
+      export BOOTSTRAP_REEXEC
+      rm -rf "$TMP"
+      TMP=
+      eval "set -- $ORIG_ARGS"
+      exec sh "$_fresh" "$@"
     fi
-    rm -f "$_fresh"
+  else
+    log "ref     : could not fetch $REF to compare with this copy; carrying on"
+  fi
+  rm -f "$_fresh"
 fi
 
 # --- pip_install: PyPI, whatever this image calls pip ----------------------
@@ -637,23 +654,23 @@ fi
 # The optional second argument is extra flags for every attempt, word-split:
 # py_tool_install passes `--user` through it.
 pip_install() {
-    _pkg="$1"
-    _extra="${2:-}"
-    for _pip in "pip" "pip3" "python3 -m pip"; do
-        command -v "${_pip%% *}" > /dev/null 2>&1 || continue
-        PIP_ATTEMPT=$((${PIP_ATTEMPT:-0} + 1))
-        # shellcheck disable=SC2086  # deliberate word split: "python3 -m pip"
-        $_pip install --quiet --no-input $_extra "$_pkg" > /dev/null 2>&1 && return 0
-        PIP_ATTEMPT=$((PIP_ATTEMPT + 1))
-        # shellcheck disable=SC2086
-        $_pip install --quiet --no-input $_extra --break-system-packages "$_pkg" \
-            > /dev/null 2>&1 && return 0
-        PIP_ATTEMPT=$((PIP_ATTEMPT + 1))
-        # shellcheck disable=SC2086
-        $_pip install --quiet --no-input $_extra --break-system-packages \
-            --ignore-installed "$_pkg" > /dev/null 2>&1 && return 0
-    done
-    return 1
+  _pkg="$1"
+  _extra="${2:-}"
+  for _pip in "pip" "pip3" "python3 -m pip"; do
+    command -v "${_pip%% *}" >/dev/null 2>&1 || continue
+    PIP_ATTEMPT=$((${PIP_ATTEMPT:-0} + 1))
+    # shellcheck disable=SC2086  # deliberate word split: "python3 -m pip"
+    $_pip install --quiet --no-input $_extra "$_pkg" >/dev/null 2>&1 && return 0
+    PIP_ATTEMPT=$((PIP_ATTEMPT + 1))
+    # shellcheck disable=SC2086
+    $_pip install --quiet --no-input $_extra --break-system-packages "$_pkg" \
+      >/dev/null 2>&1 && return 0
+    PIP_ATTEMPT=$((PIP_ATTEMPT + 1))
+    # shellcheck disable=SC2086
+    $_pip install --quiet --no-input $_extra --break-system-packages \
+      --ignore-installed "$_pkg" >/dev/null 2>&1 && return 0
+  done
+  return 1
 }
 
 # --- py_tool_install: a Python CLI into BIN_DIR, off the system layout -------
@@ -670,18 +687,18 @@ pip_install() {
 # is where it puts both halves; for any other prefix it would land the tool
 # outside it, so that case fails with a reason instead.
 py_tool_install() {
-    _pkg="$1"
-    if command -v uv > /dev/null 2>&1; then
-        UV_TOOL_DIR="$PREFIX/share/uv/tools" UV_TOOL_BIN_DIR="$BIN_DIR" \
-            UV_PYTHON_INSTALL_DIR="$PREFIX/share/uv/python" \
-            uv tool install "$_pkg" > /dev/null 2>&1
-        return
-    fi
-    [ "$PREFIX" = "$HOME/.local" ] || {
-        log "        $_pkg under $PREFIX needs uv, which is not on PATH"
-        return 1
-    }
-    pip_install "$_pkg" --user
+  _pkg="$1"
+  if command -v uv >/dev/null 2>&1; then
+    UV_TOOL_DIR="$PREFIX/share/uv/tools" UV_TOOL_BIN_DIR="$BIN_DIR" \
+      UV_PYTHON_INSTALL_DIR="$PREFIX/share/uv/python" \
+      uv tool install "$_pkg" >/dev/null 2>&1
+    return
+  fi
+  [ "$PREFIX" = "$HOME/.local" ] || {
+    log "        $_pkg under $PREFIX needs uv, which is not on PATH"
+    return 1
+  }
+  pip_install "$_pkg" --user
 }
 
 # checkov and pre-commit. In the system layout uv comes first when it is on
@@ -691,15 +708,15 @@ py_tool_install() {
 # went, so `command -v` finds the same path either way. pip remains the route
 # when uv is absent or fails.
 python_cli_install() {
-    if [ "$INSTALL_MODE" != system ]; then
-        py_tool_install "$1"
-        return
-    fi
-    if command -v uv > /dev/null 2>&1; then
-        UV_TOOL_BIN_DIR="$BIN_DIR" uv tool install "$1" > /dev/null 2>&1 && return 0
-        log "        uv could not install $1; falling back to pip"
-    fi
-    pip_install "$1"
+  if [ "$INSTALL_MODE" != system ]; then
+    py_tool_install "$1"
+    return
+  fi
+  if command -v uv >/dev/null 2>&1; then
+    UV_TOOL_BIN_DIR="$BIN_DIR" uv tool install "$1" >/dev/null 2>&1 && return 0
+    log "        uv could not install $1; falling back to pip"
+  fi
+  pip_install "$1"
 }
 
 # --- npm_global_install: a node CLI whose shim must land in BIN_DIR ----------
@@ -708,11 +725,11 @@ python_cli_install() {
 # writable unprivileged. `--prefix` puts the package under PREFIX/lib and the
 # shim in PREFIX/bin, which is BIN_DIR. The system layout keeps npm's default.
 npm_global_install() {
-    if [ "$INSTALL_MODE" = system ]; then
-        npm install -g --silent "$1" > /dev/null 2>&1
-    else
-        npm install -g --silent --prefix "$PREFIX" "$1" > /dev/null 2>&1
-    fi
+  if [ "$INSTALL_MODE" = system ]; then
+    npm install -g --silent "$1" >/dev/null 2>&1
+  else
+    npm install -g --silent --prefix "$PREFIX" "$1" >/dev/null 2>&1
+  fi
 }
 
 log "installing from ${REF}"
@@ -725,10 +742,10 @@ log "profile -> $PROFILE"
 log "caps    :  gcloud=$(on_off "$WITH_GCLOUD") precommit=$(on_off "$WITH_PRECOMMIT") hooks=$(on_off "$WITH_HOOKS") gh=$(on_off "$WITH_GH") terraform=$(on_off "$WITH_TERRAFORM") devknowledge=$(on_off "$WITH_DEVKNOWLEDGE")"
 log "bin     -> $BIN_DIR ($INSTALL_MODE)"
 if [ "$BIN_ON_PATH" = no ]; then
-    log "WARN    : $BIN_DIR is NOT on PATH. Everything this run installs as a"
-    log "          command goes there, and this script cannot change the PATH a"
-    log "          session inherits. Add it in the environment's own settings,"
-    log "          or sessions will not find gcloud, terraform, pre-commit et al."
+  log "WARN    : $BIN_DIR is NOT on PATH. Everything this run installs as a"
+  log "          command goes there, and this script cannot change the PATH a"
+  log "          session inherits. Add it in the environment's own settings,"
+  log "          or sessions will not find gcloud, terraform, pre-commit et al."
 fi
 
 # There is deliberately no apt step here.
@@ -776,12 +793,12 @@ TIER1_START=$(now_s)
 # so the helper is on PATH for every shell without touching a profile, and the
 # prefix's bin otherwise.
 
-fetch "$RAW/home/bin/gcp-credentials" "$TMP/gcp-credentials" ||
-    die "could not fetch the helper from $REF"
+fetch "$RAW/home/bin/gcp-credentials" "$TMP/gcp-credentials" \
+  || die "could not fetch the helper from $REF"
 # Refuse an error page rendered as a script. A 404 from a bad ref is HTML, and
 # `sh` would run it and report something baffling.
-head -1 "$TMP/gcp-credentials" | grep -q '^#!' ||
-    die "fetched helper is not a script — check that $REF exists"
+head -1 "$TMP/gcp-credentials" | grep -q '^#!' \
+  || die "fetched helper is not a script — check that $REF exists"
 
 install -m 0755 "$TMP/gcp-credentials" "$BIN_DIR/gcp-credentials"
 log "helper  -> $BIN_DIR/gcp-credentials"
@@ -792,10 +809,10 @@ log "helper  -> $BIN_DIR/gcp-credentials"
 # handed to it -- and because it is inert until an environment configures an
 # ingest: with no URL it only spools. It is installed for every profile; the
 # Claude hooks that drive it are wired separately, under --with-hooks.
-fetch "$RAW/home/bin/agent-telemetry" "$TMP/agent-telemetry" ||
-    die "could not fetch the telemetry helper from $REF"
-head -1 "$TMP/agent-telemetry" | grep -q '^#!' ||
-    die "fetched telemetry helper is not a script — check that $REF exists"
+fetch "$RAW/home/bin/agent-telemetry" "$TMP/agent-telemetry" \
+  || die "could not fetch the telemetry helper from $REF"
+head -1 "$TMP/agent-telemetry" | grep -q '^#!' \
+  || die "fetched telemetry helper is not a script — check that $REF exists"
 install -m 0755 "$TMP/agent-telemetry" "$BIN_DIR/agent-telemetry"
 log "helper  -> $BIN_DIR/agent-telemetry"
 mkdir -p "$HOME/.claude/bin"
@@ -832,8 +849,8 @@ log "compat  -> $HOME/.claude/bin/gcp-credentials -> $BIN_DIR/gcp-credentials"
 # invoked it unprompted. What a symlinked skill directory does is the part still
 # worth watching; if Claude stops listing the skill, that is why.
 
-fetch "$RAW/home/commands/gcp-credentials.md" "$TMP/gcp-credentials.md" ||
-    die "could not fetch the skill from $REF"
+fetch "$RAW/home/commands/gcp-credentials.md" "$TMP/gcp-credentials.md" \
+  || die "could not fetch the skill from $REF"
 
 # SKILL.md wants frontmatter the command format does not carry. The first line
 # of the command file is its description by convention, so lift it — single
@@ -843,13 +860,13 @@ SKILL_DIR="$HOME/.agents/skills/gcp-credentials"
 mkdir -p "$SKILL_DIR"
 DESC=$(head -1 "$TMP/gcp-credentials.md" | sed "s/'/''/g")
 {
-    echo "---"
-    echo "name: gcp-credentials"
-    echo "description: '${DESC}'"
-    echo "---"
-    echo ""
-    tail -n +2 "$TMP/gcp-credentials.md"
-} > "$SKILL_DIR/SKILL.md"
+  echo "---"
+  echo "name: gcp-credentials"
+  echo "description: '${DESC}'"
+  echo "---"
+  echo ""
+  tail -n +2 "$TMP/gcp-credentials.md"
+} >"$SKILL_DIR/SKILL.md"
 log "skill   -> $SKILL_DIR/SKILL.md (canonical)"
 
 # An earlier run left a real directory here, and `ln -s` onto one links *inside*
@@ -906,26 +923,26 @@ PROFILE_DIR="$HOME/.agents"
 mkdir -p "$PROFILE_DIR"
 
 case "$PROFILE" in
-    claude-*) POLICY_FILE=CLAUDE.md POLICY_DEST="$HOME/.claude/CLAUDE.md" ;;
-    *) POLICY_FILE=AGENTS.md POLICY_DEST="$PROFILE_DIR/AGENTS.md" ;;
+  claude-*) POLICY_FILE=CLAUDE.md POLICY_DEST="$HOME/.claude/CLAUDE.md" ;;
+  *) POLICY_FILE=AGENTS.md POLICY_DEST="$PROFILE_DIR/AGENTS.md" ;;
 esac
 
-fetch "$RAW/profiles/$PROFILE/$POLICY_FILE" "$TMP/$POLICY_FILE" ||
-    die "could not fetch profile '$PROFILE' ($POLICY_FILE) from $REF — check the name against profiles/ in the repo"
+fetch "$RAW/profiles/$PROFILE/$POLICY_FILE" "$TMP/$POLICY_FILE" \
+  || die "could not fetch profile '$PROFILE' ($POLICY_FILE) from $REF — check the name against profiles/ in the repo"
 
 # Same 404-as-content guard as everything else here: a bad ref or a mistyped
 # profile can return an HTML error page with a 200 from some proxies, and
 # policy whose first line is <!DOCTYPE reads as a broken agent rather than a
 # broken fetch.
-head -1 "$TMP/$POLICY_FILE" | grep -q "^<!-- GENERATED" ||
-    die "fetched profile is not a composed artefact — check that $REF and profile '$PROFILE' exist"
+head -1 "$TMP/$POLICY_FILE" | grep -q "^<!-- GENERATED" \
+  || die "fetched profile is not a composed artefact — check that $REF and profile '$PROFILE' exist"
 
 mkdir -p "$(dirname "$POLICY_DEST")"
 cp "$TMP/$POLICY_FILE" "$POLICY_DEST"
 log "policy  -> $POLICY_DEST (profile: $PROFILE)"
 
 case "$PROFILE" in
-    claude-*) rm -f "$PROFILE_DIR/AGENTS.md" ;;
+  claude-*) rm -f "$PROFILE_DIR/AGENTS.md" ;;
 esac
 
 # --- the workflow skills ------------------------------------------------------
@@ -1014,11 +1031,11 @@ BIN_SCRIPTS="start-session-gather-state start-session-claude-drift session-repo-
 mkdir -p "$HOME/.claude/bin"
 
 for script in $BIN_SCRIPTS; do
-    fetch "$RAW/home/bin/$script" "$TMP/$script" ||
-        die "could not fetch helper script $script from $REF"
-    head -1 "$TMP/$script" | grep -q '^#!' ||
-        die "fetched $script is not a script — check that $REF exists"
-    install -m 0755 "$TMP/$script" "$HOME/.claude/bin/$script"
+  fetch "$RAW/home/bin/$script" "$TMP/$script" \
+    || die "could not fetch helper script $script from $REF"
+  head -1 "$TMP/$script" | grep -q '^#!' \
+    || die "fetched $script is not a script — check that $REF exists"
+  install -m 0755 "$TMP/$script" "$HOME/.claude/bin/$script"
 done
 log "helpers -> $HOME/.claude/bin/ ($(echo "$BIN_SCRIPTS" | wc -w | tr -d ' ') session scripts)"
 
@@ -1026,10 +1043,10 @@ log "helpers -> $HOME/.claude/bin/ ($(echo "$BIN_SCRIPTS" | wc -w | tr -d ' ') s
 # shebang guard above does not fit; a stanza header is what a bad ref's HTML
 # error page will not have.
 mkdir -p "$HOME/.claude/conformance"
-fetch "$RAW/home/conformance/matrix.conf" "$TMP/matrix.conf" ||
-    die "could not fetch the capability matrix from $REF"
-grep -q '^\[[a-z0-9-]*\]$' "$TMP/matrix.conf" ||
-    die "fetched matrix.conf has no stanzas — check that $REF exists"
+fetch "$RAW/home/conformance/matrix.conf" "$TMP/matrix.conf" \
+  || die "could not fetch the capability matrix from $REF"
+grep -q '^\[[a-z0-9-]*\]$' "$TMP/matrix.conf" \
+  || die "fetched matrix.conf has no stanzas — check that $REF exists"
 install -m 0644 "$TMP/matrix.conf" "$HOME/.claude/conformance/matrix.conf"
 log "matrix  -> $HOME/.claude/conformance/matrix.conf"
 
@@ -1052,53 +1069,53 @@ log "matrix  -> $HOME/.claude/conformance/matrix.conf"
 mkdir -p "$HOME/.claude/standards"
 
 for standard in github-repo.json github-standards.md; do
-    fetch "$RAW/home/standards/$standard" "$TMP/$standard" ||
-        die "could not fetch $standard from $REF"
-    # Same 404-as-content guard the helpers and skills use: a bad ref returns
-    # an HTML error page, and a standard that is silently HTML is worse than
-    # one that is absent, because nothing downstream will notice.
-    case "$standard" in
-        *.json) head -1 "$TMP/$standard" | grep -q '^{' ||
-                    die "fetched $standard is not JSON — check that $REF exists" ;;
-        *.md)   head -1 "$TMP/$standard" | grep -q '^#' ||
-                    die "fetched $standard is not markdown — check that $REF exists" ;;
-    esac
-    install -m 0644 "$TMP/$standard" "$HOME/.claude/standards/$standard"
+  fetch "$RAW/home/standards/$standard" "$TMP/$standard" \
+    || die "could not fetch $standard from $REF"
+  # Same 404-as-content guard the helpers and skills use: a bad ref returns
+  # an HTML error page, and a standard that is silently HTML is worse than
+  # one that is absent, because nothing downstream will notice.
+  case "$standard" in
+    *.json) head -1 "$TMP/$standard" | grep -q '^{' \
+      || die "fetched $standard is not JSON — check that $REF exists" ;;
+    *.md) head -1 "$TMP/$standard" | grep -q '^#' \
+      || die "fetched $standard is not markdown — check that $REF exists" ;;
+  esac
+  install -m 0644 "$TMP/$standard" "$HOME/.claude/standards/$standard"
 done
 log "standards -> $HOME/.claude/standards/ (spec + prose)"
 
 for skill in $SKILLS $COMPOSED_SKILLS; do
-    # One loop, one difference: where the body comes from. Recomputing it per
-    # skill keeps the install, symlink and de-duplication steps below in a
-    # single place rather than duplicated per source.
-    case " $COMPOSED_SKILLS " in
-        *" $skill "*) src="profiles/$PROFILE/skills/$skill/SKILL.md" ;;
-        *) src="home/skills/$skill/SKILL.md" ;;
-    esac
+  # One loop, one difference: where the body comes from. Recomputing it per
+  # skill keeps the install, symlink and de-duplication steps below in a
+  # single place rather than duplicated per source.
+  case " $COMPOSED_SKILLS " in
+    *" $skill "*) src="profiles/$PROFILE/skills/$skill/SKILL.md" ;;
+    *) src="home/skills/$skill/SKILL.md" ;;
+  esac
 
-    fetch "$RAW/$src" "$TMP/$skill.SKILL.md" ||
-        die "could not fetch the $skill skill from $REF ($src) — a composed skill needs a profiles/$PROFILE/skills/ entry in context/manifest.json"
+  fetch "$RAW/$src" "$TMP/$skill.SKILL.md" \
+    || die "could not fetch the $skill skill from $REF ($src) — a composed skill needs a profiles/$PROFILE/skills/ entry in context/manifest.json"
 
-    # Same 404-as-content guard as the helper: a bad ref returns an HTML error
-    # page with a 200 from some proxies, and a skill whose body is HTML fails
-    # in a way that reads like the skill being wrong rather than absent.
-    head -1 "$TMP/$skill.SKILL.md" | grep -q '^---$' ||
-        die "fetched $skill skill has no frontmatter — check that $REF exists"
+  # Same 404-as-content guard as the helper: a bad ref returns an HTML error
+  # page with a 200 from some proxies, and a skill whose body is HTML fails
+  # in a way that reads like the skill being wrong rather than absent.
+  head -1 "$TMP/$skill.SKILL.md" | grep -q '^---$' \
+    || die "fetched $skill skill has no frontmatter — check that $REF exists"
 
-    dir="$HOME/.agents/skills/$skill"
-    mkdir -p "$dir"
-    cp "$TMP/$skill.SKILL.md" "$dir/SKILL.md"
+  dir="$HOME/.agents/skills/$skill"
+  mkdir -p "$dir"
+  cp "$TMP/$skill.SKILL.md" "$dir/SKILL.md"
 
-    # Same canonical/adapter split as the credential skill above: the real file
-    # lives in the vendor-neutral tree, each vendor path is a symlink that
-    # cannot drift. See that comment for the reasoning.
-    rm -rf "$HOME/.claude/skills/$skill"
-    ln -sfn "$dir" "$HOME/.claude/skills/$skill"
-    log "skill   -> $dir/SKILL.md (+ ~/.claude/skills/$skill)"
+  # Same canonical/adapter split as the credential skill above: the real file
+  # lives in the vendor-neutral tree, each vendor path is a symlink that
+  # cannot drift. See that comment for the reasoning.
+  rm -rf "$HOME/.claude/skills/$skill"
+  ln -sfn "$dir" "$HOME/.claude/skills/$skill"
+  log "skill   -> $dir/SKILL.md (+ ~/.claude/skills/$skill)"
 
-    # A previous chezmoi-era or hand-copied command file registers the same
-    # /name a second time. Same reasoning as gcp-credentials above.
-    rm -f "$HOME/.claude/commands/$skill.md"
+  # A previous chezmoi-era or hand-copied command file registers the same
+  # /name a second time. Same reasoning as gcp-credentials above.
+  rm -f "$HOME/.claude/commands/$skill.md"
 done
 
 # --- harness hooks, on request ------------------------------------------------
@@ -1121,72 +1138,72 @@ done
 # names each script directly, exactly as chezmoi's does.
 
 if [ "$WITH_HOOKS" -eq 1 ]; then
-    command -v jq > /dev/null 2>&1 || die "--with-hooks needs jq to merge settings.json"
+  command -v jq >/dev/null 2>&1 || die "--with-hooks needs jq to merge settings.json"
 
-    # Keep this list in step with the hook commands in
-    # home/settings.json: the .hooks block below is taken from that file, so a
-    # hook named there but missing here installs a settings.json pointing at a
-    # script this container never fetched. credguard is the one that matters
-    # most, because permissions.deny does not travel to a sandbox at all --
-    # this hook is the only credential guard that reaches this surface (#440).
-    for script in credguard-claude-hook prchecks-wait-claude-hook prepush-guard-claude-hook precommit-claude-hook agent-telemetry-claude-hook wsl-mnt-guard-claude-hook; do
-        fetch "$RAW/home/bin/$script" "$TMP/$script" ||
-            die "could not fetch hook script $script from $REF"
-        head -1 "$TMP/$script" | grep -q '^#!' || die "fetched $script is not a script"
-        install -m 0755 "$TMP/$script" "$HOME/.claude/bin/$script"
-    done
+  # Keep this list in step with the hook commands in
+  # home/settings.json: the .hooks block below is taken from that file, so a
+  # hook named there but missing here installs a settings.json pointing at a
+  # script this container never fetched. credguard is the one that matters
+  # most, because permissions.deny does not travel to a sandbox at all --
+  # this hook is the only credential guard that reaches this surface (#440).
+  for script in credguard-claude-hook prchecks-wait-claude-hook prepush-guard-claude-hook precommit-claude-hook agent-telemetry-claude-hook wsl-mnt-guard-claude-hook; do
+    fetch "$RAW/home/bin/$script" "$TMP/$script" \
+      || die "could not fetch hook script $script from $REF"
+    head -1 "$TMP/$script" | grep -q '^#!' || die "fetched $script is not a script"
+    install -m 0755 "$TMP/$script" "$HOME/.claude/bin/$script"
+  done
 
-    # Sourced (not run) by prepush-guard and precommit, from lib/ next to
-    # themselves. Without it both hooks stand down, so any new home/bin/lib/
-    # file a hook above sources needs fetching here too.
-    mkdir -p "$HOME/.claude/bin/lib"
-    fetch "$RAW/home/bin/lib/resolve-command-dir" "$TMP/resolve-command-dir" ||
-        die "could not fetch hook library lib/resolve-command-dir from $REF"
-    head -1 "$TMP/resolve-command-dir" | grep -q '^#!' ||
-        die "fetched lib/resolve-command-dir is not a script"
-    install -m 0644 "$TMP/resolve-command-dir" "$HOME/.claude/bin/lib/resolve-command-dir"
+  # Sourced (not run) by prepush-guard and precommit, from lib/ next to
+  # themselves. Without it both hooks stand down, so any new home/bin/lib/
+  # file a hook above sources needs fetching here too.
+  mkdir -p "$HOME/.claude/bin/lib"
+  fetch "$RAW/home/bin/lib/resolve-command-dir" "$TMP/resolve-command-dir" \
+    || die "could not fetch hook library lib/resolve-command-dir from $REF"
+  head -1 "$TMP/resolve-command-dir" | grep -q '^#!' \
+    || die "fetched lib/resolve-command-dir is not a script"
+  install -m 0644 "$TMP/resolve-command-dir" "$HOME/.claude/bin/lib/resolve-command-dir"
 
-    fetch "$RAW/home/settings.json" "$TMP/settings.json" ||
-        die "could not fetch home/settings.json from $REF"
-    jq -e '.hooks' "$TMP/settings.json" > "$TMP/hooks.json" ||
-        die "home/settings.json has no .hooks block"
+  fetch "$RAW/home/settings.json" "$TMP/settings.json" \
+    || die "could not fetch home/settings.json from $REF"
+  jq -e '.hooks' "$TMP/settings.json" >"$TMP/hooks.json" \
+    || die "home/settings.json has no .hooks block"
 
-    # Merge rather than overwrite. A container may already have a settings.json
-    # -- this script's own earlier run, or something the environment put there
-    # -- and replacing it wholesale would silently drop whatever else it holds.
-    # `*` deep-merges objects and replaces arrays, so the hook lists this repo
-    # owns are replaced while any other key survives untouched.
-    #
-    # Note ~/.claude/launcher-settings.json is a DIFFERENT file with its own
-    # hooks, written by the harness. Nothing here touches it, and both are read.
-    SETTINGS="$HOME/.claude/settings.json"
-    if [ -f "$SETTINGS" ]; then
-        jq -s '.[0] * {hooks: .[1]}' "$SETTINGS" "$TMP/hooks.json" > "$TMP/merged.json" ||
-            die "could not merge into existing $SETTINGS"
-        mv "$TMP/merged.json" "$SETTINGS"
-        log "hooks   -> $SETTINGS (merged into existing)"
-    else
-        jq -n --slurpfile h "$TMP/hooks.json" '{hooks: $h[0]}' > "$SETTINGS" ||
-            die "could not write $SETTINGS"
-        log "hooks   -> $SETTINGS (created)"
-    fi
+  # Merge rather than overwrite. A container may already have a settings.json
+  # -- this script's own earlier run, or something the environment put there
+  # -- and replacing it wholesale would silently drop whatever else it holds.
+  # `*` deep-merges objects and replaces arrays, so the hook lists this repo
+  # owns are replaced while any other key survives untouched.
+  #
+  # Note ~/.claude/launcher-settings.json is a DIFFERENT file with its own
+  # hooks, written by the harness. Nothing here touches it, and both are read.
+  SETTINGS="$HOME/.claude/settings.json"
+  if [ -f "$SETTINGS" ]; then
+    jq -s '.[0] * {hooks: .[1]}' "$SETTINGS" "$TMP/hooks.json" >"$TMP/merged.json" \
+      || die "could not merge into existing $SETTINGS"
+    mv "$TMP/merged.json" "$SETTINGS"
+    log "hooks   -> $SETTINGS (merged into existing)"
+  else
+    jq -n --slurpfile h "$TMP/hooks.json" '{hooks: $h[0]}' >"$SETTINGS" \
+      || die "could not write $SETTINGS"
+    log "hooks   -> $SETTINGS (created)"
+  fi
 
-    # prepush-guard needs gh on PATH, and exits 0 without it. --with-gh governs
-    # only this script's own install: the platform may preinstall gh, and the
-    # guard looks PRs up through REST, which a sandbox allows. So gate the note
-    # on gh being there, not on the flag. precommit-claude-hook needs the
-    # pre-commit framework and is a no-op without it. Both degrade rather than
-    # failing, which is why hooks have no hard dependency on those -- but the
-    # trio is what makes them worth having.
-    #
-    # Report the resolved state rather than naming flags: either capability can
-    # arrive from the profile with no flag typed.
-    if [ "$WITH_GH" -eq 1 ] || command -v gh >/dev/null 2>&1; then gh_note=""; else gh_note=" (inactive: no gh)"; fi
-    if [ "$WITH_PRECOMMIT" -eq 1 ]; then pc_note=""; else pc_note=" (inactive: no pre-commit)"; fi
-    log "hooks   :  prchecks-wait, prepush-guard$gh_note, precommit$pc_note"
+  # prepush-guard needs gh on PATH, and exits 0 without it. --with-gh governs
+  # only this script's own install: the platform may preinstall gh, and the
+  # guard looks PRs up through REST, which a sandbox allows. So gate the note
+  # on gh being there, not on the flag. precommit-claude-hook needs the
+  # pre-commit framework and is a no-op without it. Both degrade rather than
+  # failing, which is why hooks have no hard dependency on those -- but the
+  # trio is what makes them worth having.
+  #
+  # Report the resolved state rather than naming flags: either capability can
+  # arrive from the profile with no flag typed.
+  if [ "$WITH_GH" -eq 1 ] || command -v gh >/dev/null 2>&1; then gh_note=""; else gh_note=" (inactive: no gh)"; fi
+  if [ "$WITH_PRECOMMIT" -eq 1 ]; then pc_note=""; else pc_note=" (inactive: no pre-commit)"; fi
+  log "hooks   :  prchecks-wait, prepush-guard$gh_note, precommit$pc_note"
 fi
 
-TIER1_SECS=$((  $(now_s) - TIER1_START ))
+TIER1_SECS=$(($(now_s) - TIER1_START))
 record_timing toolkit "$TIER1_SECS"
 
 # =============================================================================
@@ -1226,62 +1243,62 @@ record_timing toolkit "$TIER1_SECS"
 # that costs a second human approval.
 
 cap_gcloud() {
-    # An SDK already on PATH is wrapped, not skipped: the Claude cloud image
-    # ships gcloud preinstalled, and skipping it left the preset token below
-    # unhandled. Only the download is skipped.
-    _existing=$(command -v gcloud 2> /dev/null || true)
-    _fresh=0
-    if [ -n "$_existing" ] && grep -q '^# Installed by agentic-coding-config cloud/bootstrap.sh' "$_existing" 2> /dev/null; then
-        # Our own wrapper, from an earlier run: rewrite it from the current
-        # template, keeping the SDK it already points at.
-        _sdk=$(sed -n 's#^exec \(.*\)/bin/gcloud "\$@"$#\1#p' "$_existing" | tail -1)
-    elif [ -n "$_existing" ]; then
-        _real=$(readlink -f "$_existing" 2> /dev/null || echo "$_existing")
-        _sdk=$(dirname "$(dirname "$_real")")
-    else
-        fetch https://dl.google.com/dl/cloudsdk/channels/rapid/downloads/google-cloud-cli-linux-x86_64.tar.gz \
-            "$TMP/gcloud.tar.gz" ||
-            die "could not download the gcloud SDK — is dl.google.com on the allowlist?"
-        mkdir -p "$OPT_DIR" || die "could not create $OPT_DIR"
-        tar -xzf "$TMP/gcloud.tar.gz" -C "$OPT_DIR" || die "could not unpack the gcloud SDK"
-        _sdk="$OPT_DIR/google-cloud-sdk"
-        # --path-update false, then a wrapper on BIN_DIR: a PATH line appended to
-        # a shell profile is not reliably sourced by the non-interactive shells
-        # tool calls run in.
-        "$_sdk/install.sh" --quiet --usage-reporting false \
-            --path-update false --command-completion false > /dev/null || true
-        _fresh=1
-    fi
-    if [ -z "$_sdk" ] || [ ! -x "$_sdk/bin/gcloud" ]; then
-        die "gcloud at $_existing is not inside an SDK tree, so it cannot be wrapped"
-    fi
-    [ "$_fresh" -eq 1 ] || log "gcloud  : SDK already at $_sdk; wrapping it"
-    # A wrapper rather than a symlink, because the agent proxy presets
-    # CLOUDSDK_AUTH_ACCESS_TOKEN in every tool-call shell (the agent process
-    # itself does not carry it, so no environment setting removes it), and that
-    # variable outranks the
-    # auth/access_token_file the broker configures. Every call then fails
-    # ACCESS_TOKEN_TYPE_UNSUPPORTED while the helper, `status` and the token file
-    # all report healthy — confirmed in two independent fresh sandboxes.
-    #
-    # The documented workaround is `env -u CLOUDSDK_AUTH_ACCESS_TOKEN` on every
-    # invocation, which fails the moment anyone forgets, and fails silently by
-    # picking the wrong identity rather than erroring. Better to make the right
-    # thing the default.
-    #
-    # Narrow on purpose: it drops the variable only when a broker token actually
-    # exists. With no grant installed, the preset token is whatever the sandbox
-    # intended and is left alone.
-    #
-    # The body is quoted so its own $-expansions stay literal; the SDK path is
-    # the one value it needs from here, filled in by sed. In the system layout
-    # that yields /opt/google-cloud-sdk, the path it always carried.
-    #
-    # rm first: $BIN_DIR/gcloud can be the image's symlink into the SDK, and a
-    # redirect writes THROUGH a symlink -- replacing the SDK's own gcloud with a
-    # wrapper that execs itself.
-    rm -f "$BIN_DIR/gcloud"
-    sed "s#@GCLOUD_SDK@#$_sdk#g" > "$BIN_DIR/gcloud" << 'WRAPPER'
+  # An SDK already on PATH is wrapped, not skipped: the Claude cloud image
+  # ships gcloud preinstalled, and skipping it left the preset token below
+  # unhandled. Only the download is skipped.
+  _existing=$(command -v gcloud 2>/dev/null || true)
+  _fresh=0
+  if [ -n "$_existing" ] && grep -q '^# Installed by agentic-coding-config cloud/bootstrap.sh' "$_existing" 2>/dev/null; then
+    # Our own wrapper, from an earlier run: rewrite it from the current
+    # template, keeping the SDK it already points at.
+    _sdk=$(sed -n 's#^exec \(.*\)/bin/gcloud "\$@"$#\1#p' "$_existing" | tail -1)
+  elif [ -n "$_existing" ]; then
+    _real=$(readlink -f "$_existing" 2>/dev/null || echo "$_existing")
+    _sdk=$(dirname "$(dirname "$_real")")
+  else
+    fetch https://dl.google.com/dl/cloudsdk/channels/rapid/downloads/google-cloud-cli-linux-x86_64.tar.gz \
+      "$TMP/gcloud.tar.gz" \
+      || die "could not download the gcloud SDK — is dl.google.com on the allowlist?"
+    mkdir -p "$OPT_DIR" || die "could not create $OPT_DIR"
+    tar -xzf "$TMP/gcloud.tar.gz" -C "$OPT_DIR" || die "could not unpack the gcloud SDK"
+    _sdk="$OPT_DIR/google-cloud-sdk"
+    # --path-update false, then a wrapper on BIN_DIR: a PATH line appended to
+    # a shell profile is not reliably sourced by the non-interactive shells
+    # tool calls run in.
+    "$_sdk/install.sh" --quiet --usage-reporting false \
+      --path-update false --command-completion false >/dev/null || true
+    _fresh=1
+  fi
+  if [ -z "$_sdk" ] || [ ! -x "$_sdk/bin/gcloud" ]; then
+    die "gcloud at $_existing is not inside an SDK tree, so it cannot be wrapped"
+  fi
+  [ "$_fresh" -eq 1 ] || log "gcloud  : SDK already at $_sdk; wrapping it"
+  # A wrapper rather than a symlink, because the agent proxy presets
+  # CLOUDSDK_AUTH_ACCESS_TOKEN in every tool-call shell (the agent process
+  # itself does not carry it, so no environment setting removes it), and that
+  # variable outranks the
+  # auth/access_token_file the broker configures. Every call then fails
+  # ACCESS_TOKEN_TYPE_UNSUPPORTED while the helper, `status` and the token file
+  # all report healthy — confirmed in two independent fresh sandboxes.
+  #
+  # The documented workaround is `env -u CLOUDSDK_AUTH_ACCESS_TOKEN` on every
+  # invocation, which fails the moment anyone forgets, and fails silently by
+  # picking the wrong identity rather than erroring. Better to make the right
+  # thing the default.
+  #
+  # Narrow on purpose: it drops the variable only when a broker token actually
+  # exists. With no grant installed, the preset token is whatever the sandbox
+  # intended and is left alone.
+  #
+  # The body is quoted so its own $-expansions stay literal; the SDK path is
+  # the one value it needs from here, filled in by sed. In the system layout
+  # that yields /opt/google-cloud-sdk, the path it always carried.
+  #
+  # rm first: $BIN_DIR/gcloud can be the image's symlink into the SDK, and a
+  # redirect writes THROUGH a symlink -- replacing the SDK's own gcloud with a
+  # wrapper that execs itself.
+  rm -f "$BIN_DIR/gcloud"
+  sed "s#@GCLOUD_SDK@#$_sdk#g" >"$BIN_DIR/gcloud" <<'WRAPPER'
 #!/bin/sh
 # Installed by agentic-coding-config cloud/bootstrap.sh.
 #
@@ -1365,11 +1382,11 @@ if [ -n "${CLOUDSDK_AUTH_ACCESS_TOKEN:-}" ] && [ -f "$CB_TOKEN" ]; then
 fi
 exec @GCLOUD_SDK@/bin/gcloud "$@"
 WRAPPER
-    chmod 0755 "$BIN_DIR/gcloud" || true
-    # gsutil needs no wrapper; link it only where this run installed the SDK,
-    # and leave an image's own entry alone.
-    [ "$_fresh" -eq 0 ] || ln -sf "$_sdk/bin/gsutil" "$BIN_DIR/gsutil" || true
-    log "gcloud  -> $(gcloud --version 2> /dev/null | head -1 || echo 'installed')"
+  chmod 0755 "$BIN_DIR/gcloud" || true
+  # gsutil needs no wrapper; link it only where this run installed the SDK,
+  # and leave an image's own entry alone.
+  [ "$_fresh" -eq 0 ] || ln -sf "$_sdk/bin/gsutil" "$BIN_DIR/gsutil" || true
+  log "gcloud  -> $(gcloud --version 2>/dev/null | head -1 || echo 'installed')"
 }
 
 # --- pre-commit, on request ---------------------------------------------------
@@ -1385,258 +1402,258 @@ WRAPPER
 # same way.
 
 cap_precommit() {
-    step_begin
-    # Both linters are `language: system` hooks in this estate's config -- they
-    # run the binary on PATH rather than a pinned mirror, so the hook and CI
-    # cannot drift to different versions.
+  step_begin
+  # Both linters are `language: system` hooks in this estate's config -- they
+  # run the binary on PATH rather than a pinned mirror, so the hook and CI
+  # cannot drift to different versions.
+  #
+  # (Written as "both linters" rather than naming the first one at the start
+  # of a comment line: `# shellcheck ...` is parsed as a shellcheck directive
+  # and fails the lint, which this script is itself subject to.) That only works if the
+  # binaries are here. Installing them is the whole point; SKIP= exists for a
+  # laptop missing one, and normalising it would leave enforcement that is
+  # routinely skipped, which is not enforcement.
+  #
+  # The binary comes from the pinned release on every layout, the same pattern
+  # as actionlint below. Ubuntu's package is 0.9.0, so an apt fallback would
+  # put the CLI and the hook on different versions exactly when GitHub is
+  # unreachable; failing loudly, as the other pinned binaries do, is the point.
+  if ! command -v shellcheck >/dev/null 2>&1; then
+    SC_VER=0.11.0
+    fetch "https://github.com/koalaman/shellcheck/releases/download/v${SC_VER}/shellcheck-v${SC_VER}.linux.x86_64.tar.xz" \
+      "$TMP/shellcheck.tar.xz" \
+      || die "could not download shellcheck ${SC_VER}"
+    tar -xJf "$TMP/shellcheck.tar.xz" -C "$TMP" "shellcheck-v${SC_VER}/shellcheck" \
+      || die "could not unpack shellcheck — is xz present?"
+    install -m 0755 "$TMP/shellcheck-v${SC_VER}/shellcheck" "$BIN_DIR/shellcheck" \
+      || die "could not install shellcheck"
+  fi
+  log "shellck -> $(command -v shellcheck)"
+  step_end precommit.shellcheck
+
+  # actionlint is not packaged in Ubuntu, so it comes from a pinned release.
+  # Note github.com answers 403 to this sandbox's curl while the release asset
+  # itself resolves fine through the redirect -- a naive reachability probe
+  # against github.com reads as an egress block and is not one.
+  if ! command -v actionlint >/dev/null 2>&1; then
+    AL_VER=1.7.12
+    fetch "https://github.com/rhysd/actionlint/releases/download/v${AL_VER}/actionlint_${AL_VER}_linux_amd64.tar.gz" \
+      "$TMP/actionlint.tar.gz" \
+      || die "could not download actionlint ${AL_VER}"
+    tar -xzf "$TMP/actionlint.tar.gz" -C "$TMP" actionlint || die "could not unpack actionlint"
+    install -m 0755 "$TMP/actionlint" "$BIN_DIR/actionlint" || die "could not install actionlint"
+  fi
+  log "actionl -> $(command -v actionlint)"
+  step_end precommit.actionlint
+
+  # gitleaks for the `gitleaks-system` hook /setup-common stamps. The
+  # `gitleaks` id is `language: golang` and compiles from source on a cold
+  # cache, ~30s per container. The `-system` entry uses `gitleaks git`, which
+  # needs 8.19 or later. Bump with the gitleaks rev in setup-common.
+  if ! command -v gitleaks >/dev/null 2>&1; then
+    GL_VER=8.30.1
+    fetch "https://github.com/gitleaks/gitleaks/releases/download/v${GL_VER}/gitleaks_${GL_VER}_linux_x64.tar.gz" \
+      "$TMP/gitleaks.tar.gz" \
+      || die "could not download gitleaks ${GL_VER}"
+    tar -xzf "$TMP/gitleaks.tar.gz" -C "$TMP" gitleaks || die "could not unpack gitleaks"
+    install -m 0755 "$TMP/gitleaks" "$BIN_DIR/gitleaks" || die "could not install gitleaks"
+  fi
+  log "gitleak -> $(command -v gitleaks)"
+  step_end precommit.gitleaks
+
+  # Serves `markdownlint-cli2 "**/*.md"`, the gate CLAUDE.md documents, which
+  # needs the binary on PATH. Unlike the three above this is not a
+  # `language: system` hook -- the pre-commit hook builds its own node
+  # environment -- so the pin here and the rev in .pre-commit-config.yaml are
+  # two versions of the same tool. Bump them together.
+  if ! command -v markdownlint-cli2 >/dev/null 2>&1; then
+    ML_VER=0.23.2
+    command -v npm >/dev/null 2>&1 \
+      || die "markdownlint-cli2 needs npm, which is not on PATH"
+    npm_global_install "markdownlint-cli2@${ML_VER}" \
+      || die "could not install markdownlint-cli2 ${ML_VER} from npm"
+  fi
+  # This image carries several node installs with different global prefixes,
+  # so npm exiting 0 does not mean the shim landed anywhere on PATH.
+  command -v markdownlint-cli2 >/dev/null 2>&1 \
+    || die "markdownlint-cli2 installed but is not on PATH"
+  log "mdlint  -> $(command -v markdownlint-cli2) ($(markdownlint-cli2 --version 2>&1 | head -1))"
+  step_end precommit.markdownlint-cli2
+
+  # semgrep is a `language: system` hook across this estate, so the hook runs
+  # whatever is on PATH and fails hard with "Executable `semgrep` not found"
+  # when nothing is -- which is why every commit in one paul-context sandbox
+  # session had to be issued as SKIP=semgrep (#407). The hook was moved to
+  # system deliberately: pre-commit's own python route costs 1.2G and ~190s
+  # per container, against ~10s and 319M here on a cold uv cache (a tenth of
+  # a second once warm), most of it semgrep-core either way. pip is the
+  # fallback rather than the route: uv sits at /root/.local/bin in this
+  # image, but one image is not the contract.
+  if ! command -v semgrep >/dev/null 2>&1; then
+    if [ "$INSTALL_MODE" != system ]; then
+      py_tool_install semgrep \
+        || die "could not install semgrep under $PREFIX"
+    elif command -v uv >/dev/null 2>&1; then
+      uv tool install semgrep >/dev/null 2>&1 \
+        || die "could not install semgrep with uv"
+    else
+      pip_install semgrep \
+        || die "could not install semgrep from PyPI"
+    fi
+  fi
+  command -v semgrep >/dev/null 2>&1 \
+    || die "semgrep reported installed but is not on PATH"
+  log "semgrep -> $(command -v semgrep)"
+  step_end precommit.semgrep
+
+  # cspell already runs inside pre-commit's own node environment, so the hook
+  # passes without this. What does not work without it is the documented
+  # pre-push check -- several repos tell contributors to run cspell directly
+  # before committing, and the estate prefers a native binary to an npx shim,
+  # so absence from PATH makes that instruction unfollowable and turns four
+  # batches of proper nouns into four failed commits (#407). Pinned like
+  # markdownlint-cli2 above, but not coupled to a hook rev: the cspell hook
+  # tracks the latest tag rather than a version this script could match.
+  if ! command -v cspell >/dev/null 2>&1; then
+    CS_VER=10.3.3
+    command -v npm >/dev/null 2>&1 \
+      || die "cspell needs npm, which is not on PATH"
+    npm_global_install "cspell@${CS_VER}" \
+      || die "could not install cspell ${CS_VER} from npm"
+  fi
+  # Same several-node-prefixes caveat as markdownlint-cli2: npm exiting 0
+  # does not mean the shim landed anywhere on PATH.
+  command -v cspell >/dev/null 2>&1 \
+    || die "cspell installed but is not on PATH"
+  log "cspell  -> $(command -v cspell) ($(cspell --version 2>&1 | head -1))"
+  step_end precommit.cspell
+
+  # The Terraform toolchain, opt-in. A repo's .pre-commit-config.yaml can
+  # call terraform_fmt, terraform_validate, terraform_tflint and checkov;
+  # without the binaries those hooks fail with exit 127 rather than finding
+  # anything. precommit-claude-hook classifies that as not-checked and lets
+  # the push through (#335), so this is about being able to CHECK, not about
+  # being able to push.
+  #
+  # On by default for a sandbox, off elsewhere -- the same reasoning as
+  # pre-commit itself: a disposable container rebuilt from a script has no
+  # developer setup to protect, so enforcement that is present beats a
+  # download that is avoided. --no-terraform is the refund.
+  if [ "$WITH_TERRAFORM" -eq 1 ]; then
+    # Same pinned-release pattern, and the same github.com 403 note, as
+    # actionlint above.
+    # The pin is compared against what is installed, not merely against
+    # whether anything is. The image ships its own terraform at 1.9.8, and
+    # every root in gcp-org-management declares required_version >= 1.11,
+    # so terraform_validate fails init in all 16 layers (#369) -- with a
+    # bare `command -v` guard the install is skipped and that stays true
+    # however the pin is bumped. An installed version NEWER than the pin is
+    # left alone, so this never walks a container backwards.
     #
-    # (Written as "both linters" rather than naming the first one at the start
-    # of a comment line: `# shellcheck ...` is parsed as a shellcheck directive
-    # and fails the lint, which this script is itself subject to.) That only works if the
-    # binaries are here. Installing them is the whole point; SKIP= exists for a
-    # laptop missing one, and normalising it would leave enforcement that is
-    # routinely skipped, which is not enforcement.
-    #
-    # The binary comes from the pinned release on every layout, the same pattern
-    # as actionlint below. Ubuntu's package is 0.9.0, so an apt fallback would
-    # put the CLI and the hook on different versions exactly when GitHub is
-    # unreachable; failing loudly, as the other pinned binaries do, is the point.
-    if ! command -v shellcheck > /dev/null 2>&1; then
-        SC_VER=0.11.0
-        fetch "https://github.com/koalaman/shellcheck/releases/download/v${SC_VER}/shellcheck-v${SC_VER}.linux.x86_64.tar.xz" \
-            "$TMP/shellcheck.tar.xz" ||
-            die "could not download shellcheck ${SC_VER}"
-        tar -xJf "$TMP/shellcheck.tar.xz" -C "$TMP" "shellcheck-v${SC_VER}/shellcheck" ||
-            die "could not unpack shellcheck — is xz present?"
-        install -m 0755 "$TMP/shellcheck-v${SC_VER}/shellcheck" "$BIN_DIR/shellcheck" ||
-            die "could not install shellcheck"
+    # The version is the spec's terraform.pin, not this line's to choose:
+    # this runs before anything here can parse JSON, so it is a literal,
+    # and tests/github-repo-standard.py fails CI when the two differ. Move
+    # it in the same change as the spec and every repo's CI -- a sandbox
+    # ahead of CI can write state CI cannot read back (github-standards.md,
+    # Terraform versions).
+    TF_VER=1.16.3
+    tf_have=$(terraform version 2>/dev/null | sed -n '1s/^Terraform v//p')
+    if [ -z "$tf_have" ] \
+      || [ "$(printf '%s\n%s\n' "$TF_VER" "$tf_have" | sort -V | head -1)" != "$TF_VER" ]; then
+      fetch "https://releases.hashicorp.com/terraform/${TF_VER}/terraform_${TF_VER}_linux_amd64.zip" \
+        "$TMP/terraform.zip" \
+        || die "could not download terraform ${TF_VER}"
+      unzip -o -q "$TMP/terraform.zip" -d "$TMP" terraform \
+        || die "could not unpack terraform — is unzip present?"
+      install -m 0755 "$TMP/terraform" "$BIN_DIR/terraform" \
+        || die "could not install terraform"
     fi
-    log "shellck -> $(command -v shellcheck)"
-    step_end precommit.shellcheck
+    log "terrafm -> $(command -v terraform) ($(terraform version | head -1))"
+    step_end precommit.terraform
 
-    # actionlint is not packaged in Ubuntu, so it comes from a pinned release.
-    # Note github.com answers 403 to this sandbox's curl while the release asset
-    # itself resolves fine through the redirect -- a naive reachability probe
-    # against github.com reads as an egress block and is not one.
-    if ! command -v actionlint > /dev/null 2>&1; then
-        AL_VER=1.7.12
-        fetch "https://github.com/rhysd/actionlint/releases/download/v${AL_VER}/actionlint_${AL_VER}_linux_amd64.tar.gz" \
-            "$TMP/actionlint.tar.gz" ||
-            die "could not download actionlint ${AL_VER}"
-        tar -xzf "$TMP/actionlint.tar.gz" -C "$TMP" actionlint || die "could not unpack actionlint"
-        install -m 0755 "$TMP/actionlint" "$BIN_DIR/actionlint" || die "could not install actionlint"
+    if ! command -v tflint >/dev/null 2>&1; then
+      TFL_VER=0.53.0
+      fetch "https://github.com/terraform-linters/tflint/releases/download/v${TFL_VER}/tflint_linux_amd64.zip" \
+        "$TMP/tflint.zip" \
+        || die "could not download tflint ${TFL_VER}"
+      unzip -o -q "$TMP/tflint.zip" -d "$TMP" tflint \
+        || die "could not unpack tflint"
+      install -m 0755 "$TMP/tflint" "$BIN_DIR/tflint" \
+        || die "could not install tflint"
     fi
-    log "actionl -> $(command -v actionlint)"
-    step_end precommit.actionlint
+    log "tflint  -> $(command -v tflint)"
+    step_end precommit.tflint
 
-    # gitleaks for the `gitleaks-system` hook /setup-common stamps. The
-    # `gitleaks` id is `language: golang` and compiles from source on a cold
-    # cache, ~30s per container. The `-system` entry uses `gitleaks git`, which
-    # needs 8.19 or later. Bump with the gitleaks rev in setup-common.
-    if ! command -v gitleaks > /dev/null 2>&1; then
-        GL_VER=8.30.1
-        fetch "https://github.com/gitleaks/gitleaks/releases/download/v${GL_VER}/gitleaks_${GL_VER}_linux_x64.tar.gz" \
-            "$TMP/gitleaks.tar.gz" ||
-            die "could not download gitleaks ${GL_VER}"
-        tar -xzf "$TMP/gitleaks.tar.gz" -C "$TMP" gitleaks || die "could not unpack gitleaks"
-        install -m 0755 "$TMP/gitleaks" "$BIN_DIR/gitleaks" || die "could not install gitleaks"
+    # tflint --init resolves plugins through the GitHub releases API, which
+    # the sandbox proxy 403s, so the ruleset is seeded from its release
+    # asset instead -- that URL redirects to a host the proxy does allow,
+    # the same asymmetry the actionlint note above records. Without this,
+    # the tflint stage of the pre-push hook cannot pass in a container at
+    # all. Idempotent: the fetch is skipped once the plugin is in place.
+    TFL_GOOGLE_VER=0.31.0
+    tfl_plugins="$HOME/.tflint.d/plugins/github.com/terraform-linters/tflint-ruleset-google/${TFL_GOOGLE_VER}"
+    if [ ! -x "$tfl_plugins/tflint-ruleset-google" ]; then
+      mkdir -p "$tfl_plugins" \
+        || die "could not create $tfl_plugins"
+      fetch "https://github.com/terraform-linters/tflint-ruleset-google/releases/download/v${TFL_GOOGLE_VER}/tflint-ruleset-google_linux_amd64.zip" \
+        "$TMP/tflint-ruleset-google.zip" \
+        || die "could not download tflint-ruleset-google ${TFL_GOOGLE_VER}"
+      unzip -o -q "$TMP/tflint-ruleset-google.zip" -d "$tfl_plugins" \
+        || die "could not unpack tflint-ruleset-google"
+      chmod 0755 "$tfl_plugins/tflint-ruleset-google" \
+        || die "could not make tflint-ruleset-google executable"
     fi
-    log "gitleak -> $(command -v gitleaks)"
-    step_end precommit.gitleaks
+    log "tflplug -> $tfl_plugins"
+    step_end precommit.tflint-ruleset-google
 
-    # Serves `markdownlint-cli2 "**/*.md"`, the gate CLAUDE.md documents, which
-    # needs the binary on PATH. Unlike the three above this is not a
-    # `language: system` hook -- the pre-commit hook builds its own node
-    # environment -- so the pin here and the rev in .pre-commit-config.yaml are
-    # two versions of the same tool. Bump them together.
-    if ! command -v markdownlint-cli2 > /dev/null 2>&1; then
-        ML_VER=0.23.2
-        command -v npm > /dev/null 2>&1 ||
-            die "markdownlint-cli2 needs npm, which is not on PATH"
-        npm_global_install "markdownlint-cli2@${ML_VER}" ||
-            die "could not install markdownlint-cli2 ${ML_VER} from npm"
-    fi
-    # This image carries several node installs with different global prefixes,
-    # so npm exiting 0 does not mean the shim landed anywhere on PATH.
-    command -v markdownlint-cli2 > /dev/null 2>&1 ||
-        die "markdownlint-cli2 installed but is not on PATH"
-    log "mdlint  -> $(command -v markdownlint-cli2) ($(markdownlint-cli2 --version 2>&1 | head -1))"
-    step_end precommit.markdownlint-cli2
+    # checkov is a Python tool, so it takes the same uv-or-pip route as
+    # pre-commit rather than a release tarball.
+    command -v checkov >/dev/null 2>&1 \
+      || python_cli_install checkov \
+      || die "could not install checkov from PyPI"
+    command -v checkov >/dev/null 2>&1 \
+      || die "checkov reported installed but is not on PATH"
+    log "checkov -> $(command -v checkov)"
+    step_end precommit.checkov
+  fi
 
-    # semgrep is a `language: system` hook across this estate, so the hook runs
-    # whatever is on PATH and fails hard with "Executable `semgrep` not found"
-    # when nothing is -- which is why every commit in one paul-context sandbox
-    # session had to be issued as SKIP=semgrep (#407). The hook was moved to
-    # system deliberately: pre-commit's own python route costs 1.2G and ~190s
-    # per container, against ~10s and 319M here on a cold uv cache (a tenth of
-    # a second once warm), most of it semgrep-core either way. pip is the
-    # fallback rather than the route: uv sits at /root/.local/bin in this
-    # image, but one image is not the contract.
-    if ! command -v semgrep > /dev/null 2>&1; then
-        if [ "$INSTALL_MODE" != system ]; then
-            py_tool_install semgrep ||
-                die "could not install semgrep under $PREFIX"
-        elif command -v uv > /dev/null 2>&1; then
-            uv tool install semgrep > /dev/null 2>&1 ||
-                die "could not install semgrep with uv"
-        else
-            pip_install semgrep ||
-                die "could not install semgrep from PyPI"
-        fi
-    fi
-    command -v semgrep > /dev/null 2>&1 ||
-        die "semgrep reported installed but is not on PATH"
-    log "semgrep -> $(command -v semgrep)"
-    step_end precommit.semgrep
+  command -v pre-commit >/dev/null 2>&1 \
+    || python_cli_install pre-commit \
+    || die "could not install pre-commit from PyPI"
+  # pip exiting 0 is not the same as the console script existing: an image
+  # carrying the pre_commit package without its shim, or a pip whose scripts
+  # directory is off PATH, both satisfy the install and leave nothing to run.
+  # The manifest's precommit= is read as an attestation that the gate is
+  # present, so observe the binary rather than infer it from an exit code.
+  command -v pre-commit >/dev/null 2>&1 \
+    || die "pre-commit reported installed but is not on PATH"
+  log "precmit -> $(command -v pre-commit) ($(pre-commit --version))"
+  step_end precommit.pre-commit
 
-    # cspell already runs inside pre-commit's own node environment, so the hook
-    # passes without this. What does not work without it is the documented
-    # pre-push check -- several repos tell contributors to run cspell directly
-    # before committing, and the estate prefers a native binary to an npx shim,
-    # so absence from PATH makes that instruction unfollowable and turns four
-    # batches of proper nouns into four failed commits (#407). Pinned like
-    # markdownlint-cli2 above, but not coupled to a hook rev: the cspell hook
-    # tracks the latest tag rather than a version this script could match.
-    if ! command -v cspell > /dev/null 2>&1; then
-        CS_VER=10.3.3
-        command -v npm > /dev/null 2>&1 ||
-            die "cspell needs npm, which is not on PATH"
-        npm_global_install "cspell@${CS_VER}" ||
-            die "could not install cspell ${CS_VER} from npm"
-    fi
-    # Same several-node-prefixes caveat as markdownlint-cli2: npm exiting 0
-    # does not mean the shim landed anywhere on PATH.
-    command -v cspell > /dev/null 2>&1 ||
-        die "cspell installed but is not on PATH"
-    log "cspell  -> $(command -v cspell) ($(cspell --version 2>&1 | head -1))"
-    step_end precommit.cspell
-
-    # The Terraform toolchain, opt-in. A repo's .pre-commit-config.yaml can
-    # call terraform_fmt, terraform_validate, terraform_tflint and checkov;
-    # without the binaries those hooks fail with exit 127 rather than finding
-    # anything. precommit-claude-hook classifies that as not-checked and lets
-    # the push through (#335), so this is about being able to CHECK, not about
-    # being able to push.
-    #
-    # On by default for a sandbox, off elsewhere -- the same reasoning as
-    # pre-commit itself: a disposable container rebuilt from a script has no
-    # developer setup to protect, so enforcement that is present beats a
-    # download that is avoided. --no-terraform is the refund.
-    if [ "$WITH_TERRAFORM" -eq 1 ]; then
-        # Same pinned-release pattern, and the same github.com 403 note, as
-        # actionlint above.
-        # The pin is compared against what is installed, not merely against
-        # whether anything is. The image ships its own terraform at 1.9.8, and
-        # every root in gcp-org-management declares required_version >= 1.11,
-        # so terraform_validate fails init in all 16 layers (#369) -- with a
-        # bare `command -v` guard the install is skipped and that stays true
-        # however the pin is bumped. An installed version NEWER than the pin is
-        # left alone, so this never walks a container backwards.
-        #
-        # The version is the spec's terraform.pin, not this line's to choose:
-        # this runs before anything here can parse JSON, so it is a literal,
-        # and tests/github-repo-standard.py fails CI when the two differ. Move
-        # it in the same change as the spec and every repo's CI -- a sandbox
-        # ahead of CI can write state CI cannot read back (github-standards.md,
-        # Terraform versions).
-        TF_VER=1.16.3
-        tf_have=$(terraform version 2> /dev/null | sed -n '1s/^Terraform v//p')
-        if [ -z "$tf_have" ] ||
-            [ "$(printf '%s\n%s\n' "$TF_VER" "$tf_have" | sort -V | head -1)" != "$TF_VER" ]; then
-            fetch "https://releases.hashicorp.com/terraform/${TF_VER}/terraform_${TF_VER}_linux_amd64.zip" \
-                "$TMP/terraform.zip" ||
-                die "could not download terraform ${TF_VER}"
-            unzip -o -q "$TMP/terraform.zip" -d "$TMP" terraform ||
-                die "could not unpack terraform — is unzip present?"
-            install -m 0755 "$TMP/terraform" "$BIN_DIR/terraform" ||
-                die "could not install terraform"
-        fi
-        log "terrafm -> $(command -v terraform) ($(terraform version | head -1))"
-        step_end precommit.terraform
-
-        if ! command -v tflint > /dev/null 2>&1; then
-            TFL_VER=0.53.0
-            fetch "https://github.com/terraform-linters/tflint/releases/download/v${TFL_VER}/tflint_linux_amd64.zip" \
-                "$TMP/tflint.zip" ||
-                die "could not download tflint ${TFL_VER}"
-            unzip -o -q "$TMP/tflint.zip" -d "$TMP" tflint ||
-                die "could not unpack tflint"
-            install -m 0755 "$TMP/tflint" "$BIN_DIR/tflint" ||
-                die "could not install tflint"
-        fi
-        log "tflint  -> $(command -v tflint)"
-        step_end precommit.tflint
-
-        # tflint --init resolves plugins through the GitHub releases API, which
-        # the sandbox proxy 403s, so the ruleset is seeded from its release
-        # asset instead -- that URL redirects to a host the proxy does allow,
-        # the same asymmetry the actionlint note above records. Without this,
-        # the tflint stage of the pre-push hook cannot pass in a container at
-        # all. Idempotent: the fetch is skipped once the plugin is in place.
-        TFL_GOOGLE_VER=0.31.0
-        tfl_plugins="$HOME/.tflint.d/plugins/github.com/terraform-linters/tflint-ruleset-google/${TFL_GOOGLE_VER}"
-        if [ ! -x "$tfl_plugins/tflint-ruleset-google" ]; then
-            mkdir -p "$tfl_plugins" ||
-                die "could not create $tfl_plugins"
-            fetch "https://github.com/terraform-linters/tflint-ruleset-google/releases/download/v${TFL_GOOGLE_VER}/tflint-ruleset-google_linux_amd64.zip" \
-                "$TMP/tflint-ruleset-google.zip" ||
-                die "could not download tflint-ruleset-google ${TFL_GOOGLE_VER}"
-            unzip -o -q "$TMP/tflint-ruleset-google.zip" -d "$tfl_plugins" ||
-                die "could not unpack tflint-ruleset-google"
-            chmod 0755 "$tfl_plugins/tflint-ruleset-google" ||
-                die "could not make tflint-ruleset-google executable"
-        fi
-        log "tflplug -> $tfl_plugins"
-        step_end precommit.tflint-ruleset-google
-
-        # checkov is a Python tool, so it takes the same uv-or-pip route as
-        # pre-commit rather than a release tarball.
-        command -v checkov > /dev/null 2>&1 ||
-            python_cli_install checkov ||
-            die "could not install checkov from PyPI"
-        command -v checkov > /dev/null 2>&1 ||
-            die "checkov reported installed but is not on PATH"
-        log "checkov -> $(command -v checkov)"
-        step_end precommit.checkov
-    fi
-
-    command -v pre-commit > /dev/null 2>&1 ||
-        python_cli_install pre-commit ||
-        die "could not install pre-commit from PyPI"
-    # pip exiting 0 is not the same as the console script existing: an image
-    # carrying the pre_commit package without its shim, or a pip whose scripts
-    # directory is off PATH, both satisfy the install and leave nothing to run.
-    # The manifest's precommit= is read as an attestation that the gate is
-    # present, so observe the binary rather than infer it from an exit code.
-    command -v pre-commit > /dev/null 2>&1 ||
-        die "pre-commit reported installed but is not on PATH"
-    log "precmit -> $(command -v pre-commit) ($(pre-commit --version))"
-    step_end precommit.pre-commit
-
-    # A GLOBAL hook via core.hooksPath, not `pre-commit install` per repo.
-    #
-    # `pre-commit install` writes into an existing clone's .git/hooks, and this
-    # script runs from an environment setup script whose ordering against the
-    # session's clone is not something it can rely on -- the repository may not
-    # exist yet, and may not be the only one. core.hooksPath is set once and
-    # applies to every repo in the container however and whenever it arrives.
-    #
-    # The trade-off, stated because it is real: core.hooksPath REPLACES a repo's
-    # own .git/hooks rather than adding to it. In this estate hooks come from
-    # pre-commit anyway, so nothing is lost; a container that needed bespoke
-    # per-repo hooks would want the other mechanism.
-    #
-    # The part that bites something else: `pre-commit install` does not warn
-    # under core.hooksPath, it REFUSES -- "Cowardly refusing to install hooks
-    # with `core.hooksPath` set", exit 1 (measured 2026-09-15). So a repo-side
-    # SessionStart hook running it under `set -e` fails session start in exactly
-    # the containers this line got right. `pre-commit install-hooks` is
-    # unaffected -- exit 0, builds environments, writes no hook -- which is what
-    # cap_precommit_warm below uses and why the two are called separately.
-    # cloud/README.md carries this for the repos that have to write against it.
-    HOOK_DIR="$HOME/.config/git/hooks"
-    mkdir -p "$HOOK_DIR"
-    cat > "$HOOK_DIR/pre-commit" << 'HOOK'
+  # A GLOBAL hook via core.hooksPath, not `pre-commit install` per repo.
+  #
+  # `pre-commit install` writes into an existing clone's .git/hooks, and this
+  # script runs from an environment setup script whose ordering against the
+  # session's clone is not something it can rely on -- the repository may not
+  # exist yet, and may not be the only one. core.hooksPath is set once and
+  # applies to every repo in the container however and whenever it arrives.
+  #
+  # The trade-off, stated because it is real: core.hooksPath REPLACES a repo's
+  # own .git/hooks rather than adding to it. In this estate hooks come from
+  # pre-commit anyway, so nothing is lost; a container that needed bespoke
+  # per-repo hooks would want the other mechanism.
+  #
+  # The part that bites something else: `pre-commit install` does not warn
+  # under core.hooksPath, it REFUSES -- "Cowardly refusing to install hooks
+  # with `core.hooksPath` set", exit 1 (measured 2026-09-15). So a repo-side
+  # SessionStart hook running it under `set -e` fails session start in exactly
+  # the containers this line got right. `pre-commit install-hooks` is
+  # unaffected -- exit 0, builds environments, writes no hook -- which is what
+  # cap_precommit_warm below uses and why the two are called separately.
+  # cloud/README.md carries this for the repos that have to write against it.
+  HOOK_DIR="$HOME/.config/git/hooks"
+  mkdir -p "$HOOK_DIR"
+  cat >"$HOOK_DIR/pre-commit" <<'HOOK'
 #!/bin/sh
 # Installed by agentic-coding-config cloud/bootstrap.sh.
 #
@@ -1649,9 +1666,9 @@ cap_precommit() {
 command -v pre-commit > /dev/null 2>&1 || exit 0
 exec pre-commit run --hook-stage pre-commit
 HOOK
-    chmod 0755 "$HOOK_DIR/pre-commit"
-    git config --global core.hooksPath "$HOOK_DIR"
-    log "githook -> $HOOK_DIR/pre-commit (core.hooksPath, all repos)"
+  chmod 0755 "$HOOK_DIR/pre-commit"
+  git config --global core.hooksPath "$HOOK_DIR"
+  log "githook -> $HOOK_DIR/pre-commit (core.hooksPath, all repos)"
 }
 
 # --- warming the pre-commit cache ---------------------------------------------
@@ -1699,13 +1716,13 @@ HOOK
 # warm to record what actually landed, so "the cache is present" is asserted
 # rather than inferred from an exit code.
 precommit_home() {
-    if [ -n "${PRE_COMMIT_HOME:-}" ]; then
-        echo "$PRE_COMMIT_HOME"
-    elif [ -n "${XDG_CACHE_HOME:-}" ]; then
-        echo "$XDG_CACHE_HOME/pre-commit"
-    else
-        echo "$HOME/.cache/pre-commit"
-    fi
+  if [ -n "${PRE_COMMIT_HOME:-}" ]; then
+    echo "$PRE_COMMIT_HOME"
+  elif [ -n "${XDG_CACHE_HOME:-}" ]; then
+    echo "$XDG_CACHE_HOME/pre-commit"
+  else
+    echo "$HOME/.cache/pre-commit"
+  fi
 }
 
 # warm_install <dir> <config> <prefix>: `pre-commit install-hooks` with each
@@ -1718,23 +1735,23 @@ precommit_home() {
 # A repo already in the cache prints nothing and is not timed. Output lands in
 # $TMP/warm.log, as before; returns pre-commit's status.
 warm_install() {
-    : > "$TMP/warm.log"
-    : > "$TMP/warm.stamped"
-    rm -f "$TMP/warm.rc"
-    _w_start=$(now_s)
-    (
-        cd "$1" || exit 1
-        if PYTHONUNBUFFERED=1 pre-commit install-hooks -c "$2" 2>&1; then
-            echo 0 > "$TMP/warm.rc"
-        else
-            echo "$?" > "$TMP/warm.rc"
-        fi
-    ) | while IFS= read -r _l; do
-        printf '%s\n' "$_l" >> "$TMP/warm.log"
-        printf '%s %s\n' "$(now_s)" "$_l" >> "$TMP/warm.stamped"
-    done
-    _w_end=$(now_s)
-    awk -v s="$_w_start" -v e="$_w_end" -v p="$3" '
+  : >"$TMP/warm.log"
+  : >"$TMP/warm.stamped"
+  rm -f "$TMP/warm.rc"
+  _w_start=$(now_s)
+  (
+    cd "$1" || exit 1
+    if PYTHONUNBUFFERED=1 pre-commit install-hooks -c "$2" 2>&1; then
+      echo 0 >"$TMP/warm.rc"
+    else
+      echo "$?" >"$TMP/warm.rc"
+    fi
+  ) | while IFS= read -r _l; do
+    printf '%s\n' "$_l" >>"$TMP/warm.log"
+    printf '%s %s\n' "$(now_s)" "$_l" >>"$TMP/warm.stamped"
+  done
+  _w_end=$(now_s)
+  awk -v s="$_w_start" -v e="$_w_end" -v p="$3" '
         / Installing environment for / {
             n = $NF; sub(/\.$/, "", n); sub(/\/$/, "", n); sub(/.*\//, "", n); sub(/\.git$/, "", n)
             if (cur != "") printf "%s.%s=%ds\n", p, cur, $1 - t
@@ -1742,114 +1759,114 @@ warm_install() {
             cur = n; t = $1
         }
         END { if (cur != "") printf "%s.%s=%ds\n", p, cur, e - t }
-    ' "$TMP/warm.stamped" >> "$TMP/step-timings" 2> /dev/null || true
-    return "$(cat "$TMP/warm.rc" 2> /dev/null || echo 1)"
+    ' "$TMP/warm.stamped" >>"$TMP/step-timings" 2>/dev/null || true
+  return "$(cat "$TMP/warm.rc" 2>/dev/null || echo 1)"
 }
 
 cap_precommit_warm() {
-    # cap_precommit is what installs pre-commit, and it already names itself in
-    # `degraded=` when it cannot. Reporting one root cause under two names makes
-    # that list harder to act on, so this stands down quietly instead.
-    if ! command -v pre-commit > /dev/null 2>&1; then
-        log "warm    : no pre-commit on PATH, nothing to warm"
-        return 0
-    fi
+  # cap_precommit is what installs pre-commit, and it already names itself in
+  # `degraded=` when it cannot. Reporting one root cause under two names makes
+  # that list harder to act on, so this stands down quietly instead.
+  if ! command -v pre-commit >/dev/null 2>&1; then
+    log "warm    : no pre-commit on PATH, nothing to warm"
+    return 0
+  fi
 
-    # install-hooks shells out to git and refuses outside a work tree -- "git
-    # failed. Is it installed, and are you in a Git repository directory?",
-    # exit 1. The setup script's cwd belongs to the harness and is frequently
-    # not a checkout, so make one. An empty repo is enough: the cache it fills
-    # is global and has nothing to do with the repo the command ran from.
-    _warm_repo="$TMP/warm-repo"
-    mkdir -p "$_warm_repo"
-    git -C "$_warm_repo" init -q > /dev/null 2>&1 ||
-        die "could not create the scratch repo to warm from"
+  # install-hooks shells out to git and refuses outside a work tree -- "git
+  # failed. Is it installed, and are you in a Git repository directory?",
+  # exit 1. The setup script's cwd belongs to the harness and is frequently
+  # not a checkout, so make one. An empty repo is enough: the cache it fills
+  # is global and has nothing to do with the repo the command ran from.
+  _warm_repo="$TMP/warm-repo"
+  mkdir -p "$_warm_repo"
+  git -C "$_warm_repo" init -q >/dev/null 2>&1 \
+    || die "could not create the scratch repo to warm from"
 
-    # When `go` is absent pre-commit fetches its own toolchain, and the first
-    # call is https://go.dev/dl/?mode=json -- which this sandbox's egress proxy
-    # answers 403 (measured 2026-09-15), so a golang hook fails rather than
-    # falling back. The estate set has none; a checkout found in step 2 may. The image ships Go at /usr/local/go/bin, so this warns about
-    # an image change rather than a routine path; the remedy is allowlisting
-    # go.dev or putting Go back, and it is not something this script can do.
-    command -v go > /dev/null 2>&1 ||
-        log "warn    : no go on PATH — golang hooks will try go.dev, which this egress blocks"
+  # When `go` is absent pre-commit fetches its own toolchain, and the first
+  # call is https://go.dev/dl/?mode=json -- which this sandbox's egress proxy
+  # answers 403 (measured 2026-09-15), so a golang hook fails rather than
+  # falling back. The estate set has none; a checkout found in step 2 may. The image ships Go at /usr/local/go/bin, so this warns about
+  # an image change rather than a routine path; the remedy is allowlisting
+  # go.dev or putting Go back, and it is not something this script can do.
+  command -v go >/dev/null 2>&1 \
+    || log "warn    : no go on PATH — golang hooks will try go.dev, which this egress blocks"
 
-    # --- 1. the estate standard, the half that does not need a clone ---------
-    fetch "$RAW/cloud/precommit-warm.yaml" "$TMP/precommit-warm.yaml" ||
-        die "could not fetch cloud/precommit-warm.yaml from $REF"
-    # Same 404-as-content guard as every other fetch here: raw.githubusercontent
-    # answers a missing path with a plain "404: Not Found" body, and handing that
-    # to pre-commit produces a parse error rather than a fetch error.
-    grep -q '^repos:' "$TMP/precommit-warm.yaml" ||
-        die "fetched warm config has no repos: block — check that $REF exists"
+  # --- 1. the estate standard, the half that does not need a clone ---------
+  fetch "$RAW/cloud/precommit-warm.yaml" "$TMP/precommit-warm.yaml" \
+    || die "could not fetch cloud/precommit-warm.yaml from $REF"
+  # Same 404-as-content guard as every other fetch here: raw.githubusercontent
+  # answers a missing path with a plain "404: Not Found" body, and handing that
+  # to pre-commit produces a parse error rather than a fetch error.
+  grep -q '^repos:' "$TMP/precommit-warm.yaml" \
+    || die "fetched warm config has no repos: block — check that $REF exists"
 
-    if warm_install "$_warm_repo" "$TMP/precommit-warm.yaml" warm; then
-        log "warm    -> estate hook set (cloud/precommit-warm.yaml)"
-    else
-        # TMP is cleaned on exit, so quote the tail into this log rather than
-        # sending a reader to a path that will not be there.
-        tail -5 "$TMP/warm.log" 2> /dev/null | while IFS= read -r _l; do
-            log "warm    ! $_l"
-        done
-        die "could not warm the estate hook set"
-    fi
-
-    # --- 2. the exact match, for whatever the harness cloned -----------------
-    #
-    # Bounded on purpose. -maxdepth 3 from a handful of candidate roots covers
-    # the layouts in use (the CLI clones to /home/user/<repo>; $PWD and $HOME
-    # cover the rest) without walking a whole filesystem inside a five-minute
-    # setup budget. The prunes keep it off vendored trees -- pre-commit's own
-    # cache clones repos that carry a .pre-commit-config.yaml of their own, and
-    # warming those would be this container inventing hooks nobody asked for.
-    _found="$TMP/warm-configs"
-    : > "$_found"
-    # WARM_ROOTS is a test seam. It is word-split, so no root may hold a space.
-    for _root in ${WARM_ROOTS:-"$PWD" "$HOME" /home/user /workspace /workspaces}; do
-        [ -d "$_root" ] || continue
-        find "$_root" -maxdepth 3 \
-            \( -name .cache -o -name node_modules -o -name .venv -o -name .git \) -prune -o \
-            -name .pre-commit-config.yaml -print 2> /dev/null >> "$_found" || true
+  if warm_install "$_warm_repo" "$TMP/precommit-warm.yaml" warm; then
+    log "warm    -> estate hook set (cloud/precommit-warm.yaml)"
+  else
+    # TMP is cleaned on exit, so quote the tail into this log rather than
+    # sending a reader to a path that will not be there.
+    tail -5 "$TMP/warm.log" 2>/dev/null | while IFS= read -r _l; do
+      log "warm    ! $_l"
     done
-    sort -u "$_found" -o "$_found" 2> /dev/null || true
+    die "could not warm the estate hook set"
+  fi
 
-    # A cap, because this is an unbounded input: a container holding twenty
-    # checkouts must not spend the snapshot budget on them. The estate warm
-    # above is the guarantee, so what is skipped here costs a slower first
-    # commit in one repo, not a missing gate.
-    _n=0
-    while IFS= read -r _cfg; do
-        [ -n "$_cfg" ] || continue
-        _dir=$(dirname "$_cfg")
-        # install-hooks needs a work tree, and a stray config in a plain
-        # directory is not one.
-        git -C "$_dir" rev-parse --git-dir > /dev/null 2>&1 || continue
-        _n=$((_n + 1))
-        if [ "$_n" -gt 5 ]; then
-            log "warm    : more than 5 checkouts found, stopping at $_cfg"
-            break
-        fi
-        # Per-config failures are logged, not fatal. A repo whose config names a
-        # hook this container cannot build is a slow first commit in that repo;
-        # the estate warm has already delivered the guarantee.
-        if warm_install "$_dir" "$_cfg" "warm.$(basename "$_dir")"; then
-            log "warm    -> $_cfg"
-        else
-            log "warn    : could not warm $_cfg — its first commit pays the build"
-        fi
-    done < "$_found"
+  # --- 2. the exact match, for whatever the harness cloned -----------------
+  #
+  # Bounded on purpose. -maxdepth 3 from a handful of candidate roots covers
+  # the layouts in use (the CLI clones to /home/user/<repo>; $PWD and $HOME
+  # cover the rest) without walking a whole filesystem inside a five-minute
+  # setup budget. The prunes keep it off vendored trees -- pre-commit's own
+  # cache clones repos that carry a .pre-commit-config.yaml of their own, and
+  # warming those would be this container inventing hooks nobody asked for.
+  _found="$TMP/warm-configs"
+  : >"$_found"
+  # WARM_ROOTS is a test seam. It is word-split, so no root may hold a space.
+  for _root in ${WARM_ROOTS:-"$PWD" "$HOME" /home/user /workspace /workspaces}; do
+    [ -d "$_root" ] || continue
+    find "$_root" -maxdepth 3 \
+      \( -name .cache -o -name node_modules -o -name .venv -o -name .git \) -prune -o \
+      -name .pre-commit-config.yaml -print 2>/dev/null >>"$_found" || true
+  done
+  sort -u "$_found" -o "$_found" 2>/dev/null || true
 
-    # What actually landed, counted from the cache rather than from exit codes.
-    # pre-commit names each cloned hook repo repo<something>; an empty cache
-    # after a successful run means the warm did nothing and should be visible.
-    _cache=$(precommit_home)
-    _envs=$(find "$_cache" -maxdepth 1 -type d -name 'repo*' 2> /dev/null | wc -l | tr -d ' ')
-    [ -n "$_envs" ] || _envs=0
-    # Out through a file: capability() runs this in a subshell, so an assignment
-    # here dies with it -- the same reason FAIL_FILE exists.
-    echo "$_envs" > "$TMP/warm-envs" 2> /dev/null || true
-    log "warm    -> $_envs hook environments cached in $_cache"
-    [ "$_envs" -gt 0 ] || die "the warm reported success but cached nothing"
+  # A cap, because this is an unbounded input: a container holding twenty
+  # checkouts must not spend the snapshot budget on them. The estate warm
+  # above is the guarantee, so what is skipped here costs a slower first
+  # commit in one repo, not a missing gate.
+  _n=0
+  while IFS= read -r _cfg; do
+    [ -n "$_cfg" ] || continue
+    _dir=$(dirname "$_cfg")
+    # install-hooks needs a work tree, and a stray config in a plain
+    # directory is not one.
+    git -C "$_dir" rev-parse --git-dir >/dev/null 2>&1 || continue
+    _n=$((_n + 1))
+    if [ "$_n" -gt 5 ]; then
+      log "warm    : more than 5 checkouts found, stopping at $_cfg"
+      break
+    fi
+    # Per-config failures are logged, not fatal. A repo whose config names a
+    # hook this container cannot build is a slow first commit in that repo;
+    # the estate warm has already delivered the guarantee.
+    if warm_install "$_dir" "$_cfg" "warm.$(basename "$_dir")"; then
+      log "warm    -> $_cfg"
+    else
+      log "warn    : could not warm $_cfg — its first commit pays the build"
+    fi
+  done <"$_found"
+
+  # What actually landed, counted from the cache rather than from exit codes.
+  # pre-commit names each cloned hook repo repo<something>; an empty cache
+  # after a successful run means the warm did nothing and should be visible.
+  _cache=$(precommit_home)
+  _envs=$(find "$_cache" -maxdepth 1 -type d -name 'repo*' 2>/dev/null | wc -l | tr -d ' ')
+  [ -n "$_envs" ] || _envs=0
+  # Out through a file: capability() runs this in a subshell, so an assignment
+  # here dies with it -- the same reason FAIL_FILE exists.
+  echo "$_envs" >"$TMP/warm-envs" 2>/dev/null || true
+  log "warm    -> $_envs hook environments cached in $_cache"
+  [ "$_envs" -gt 0 ] || die "the warm reported success but cached nothing"
 }
 
 # --- gh, on request -----------------------------------------------------------
@@ -1870,19 +1887,19 @@ cap_precommit_warm() {
 # than trusting repo inference behind a proxy.
 
 cap_gh() {
-    if command -v gh > /dev/null 2>&1; then
-        log "gh      : already present, left alone"
-        return 0
-    fi
-    GH_VER=2.97.0
-    fetch "https://github.com/cli/cli/releases/download/v${GH_VER}/gh_${GH_VER}_linux_amd64.tar.gz" \
-        "$TMP/gh.tar.gz" ||
-        die "could not download gh ${GH_VER}"
-    tar -xzf "$TMP/gh.tar.gz" -C "$TMP" "gh_${GH_VER}_linux_amd64/bin/gh" ||
-        die "could not unpack gh"
-    install -m 0755 "$TMP/gh_${GH_VER}_linux_amd64/bin/gh" "$BIN_DIR/gh" ||
-        die "could not install gh"
-    log "gh      -> $(gh --version 2> /dev/null | head -1 || echo 'installed')"
+  if command -v gh >/dev/null 2>&1; then
+    log "gh      : already present, left alone"
+    return 0
+  fi
+  GH_VER=2.97.0
+  fetch "https://github.com/cli/cli/releases/download/v${GH_VER}/gh_${GH_VER}_linux_amd64.tar.gz" \
+    "$TMP/gh.tar.gz" \
+    || die "could not download gh ${GH_VER}"
+  tar -xzf "$TMP/gh.tar.gz" -C "$TMP" "gh_${GH_VER}_linux_amd64/bin/gh" \
+    || die "could not unpack gh"
+  install -m 0755 "$TMP/gh_${GH_VER}_linux_amd64/bin/gh" "$BIN_DIR/gh" \
+    || die "could not install gh"
+  log "gh      -> $(gh --version 2>/dev/null | head -1 || echo 'installed')"
 }
 
 # --- Developer Knowledge MCP, on request ---------------------------------------
@@ -1908,28 +1925,28 @@ cap_gh() {
 # unchanged, and the file stays 0600. A file that is not a JSON object is left
 # alone and the capability degrades, rather than being replaced.
 cap_devknowledge() {
-    command -v jq > /dev/null 2>&1 || die "needs jq to edit ~/.claude.json"
-    _dk_cfg="$HOME/.claude.json"
-    _dk_src="$_dk_cfg"
-    if [ -f "$_dk_cfg" ]; then
-        jq -e 'type == "object"' "$_dk_cfg" > /dev/null 2>&1 ||
-            die "$_dk_cfg is not a JSON object; left it untouched"
-    else
-        _dk_src="$TMP/claude-json-empty"
-        echo '{}' > "$_dk_src"
-    fi
-    jq --arg name google-developer-knowledge \
-        --arg url https://developerknowledge.googleapis.com/mcp \
-        '.mcpServers[$name] = {type: "http", url: $url}' \
-        "$_dk_src" > "$TMP/claude-json-merged" ||
-        die "could not add google-developer-knowledge to $_dk_cfg"
-    # Written beside the target and renamed, so a failure cannot leave a
-    # half-written ~/.claude.json, and created 0600 because the file holds
-    # account state.
-    (umask 077 && cat "$TMP/claude-json-merged" > "$_dk_cfg.bootstrap-tmp") ||
-        die "could not write $_dk_cfg"
-    mv "$_dk_cfg.bootstrap-tmp" "$_dk_cfg" || die "could not replace $_dk_cfg"
-    log "mcp     -> google-developer-knowledge in $_dk_cfg (user scope; no key -- the environment's API credential supplies it)"
+  command -v jq >/dev/null 2>&1 || die "needs jq to edit ~/.claude.json"
+  _dk_cfg="$HOME/.claude.json"
+  _dk_src="$_dk_cfg"
+  if [ -f "$_dk_cfg" ]; then
+    jq -e 'type == "object"' "$_dk_cfg" >/dev/null 2>&1 \
+      || die "$_dk_cfg is not a JSON object; left it untouched"
+  else
+    _dk_src="$TMP/claude-json-empty"
+    echo '{}' >"$_dk_src"
+  fi
+  jq --arg name google-developer-knowledge \
+    --arg url https://developerknowledge.googleapis.com/mcp \
+    '.mcpServers[$name] = {type: "http", url: $url}' \
+    "$_dk_src" >"$TMP/claude-json-merged" \
+    || die "could not add google-developer-knowledge to $_dk_cfg"
+  # Written beside the target and renamed, so a failure cannot leave a
+  # half-written ~/.claude.json, and created 0600 because the file holds
+  # account state.
+  (umask 077 && cat "$TMP/claude-json-merged" >"$_dk_cfg.bootstrap-tmp") \
+    || die "could not write $_dk_cfg"
+  mv "$_dk_cfg.bootstrap-tmp" "$_dk_cfg" || die "could not replace $_dk_cfg"
+  log "mcp     -> google-developer-knowledge in $_dk_cfg (user scope; no key -- the environment's API credential supplies it)"
 }
 
 # --- golangci-lint, always ----------------------------------------------------
@@ -1954,30 +1971,30 @@ cap_devknowledge() {
 GCL_VER=2.14.0
 
 golangci_ver() {
-    # Prints the version of the golangci-lint on PATH, empty when there is none.
-    # `--version` rather than `version --short`, which older releases lack.
-    golangci-lint --version 2> /dev/null |
-        sed -n '1s/^golangci-lint has version v\{0,1\}\([0-9][0-9.]*\).*/\1/p'
+  # Prints the version of the golangci-lint on PATH, empty when there is none.
+  # `--version` rather than `version --short`, which older releases lack.
+  golangci-lint --version 2>/dev/null \
+    | sed -n '1s/^golangci-lint has version v\{0,1\}\([0-9][0-9.]*\).*/\1/p'
 }
 
 cap_golangci() {
-    _gcl_have=$(golangci_ver)
-    if [ -n "$_gcl_have" ] &&
-        [ "$(printf '%s\n%s\n' "$GCL_VER" "$_gcl_have" | sort -V | head -1)" = "$GCL_VER" ]; then
-        log "golangci: $_gcl_have already present, left alone"
-        return 0
-    fi
-    fetch "https://github.com/golangci/golangci-lint/releases/download/v${GCL_VER}/golangci-lint-${GCL_VER}-linux-amd64.tar.gz" \
-        "$TMP/golangci-lint.tar.gz" ||
-        die "could not download golangci-lint ${GCL_VER}"
-    tar -xzf "$TMP/golangci-lint.tar.gz" -C "$TMP" "golangci-lint-${GCL_VER}-linux-amd64/golangci-lint" ||
-        die "could not unpack golangci-lint"
-    install -m 0755 "$TMP/golangci-lint-${GCL_VER}-linux-amd64/golangci-lint" "$BIN_DIR/golangci-lint" ||
-        die "could not install golangci-lint"
-    # A copy earlier on PATH would still be the one a session runs.
-    [ "$(golangci_ver)" = "$GCL_VER" ] ||
-        die "installed golangci-lint ${GCL_VER}, but PATH resolves $(command -v golangci-lint) at $(golangci_ver)"
-    log "golangci-> $(command -v golangci-lint) ${GCL_VER} (was ${_gcl_have:-absent})"
+  _gcl_have=$(golangci_ver)
+  if [ -n "$_gcl_have" ] \
+    && [ "$(printf '%s\n%s\n' "$GCL_VER" "$_gcl_have" | sort -V | head -1)" = "$GCL_VER" ]; then
+    log "golangci: $_gcl_have already present, left alone"
+    return 0
+  fi
+  fetch "https://github.com/golangci/golangci-lint/releases/download/v${GCL_VER}/golangci-lint-${GCL_VER}-linux-amd64.tar.gz" \
+    "$TMP/golangci-lint.tar.gz" \
+    || die "could not download golangci-lint ${GCL_VER}"
+  tar -xzf "$TMP/golangci-lint.tar.gz" -C "$TMP" "golangci-lint-${GCL_VER}-linux-amd64/golangci-lint" \
+    || die "could not unpack golangci-lint"
+  install -m 0755 "$TMP/golangci-lint-${GCL_VER}-linux-amd64/golangci-lint" "$BIN_DIR/golangci-lint" \
+    || die "could not install golangci-lint"
+  # A copy earlier on PATH would still be the one a session runs.
+  [ "$(golangci_ver)" = "$GCL_VER" ] \
+    || die "installed golangci-lint ${GCL_VER}, but PATH resolves $(command -v golangci-lint) at $(golangci_ver)"
+  log "golangci-> $(command -v golangci-lint) ${GCL_VER} (was ${_gcl_have:-absent})"
 }
 
 # --- shims: timing wrappers for the toolchain (#625) ---------------------------
@@ -1998,55 +2015,58 @@ cap_golangci() {
 SHIM_TOOLS="semgrep markdownlint-cli2 cspell checkov terraform tflint shellcheck gitleaks actionlint pre-commit git"
 
 cap_shims() {
-    fetch "$RAW/home/bin/agent-shim" "$TMP/agent-shim" ||
-        die "could not fetch agent-shim from $REF"
-    head -1 "$TMP/agent-shim" | grep -q '^#!' || die "fetched agent-shim is not a script"
-    install -m 0755 "$TMP/agent-shim" "$HOME/.claude/bin/agent-shim" ||
-        die "could not install agent-shim"
-    _sd="$HOME/.claude/bin/shims"
-    rm -rf "$_sd" || die "could not clear $_sd"
-    mkdir -p "$_sd" || die "could not create $_sd"
-    _made=""
-    for _t in $SHIM_TOOLS; do
-        command -v "$_t" > /dev/null 2>&1 || continue
-        ln -s ../agent-shim "$_sd/$_t" || die "could not create the $_t shim"
-        _made="${_made:+$_made }$_t"
-    done
-    log "shims   -> $_sd (${_made:-none})"
+  fetch "$RAW/home/bin/agent-shim" "$TMP/agent-shim" \
+    || die "could not fetch agent-shim from $REF"
+  head -1 "$TMP/agent-shim" | grep -q '^#!' || die "fetched agent-shim is not a script"
+  install -m 0755 "$TMP/agent-shim" "$HOME/.claude/bin/agent-shim" \
+    || die "could not install agent-shim"
+  _sd="$HOME/.claude/bin/shims"
+  rm -rf "$_sd" || die "could not clear $_sd"
+  mkdir -p "$_sd" || die "could not create $_sd"
+  _made=""
+  for _t in $SHIM_TOOLS; do
+    command -v "$_t" >/dev/null 2>&1 || continue
+    ln -s ../agent-shim "$_sd/$_t" || die "could not create the $_t shim"
+    _made="${_made:+$_made }$_t"
+  done
+  log "shims   -> $_sd (${_made:-none})"
 }
 
 DEGRADED=
 
 capability() {
-    # capability <enabled> <name> <function>
-    [ "$1" -eq 1 ] || return 0
+  # capability <enabled> <name> <function>
+  [ "$1" -eq 1 ] || return 0
 
-    # set +e around the call because the subshell's status is the whole point
-    # here: under the outer `set -e` a non-zero one would kill the script,
-    # which is the behaviour this wrapper exists to prevent.
-    _cap_start=$(now_s)
-    set +e
-    ( set -e; "$3" )
-    _cap_rc=$?
+  # set +e around the call because the subshell's status is the whole point
+  # here: under the outer `set -e` a non-zero one would kill the script,
+  # which is the behaviour this wrapper exists to prevent.
+  _cap_start=$(now_s)
+  set +e
+  (
     set -e
-    # Timed whatever the outcome: a capability that spent 40s and then failed is
-    # the interesting case, and recording only successes would hide it.
-    _cap_secs=$((  $(now_s) - _cap_start ))
-    record_timing "$2" "$_cap_secs"
-    if [ -s "$TMP/step-timings" ]; then
-        TIMINGS="$TIMINGS $(tr '\n' ' ' < "$TMP/step-timings" | sed 's/ $//')"
-        : > "$TMP/step-timings"
-    fi
-    [ "$_cap_rc" -eq 0 ] && return 0
+    "$3"
+  )
+  _cap_rc=$?
+  set -e
+  # Timed whatever the outcome: a capability that spent 40s and then failed is
+  # the interesting case, and recording only successes would hide it.
+  _cap_secs=$(($(now_s) - _cap_start))
+  record_timing "$2" "$_cap_secs"
+  if [ -s "$TMP/step-timings" ]; then
+    TIMINGS="$TIMINGS $(tr '\n' ' ' <"$TMP/step-timings" | sed 's/ $//')"
+    : >"$TMP/step-timings"
+  fi
+  [ "$_cap_rc" -eq 0 ] && return 0
 
-    # die wrote its message here on the way out of the subshell, where a
-    # variable assignment could not have survived.
-    _why=$(cat "$FAIL_FILE" 2> /dev/null || echo "no reason recorded")
-    : > "$FAIL_FILE" 2> /dev/null || true
-    DEGRADED="${DEGRADED:+$DEGRADED }$2"
-    log "WARN    : $2 did not install -- $_why"
-    log "          continuing without it; this container is degraded, not broken"
-    return 0
+  # die wrote its message here on the way out of the subshell, where a
+  # variable assignment could not have survived.
+  _why=$(cat "$FAIL_FILE" 2>/dev/null || echo "no reason recorded")
+  : >"$FAIL_FILE" 2>/dev/null || true
+  DEGRADED="${DEGRADED:+$DEGRADED }$2"
+  log "WARN    : $2 did not install -- $_why"
+  log "          continuing without it; this container is degraded, not broken"
+  return 0
 }
 
 capability "$WITH_GCLOUD" gcloud cap_gcloud
@@ -2081,7 +2101,7 @@ capability "$WITH_HOOKS" shims cap_shims
 MANIFEST="$HOME/.agents/.bootstrap-manifest"
 mkdir -p "$HOME/.agents"
 
-TOTAL_SECS=$((  $(now_s) - BOOT_START ))
+TOTAL_SECS=$(($(now_s) - BOOT_START))
 record_timing total "$TOTAL_SECS"
 
 # ok vs degraded is the Tier 2 verdict: the toolkit is present either way --
@@ -2089,56 +2109,56 @@ record_timing total "$TOTAL_SECS"
 # capability is not. Named rather than counted, because "which" is the only
 # form of the answer anyone can act on.
 if [ -n "$DEGRADED" ]; then
-    manifest_status=degraded
+  manifest_status=degraded
 else
-    manifest_status=ok
+  manifest_status=ok
 fi
 
 {
-    # Written only here, at the end of a run that reached it. The exit trap
-    # writes status=failed instead, so the three are mutually exclusive and a
-    # reader never has to date one against another. A manifest from before
-    # this line existed carries no status at all, which readers take as ok --
-    # it could only have been written by a run that finished.
-    echo "status=$manifest_status"
-    echo "degraded=$DEGRADED"
-    echo "ref=$REF"
-    echo "ref_kind=$kind"
-    echo "sha=$resolved"
-    echo "installed_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-    echo "profile=$PROFILE"
-    echo "skills=$SKILLS $COMPOSED_SKILLS"
-    echo "composed_skills=$COMPOSED_SKILLS"
-    echo "helpers=$BIN_SCRIPTS"
-    # Where the commands went (system, user or an explicit prefix), and whether
-    # the caller's PATH reaches them. `no` is the line to read when a session
-    # cannot find a tool this run reports installing.
-    echo "install_mode=$INSTALL_MODE"
-    echo "bin_dir=$BIN_DIR"
-    echo "bin_dir_on_path=$BIN_ON_PATH"
-    echo "precommit=$WITH_PRECOMMIT"
-    # How many pre-commit hook environments the warm left in the cache. 0 on a
-    # container that never warmed one, which is the difference between "the gate
-    # is installed" and "the gate can run without a two-minute build" (#441).
-    # The duration is in `timings` as precommit-warm.
-    echo "precommit_envs=$(cat "$TMP/warm-envs" 2> /dev/null || echo 0)"
-    echo "gcloud=$WITH_GCLOUD"
-    echo "terraform=$WITH_TERRAFORM"
-    echo "hooks=$WITH_HOOKS"
-    echo "gh=$WITH_GH"
-    echo "devknowledge=$WITH_DEVKNOWLEDGE"
-    # The version a session will actually run, not the pin: a degraded install
-    # leaves the image's own copy, and `none` means there is none on PATH.
-    echo "golangci=$(golangci_ver | grep . || echo none)"
-    # Machine-readable timing, so a regression is a diff between two runs rather
-    # than someone's memory of how long it used to take. `timings` is
-    # space-separated name=Ns pairs; absent names did not run.
-    echo "duration_seconds=$TOTAL_SECS"
-    echo "timings=$TIMINGS"
-    # See BOOTSTRAP_SESSION above: `unknown` means the setup phase could not see
-    # a session id, and session-cache-verdict falls back to a time delta.
-    echo "built_in_session=$BOOTSTRAP_SESSION"
-} > "$MANIFEST"
+  # Written only here, at the end of a run that reached it. The exit trap
+  # writes status=failed instead, so the three are mutually exclusive and a
+  # reader never has to date one against another. A manifest from before
+  # this line existed carries no status at all, which readers take as ok --
+  # it could only have been written by a run that finished.
+  echo "status=$manifest_status"
+  echo "degraded=$DEGRADED"
+  echo "ref=$REF"
+  echo "ref_kind=$kind"
+  echo "sha=$resolved"
+  echo "installed_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  echo "profile=$PROFILE"
+  echo "skills=$SKILLS $COMPOSED_SKILLS"
+  echo "composed_skills=$COMPOSED_SKILLS"
+  echo "helpers=$BIN_SCRIPTS"
+  # Where the commands went (system, user or an explicit prefix), and whether
+  # the caller's PATH reaches them. `no` is the line to read when a session
+  # cannot find a tool this run reports installing.
+  echo "install_mode=$INSTALL_MODE"
+  echo "bin_dir=$BIN_DIR"
+  echo "bin_dir_on_path=$BIN_ON_PATH"
+  echo "precommit=$WITH_PRECOMMIT"
+  # How many pre-commit hook environments the warm left in the cache. 0 on a
+  # container that never warmed one, which is the difference between "the gate
+  # is installed" and "the gate can run without a two-minute build" (#441).
+  # The duration is in `timings` as precommit-warm.
+  echo "precommit_envs=$(cat "$TMP/warm-envs" 2>/dev/null || echo 0)"
+  echo "gcloud=$WITH_GCLOUD"
+  echo "terraform=$WITH_TERRAFORM"
+  echo "hooks=$WITH_HOOKS"
+  echo "gh=$WITH_GH"
+  echo "devknowledge=$WITH_DEVKNOWLEDGE"
+  # The version a session will actually run, not the pin: a degraded install
+  # leaves the image's own copy, and `none` means there is none on PATH.
+  echo "golangci=$(golangci_ver | grep . || echo none)"
+  # Machine-readable timing, so a regression is a diff between two runs rather
+  # than someone's memory of how long it used to take. `timings` is
+  # space-separated name=Ns pairs; absent names did not run.
+  echo "duration_seconds=$TOTAL_SECS"
+  echo "timings=$TIMINGS"
+  # See BOOTSTRAP_SESSION above: `unknown` means the setup phase could not see
+  # a session id, and session-cache-verdict falls back to a time delta.
+  echo "built_in_session=$BOOTSTRAP_SESSION"
+} >"$MANIFEST"
 log "manifst -> $MANIFEST ($kind $(echo "$resolved" | cut -c1-12))"
 
 # Hand the manifest to the telemetry spool. Spool-first on purpose: the setup
@@ -2146,7 +2166,7 @@ log "manifst -> $MANIFEST ($kind $(echo "$resolved" | cut -c1-12))"
 # script requests never receive a network secret, so a ship from here would be
 # unauthenticated in a proxy-injected environment. The spool is shipped later, by
 # the SessionStart hook. Best effort: telemetry is never why a bootstrap fails.
-"$BIN_DIR/agent-telemetry" record bootstrap "$MANIFEST" > /dev/null 2>&1 || true
+"$BIN_DIR/agent-telemetry" record bootstrap "$MANIFEST" >/dev/null 2>&1 || true
 
 # --- report -------------------------------------------------------------------
 #
@@ -2157,16 +2177,16 @@ log "manifst -> $MANIFEST ($kind $(echo "$resolved" | cut -c1-12))"
 log "timing : $TIMINGS"
 
 if [ -n "$DEGRADED" ]; then
-    log "done, from ${REF} -- DEGRADED, missing: $DEGRADED"
-    log "note: the toolkit installed; the capabilities above did not. Re-running"
-    log "      the bootstrap retries them."
+  log "done, from ${REF} -- DEGRADED, missing: $DEGRADED"
+  log "note: the toolkit installed; the capabilities above did not. Re-running"
+  log "      the bootstrap retries them."
 else
-    log "done, from ${REF}"
+  log "done, from ${REF}"
 fi
 # Repeated at the end, where a reader of the log actually looks.
 if [ "$BIN_ON_PATH" = no ]; then
-    log "WARN    : $BIN_DIR is not on PATH -- add it to the environment, or"
-    log "          sessions will not find what this run installed there."
+  log "WARN    : $BIN_DIR is not on PATH -- add it to the environment, or"
+  log "          sessions will not find what this run installed there."
 fi
 log "note: commands and skills are read when Claude Code starts, so a session"
 log "      already running will not see them until it restarts or resumes."

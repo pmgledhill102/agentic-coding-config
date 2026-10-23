@@ -26,20 +26,20 @@ PRESENT="bin/claude-prune-retired"
 ABSENT="commands/bd-modernize.md"
 
 check() {
-    desc=$1
-    want=$2
-    body=$3
-    printf '%s\n' "$body" > "$TMP/list"
-    out=$(sh "$VALIDATOR" "$TMP/list" 2>&1)
-    got=$?
-    if [ "$got" -eq "$want" ]; then
-        printf '  ok    %s\n' "$desc"
-        passed=$((passed + 1))
-    else
-        printf '  FAIL  %s (want exit %s, got %s)\n' "$desc" "$want" "$got"
-        printf '        %s\n' "$out"
-        failed=$((failed + 1))
-    fi
+  desc=$1
+  want=$2
+  body=$3
+  printf '%s\n' "$body" >"$TMP/list"
+  out=$(sh "$VALIDATOR" "$TMP/list" 2>&1)
+  got=$?
+  if [ "$got" -eq "$want" ]; then
+    printf '  ok    %s\n' "$desc"
+    passed=$((passed + 1))
+  else
+    printf '  FAIL  %s (want exit %s, got %s)\n' "$desc" "$want" "$got"
+    printf '        %s\n' "$out"
+    failed=$((failed + 1))
+  fi
 }
 
 MARKER='# === UNDEPLOYED: still in home/, no longer deployed to ~/.claude/ ==='
@@ -72,12 +72,12 @@ $ABSENT
 "
 
 # The real list must pass, and must be the thing CI actually validates.
-if sh "$VALIDATOR" > /dev/null 2>&1; then
-    printf '  ok    the repo'"'"'s own home/retired-paths passes\n'
-    passed=$((passed + 1))
+if sh "$VALIDATOR" >/dev/null 2>&1; then
+  printf '  ok    the repo'"'"'s own home/retired-paths passes\n'
+  passed=$((passed + 1))
 else
-    printf '  FAIL  the repo'"'"'s own home/retired-paths does not pass\n'
-    failed=$((failed + 1))
+  printf '  FAIL  the repo'"'"'s own home/retired-paths does not pass\n'
+  failed=$((failed + 1))
 fi
 
 printf '\npassed: %s   failed: %s\n' "$passed" "$failed"

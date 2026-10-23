@@ -22,19 +22,22 @@ set -u
 ROOT=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
 GATHER="$ROOT/home/bin/start-session-gather-state"
 
-command -v jq >/dev/null 2>&1 || { echo "SKIP: jq not installed"; exit 0; }
+command -v jq >/dev/null 2>&1 || {
+  echo "SKIP: jq not installed"
+  exit 0
+}
 
 WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"' EXIT INT TERM
 
 mkdir -p "$WORK/bin" "$WORK/repo"
 (
-    cd "$WORK/repo" || exit 1
-    git init -q .
-    git config user.email t@example.com
-    git config user.name t
-    git commit -q --allow-empty -m init
-    git remote add origin https://github.com/example-owner/example-repo.git
+  cd "$WORK/repo" || exit 1
+  git init -q .
+  git config user.email t@example.com
+  git config user.name t
+  git commit -q --allow-empty -m init
+  git remote add origin https://github.com/example-owner/example-repo.git
 )
 
 cat >"$WORK/bin/gh" <<'STUB'
@@ -68,18 +71,18 @@ fail=0
 # Run the gather in the fixture with the stub first on PATH. Prints the whole
 # sectioned stream; the env assignments carry the per-case lane outcomes.
 gather() {
-    (cd "$WORK/repo" && PATH="$WORK/bin:$PATH" "$GATHER" 2>/dev/null)
+  (cd "$WORK/repo" && PATH="$WORK/bin:$PATH" "$GATHER" 2>/dev/null)
 }
 
 check() {
-    desc=$1
-    shift
-    if "$@"; then
-        pass=$((pass + 1))
-    else
-        echo "FAIL: $desc"
-        fail=$((fail + 1))
-    fi
+  desc=$1
+  shift
+  if "$@"; then
+    pass=$((pass + 1))
+  else
+    echo "FAIL: $desc"
+    fail=$((fail + 1))
+  fi
 }
 
 out="$WORK/out"
@@ -89,24 +92,24 @@ STUB_REST=ok STUB_GQL=fail STUB_LIST=fail
 export STUB_REST STUB_GQL STUB_LIST
 gather >"$out"
 for s in gh_ready gh_assigned gh_bundles gh_needs; do
-    check "graphql blocked: $s exits non-zero" \
-        grep -q "^===$s (exit=1)===" "$out"
-    check "graphql blocked: $s says gh-unauthorized" \
-        sh -c 'grep -A1 "^===$2 (exit=1)===" "$1" | grep -qx gh-unauthorized' _ "$out" "$s"
-    check "graphql blocked: $s carries no 403 body" \
-        sh -c '! grep -A3 "^===$2 (exit=" "$1" | grep -q 403' _ "$out" "$s"
+  check "graphql blocked: $s exits non-zero" \
+    grep -q "^===$s (exit=1)===" "$out"
+  check "graphql blocked: $s says gh-unauthorized" \
+    sh -c 'grep -A1 "^===$2 (exit=1)===" "$1" | grep -qx gh-unauthorized' _ "$out" "$s"
+  check "graphql blocked: $s carries no 403 body" \
+    sh -c '! grep -A3 "^===$2 (exit=" "$1" | grep -q 403' _ "$out" "$s"
 done
 check "graphql blocked: repo_archived still answers from REST" \
-    sh -c 'grep -A1 "^===repo_archived (exit=" "$1" | grep -qx "state=false"' _ "$out"
+  sh -c 'grep -A1 "^===repo_archived (exit=" "$1" | grep -qx "state=false"' _ "$out"
 
 # --- Both probes pass, then the list call itself fails. ---------------------
 STUB_REST=ok STUB_GQL=ok STUB_LIST=fail
 gather >"$out"
 for s in gh_ready gh_assigned gh_bundles gh_needs; do
-    check "list fails: $s exits non-zero, not exit=0" \
-        sh -c '! grep -q "^===$2 (exit=0)===" "$1" && grep -q "^===$2 (exit=" "$1"' _ "$out" "$s"
-    check "list fails: $s shows gh's own error" \
-        sh -c 'grep -A3 "^===$2 (exit=" "$1" | grep -q "HTTP 502"' _ "$out" "$s"
+  check "list fails: $s exits non-zero, not exit=0" \
+    sh -c '! grep -q "^===$2 (exit=0)===" "$1" && grep -q "^===$2 (exit=" "$1"' _ "$out" "$s"
+  check "list fails: $s shows gh's own error" \
+    sh -c 'grep -A3 "^===$2 (exit=" "$1" | grep -q "HTTP 502"' _ "$out" "$s"
 done
 
 # --- Everything passes; gh warns on stderr. Rows must still parse. ----------
@@ -114,22 +117,22 @@ STUB_REST=ok STUB_GQL=ok STUB_LIST=ok
 gather >"$out"
 check "healthy: gh_ready exit=0" grep -q "^===gh_ready (exit=0)===" "$out"
 check "healthy: gh_ready row parsed, with its age in days" \
-    grep -Eqx "#7\|P2\|[0-9]{4,}d\|Bundle: seven" "$out"
+  grep -Eqx "#7\|P2\|[0-9]{4,}d\|Bundle: seven" "$out"
 check "healthy: gh_bundles row parsed" grep -qx "#7|seven" "$out"
 check "healthy: gh_needs row parsed, labelled local" \
-    grep -Eqx "local\|#8\|P1\|[0-9]{4,}d\|eight" "$out"
+  grep -Eqx "local\|#8\|P1\|[0-9]{4,}d\|eight" "$out"
 check "healthy: gh_needs lists no unlabelled issue" \
-    sh -c '! grep -A3 "^===gh_needs (exit=0)===" "$1" | grep -q "#7"' _ "$out"
+  sh -c '! grep -A3 "^===gh_needs (exit=0)===" "$1" | grep -q "#7"' _ "$out"
 check "healthy: stderr warning kept out of the data" \
-    sh -c '! grep -q "must not reach jq" "$1"' _ "$out"
+  sh -c '! grep -q "must not reach jq" "$1"' _ "$out"
 
 # --- REST blocked: nothing measured, so archived is unknown. ----------------
 STUB_REST=fail STUB_GQL=ok STUB_LIST=ok
 gather >"$out"
 check "rest blocked: repo_archived is unknown, never false" \
-    sh -c 'grep -A1 "^===repo_archived (exit=" "$1" | grep -qx "state=unknown"' _ "$out"
+  sh -c 'grep -A1 "^===repo_archived (exit=" "$1" | grep -qx "state=unknown"' _ "$out"
 check "rest blocked: gh_ready says gh-unauthorized" \
-    sh -c 'grep -A1 "^===gh_ready (exit=1)===" "$1" | grep -qx gh-unauthorized' _ "$out"
+  sh -c 'grep -A1 "^===gh_ready (exit=1)===" "$1" | grep -qx gh-unauthorized' _ "$out"
 
 echo "$pass passed, $fail failed"
 [ "$fail" -eq 0 ]

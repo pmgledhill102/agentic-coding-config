@@ -33,18 +33,18 @@ git config --global init.defaultBranch main
 
 # new_remote <name>: a bare origin with one commit on main.
 new_remote() {
-    git init -q --bare "$WORK/remotes/$1.git"
-    git clone -q "$WORK/remotes/$1.git" "$WORK/elsewhere/$1-seed" 2>/dev/null
-    git -C "$WORK/elsewhere/$1-seed" commit -q --allow-empty -m init
-    git -C "$WORK/elsewhere/$1-seed" push -q origin main
+  git init -q --bare "$WORK/remotes/$1.git"
+  git clone -q "$WORK/remotes/$1.git" "$WORK/elsewhere/$1-seed" 2>/dev/null
+  git -C "$WORK/elsewhere/$1-seed" commit -q --allow-empty -m init
+  git -C "$WORK/elsewhere/$1-seed" push -q origin main
 }
 
 # commit_file <repo> <file>: a commit carrying a real patch, so `git cherry`
 # has something to compare.
 commit_file() {
-    echo "$2" >"$1/$2"
-    git -C "$1" add "$2"
-    git -C "$1" commit -q -m "add $2"
+  echo "$2" >"$1/$2"
+  git -C "$1" add "$2"
+  git -C "$1" commit -q -m "add $2"
 }
 
 # merged_away <name> <how>: the #570 shape. A branch is pushed, merged on the
@@ -52,22 +52,22 @@ commit_file() {
 # deleted. The local clone never fetches afterwards, so its origin/main is
 # stale, and its record of origin/feat is dropped as a prune would drop it.
 merged_away() {
-    new_remote "$1"
-    git clone -q "$WORK/remotes/$1.git" "$WORK/parent/$1"
-    git -C "$WORK/parent/$1" checkout -q -b feat
-    commit_file "$WORK/parent/$1" "$1.txt"
-    git -C "$WORK/parent/$1" push -q origin feat 2>/dev/null
+  new_remote "$1"
+  git clone -q "$WORK/remotes/$1.git" "$WORK/parent/$1"
+  git -C "$WORK/parent/$1" checkout -q -b feat
+  commit_file "$WORK/parent/$1" "$1.txt"
+  git -C "$WORK/parent/$1" push -q origin feat 2>/dev/null
 
-    other="$WORK/elsewhere/$1-merger"
-    git clone -q "$WORK/remotes/$1.git" "$other"
-    case "$2" in
-        merge) git -C "$other" merge -q --no-ff -m "Merge feat" origin/feat ;;
-        squash) git -C "$other" cherry-pick origin/feat >/dev/null ;;
-    esac
-    git -C "$other" push -q origin main
-    git -C "$other" push -q origin --delete feat 2>/dev/null
+  other="$WORK/elsewhere/$1-merger"
+  git clone -q "$WORK/remotes/$1.git" "$other"
+  case "$2" in
+    merge) git -C "$other" merge -q --no-ff -m "Merge feat" origin/feat ;;
+    squash) git -C "$other" cherry-pick origin/feat >/dev/null ;;
+  esac
+  git -C "$other" push -q origin main
+  git -C "$other" push -q origin --delete feat 2>/dev/null
 
-    git -C "$WORK/parent/$1" update-ref -d refs/remotes/origin/feat
+  git -C "$WORK/parent/$1" update-ref -d refs/remotes/origin/feat
 }
 
 merged_away merged merge
@@ -96,14 +96,14 @@ pass=0
 fail=0
 
 check() {
-    desc=$1
-    shift
-    if "$@"; then
-        pass=$((pass + 1))
-    else
-        echo "FAIL: $desc"
-        fail=$((fail + 1))
-    fi
+  desc=$1
+  shift
+  if "$@"; then
+    pass=$((pass + 1))
+  else
+    echo "FAIL: $desc"
+    fail=$((fail + 1))
+  fi
 }
 
 out="$WORK/out"
@@ -112,8 +112,8 @@ out="$WORK/out"
 # fetches, the offline count calls the merged commits unpushed. Without this
 # the merged cases below could pass against a probe that never looked.
 for r in merged squashed; do
-    check "precondition: $r reads as unpushed offline" \
-        sh -c '[ "$(git -C "$1" log --branches --not --remotes --oneline | grep -c .)" -gt 0 ]' _ "$WORK/parent/$r"
+  check "precondition: $r reads as unpushed offline" \
+    sh -c '[ "$(git -C "$1" log --branches --not --remotes --oneline | grep -c .)" -gt 0 ]' _ "$WORK/parent/$r"
 done
 
 (cd "$WORK/parent" && "$GATHER" 2>/dev/null) >"$out"
@@ -122,15 +122,15 @@ status=$?
 check "gather takes the ambiguous path (exit 2)" [ "$status" -eq 2 ]
 check "repo_candidates section is emitted" grep -q '^===repo_candidates (exit=2)===' "$out"
 check "merge-merged branch with stale origin/main is not unpushed" \
-    grep -q "^candidate=$WORK/parent/merged dirty=0 unpushed=0 stashes=0\$" "$out"
+  grep -q "^candidate=$WORK/parent/merged dirty=0 unpushed=0 stashes=0\$" "$out"
 check "squash-merged branch with stale origin/main is not unpushed" \
-    grep -q "^candidate=$WORK/parent/squashed dirty=0 unpushed=0 stashes=0\$" "$out"
+  grep -q "^candidate=$WORK/parent/squashed dirty=0 unpushed=0 stashes=0\$" "$out"
 check "a genuinely unpushed commit still reports non-zero" \
-    grep -q "^candidate=$WORK/parent/unpushed dirty=0 unpushed=1 stashes=0\$" "$out"
+  grep -q "^candidate=$WORK/parent/unpushed dirty=0 unpushed=1 stashes=0\$" "$out"
 check "a failed fetch labels the count instead of clearing it" \
-    grep -q "^candidate=$WORK/parent/offline dirty=0 unpushed=1 (refs unfetched) stashes=0\$" "$out"
+  grep -q "^candidate=$WORK/parent/offline dirty=0 unpushed=1 (refs unfetched) stashes=0\$" "$out"
 check "a zero count is reported plainly, with no fetch to fail" \
-    grep -q "^candidate=$WORK/parent/clean dirty=0 unpushed=0 stashes=0\$" "$out"
+  grep -q "^candidate=$WORK/parent/clean dirty=0 unpushed=0 stashes=0\$" "$out"
 
 # A green REST probe must not license the GraphQL-backed sections (#600). A repo
 # with a GitHub origin and a stub `gh` whose REST lane passes while GraphQL, and
@@ -150,19 +150,19 @@ esac
 STUB
 chmod +x "$WORK/bin/gh"
 (
-    cd "$WORK/single" || exit 1
-    git init -q
-    git commit -q --allow-empty -m init
-    git remote add origin https://github.com/example-owner/example-repo.git
+  cd "$WORK/single" || exit 1
+  git init -q
+  git commit -q --allow-empty -m init
+  git remote add origin https://github.com/example-owner/example-repo.git
 )
 (cd "$WORK/single" && PATH="$WORK/bin:$PATH" "$GATHER" 2>/dev/null) >"$out"
 for s in open_prs gh_assigned; do
-    check "graphql blocked: $s exits non-zero" \
-        grep -q "^===$s (exit=1)===" "$out"
-    check "graphql blocked: $s says gh-unauthorized" \
-        sh -c 'grep -A1 "^===$2 (exit=1)===" "$1" | grep -qx gh-unauthorized' _ "$out" "$s"
-    check "graphql blocked: $s carries no 403 body" \
-        sh -c '! grep -A3 "^===$2 (exit=" "$1" | grep -q 403' _ "$out" "$s"
+  check "graphql blocked: $s exits non-zero" \
+    grep -q "^===$s (exit=1)===" "$out"
+  check "graphql blocked: $s says gh-unauthorized" \
+    sh -c 'grep -A1 "^===$2 (exit=1)===" "$1" | grep -qx gh-unauthorized' _ "$out" "$s"
+  check "graphql blocked: $s carries no 403 body" \
+    sh -c '! grep -A3 "^===$2 (exit=" "$1" | grep -q 403' _ "$out" "$s"
 done
 
 [ "$fail" -eq 0 ] || cat "$out"
