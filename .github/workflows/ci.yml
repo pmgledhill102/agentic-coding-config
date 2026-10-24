@@ -198,6 +198,15 @@ jobs:
       - name: Run actionlint
         run: ./actionlint -color
 
+  semgrep:
+    name: Semgrep
+    runs-on: ubuntu-latest
+    container:
+      image: semgrep/semgrep
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: semgrep scan --config auto --error
+
   cspell:
     name: Spell Check
     runs-on: ubuntu-latest
