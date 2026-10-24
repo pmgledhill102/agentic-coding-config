@@ -56,9 +56,11 @@ git_subcommand() {
         esac
     done
     gs_ifs=$IFS
+    # nosemgrep: bash.lang.security.ifs-tampering.ifs-tampering -- deliberate IFS for the word split below, restored to gs_ifs right after.
     IFS=' 	)'
     # shellcheck disable=SC2086  # deliberate: split the segment into words.
     set -- $gs_seg
+    # nosemgrep: bash.lang.security.ifs-tampering.ifs-tampering -- restores the IFS saved in gs_ifs before the split.
     IFS=$gs_ifs
     [ "${1:-}" = "git" ] || return 0
     shift
@@ -86,10 +88,12 @@ git_subcommand() {
 stage=""
 set -f
 cls_ifs=$IFS
+# nosemgrep: bash.lang.security.ifs-tampering.ifs-tampering -- deliberate newline-only IFS for the split below, restored to cls_ifs right after.
 IFS='
 '
 # shellcheck disable=SC2046,SC2086  # deliberate: split on the inserted newlines.
 set -- $(printf '%s' "$cmd" | tr ';&|' '\n')
+# nosemgrep: bash.lang.security.ifs-tampering.ifs-tampering -- restores the IFS saved in cls_ifs just above the word split.
 IFS=$cls_ifs
 for seg in "$@"; do
     case "$(git_subcommand "$seg")" in
