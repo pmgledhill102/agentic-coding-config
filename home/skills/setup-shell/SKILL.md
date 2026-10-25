@@ -84,10 +84,15 @@ Don't duplicate if a ShellCheck job already exists. Look up the latest pinned co
 
 ### 6. Verify
 
-Run `pre-commit run --all-files` to confirm hooks work. Fix any lint or formatting issues.
+**Before formatting, find anything that reads shell source as text.** shfmt rewrites layout, redirects included (`> /dev/null 2>&1` becomes `>/dev/null 2>&1`), and a test or workflow step that greps shell source, or runs sed over it, for the original spelling then fails or, worse, silently matches nothing. Search the repo's tests, CI workflows and scripts for such matchers (for example `grep -rn "sed .*\.sh\|grep .*\.sh" tests .github scripts`, and any test that asserts on command text), and list what you find.
+
+Then run `pre-commit run --all-files` to confirm hooks work. Fix any lint or formatting issues.
+
+**After formatting, re-run every matcher you listed and prove it can still fail**: feed it input that should be rejected and check that it is. A matcher that now finds nothing has not passed, it has stopped working. Fix the matcher's pattern to the formatted spelling (for example `>/dev/null`), not the script.
 
 ## Important
 
+- shfmt selects files by shebang as well as extension, so it also rewrites generated wrappers with no `.sh` extension (for example `gradlew`). Exclude those from the hook (`exclude:`) rather than reformatting them.
 - Do NOT overwrite existing configs. Read first and merge.
 - If `.pre-commit-config.yaml` doesn't exist, tell the user to run `setup-common` first.
 - If the project has `.bash` or other non-`.sh` extensions, add `types_or: [bash, sh]` to the shellcheck hook.
