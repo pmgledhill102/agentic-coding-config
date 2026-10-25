@@ -84,7 +84,7 @@ Don't duplicate if a ShellCheck job already exists. Look up the latest pinned co
 
 ### 6. Verify
 
-**Before formatting, find anything that reads shell source as text.** shfmt rewrites layout, redirects included (`> /dev/null 2>&1` becomes `>/dev/null 2>&1`), and a test or workflow step that greps or seds shell source for the original spelling then fails or, worse, silently matches nothing. Search the repo's tests, CI workflows and scripts for such matchers (for example `grep -rn "sed .*\.sh\|grep .*\.sh" tests .github scripts`, and any test that asserts on command text), and list what you find.
+**Before formatting, find anything that reads shell source as text.** shfmt rewrites layout, redirects included (`> /dev/null 2>&1` becomes `>/dev/null 2>&1`), and a test or workflow step that greps shell source, or runs sed over it, for the original spelling then fails or, worse, silently matches nothing. Search the repo's tests, CI workflows and scripts for such matchers (for example `grep -rn "sed .*\.sh\|grep .*\.sh" tests .github scripts`, and any test that asserts on command text), and list what you find.
 
 Then run `pre-commit run --all-files` to confirm hooks work. Fix any lint or formatting issues.
 
