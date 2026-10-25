@@ -34,6 +34,7 @@ bad() {
 
 # The control: a known-bad snippet. If this sh accepts it, a clean result below
 # proves nothing about bash 3.2.
+# shellcheck disable=SC2016 # the snippet is deliberately literal: it is parsed, never run
 printf '%s\n' 'x=$(case "$y" in "" | *[!0-9]*) echo a ;; esac)' > "$WORK/bad.sh"
 CAN_SPEAK=no
 if ! sh -n "$WORK/bad.sh" > /dev/null 2>&1; then
@@ -44,6 +45,7 @@ else
 	printf '        cannot catch it here; it only bites where /bin/sh is bash 3.2 (macOS)\n'
 fi
 
+# shellcheck disable=SC2016 # literal on purpose, as above
 printf '%s\n' 'x=$(case "$y" in ("" | *[!0-9]*) echo a ;; esac)' > "$WORK/good.sh"
 if sh -n "$WORK/good.sh" > /dev/null 2>&1; then
 	ok "the parenthesised form parses"
