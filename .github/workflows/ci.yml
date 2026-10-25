@@ -68,6 +68,10 @@ jobs:
       # no remote and no token.
       - name: Run the push-guard repo-resolution tests
         run: sh tests/prepush-guard-test.sh
+      # Catches bash 3.2 parse errors only where /bin/sh is bash 3.2 (macOS); on
+      # the Ubuntu runner it says it cannot, rather than passing silently.
+      - name: Run the sh parse test for home/bin
+        run: sh tests/sh-parse-test.sh
       # gh is stubbed per lane (REST, GraphQL, issue list); the fixture's
       # origin is never reached, so this needs no remote and no token.
       - name: Run the start-session gather GitHub-lane tests

@@ -690,7 +690,7 @@ cmd_session_shape() {
         _uses=$(for _u in "$_shims"/first-use/*; do
             [ -f "$_u" ] || continue
             _t=$(head -1 "$_u" 2> /dev/null)
-            case "$_t" in "" | *[!0-9]*) continue ;; esac
+            case "$_t" in ("" | *[!0-9]*) continue ;; esac
             [ "$_t" -ge "$_e" ] || continue
             echo "$((_t - _e)) ${_u##*/}"
         done | sort -n | awk '{ printf "%s%s:%s", (NR > 1 ? "," : ""), $2, $1 }')
