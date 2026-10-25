@@ -50,6 +50,7 @@ python3 tests/github-repo-standard.py       # the repo-settings spec holds its o
 sh tests/estate-report-test.sh           # estate flag thresholds and bucketing  <1s
 sh tests/credguard-test.sh               # credential-printing guard classification  <1s
 sh tests/prepush-guard-test.sh           # push guard judges the repo the push targets  ~1s
+sh tests/sh-parse-test.sh                # home/bin #!/bin/sh scripts parse (bash 3.2 case-in-$(...))  <1s
 sh tests/session-cache-verdict-test.sh   # rebuild-vs-cache verdict, and it never fails a session  <1s
 sh tests/wsl-mnt-guard-test.sh           # /mnt guard speaks only on WSL, never fails a session  <1s
 sh tests/env-conformance-test.sh         # every conformance status reachable; the runner writes nothing  ~1s

@@ -168,26 +168,28 @@ targets=$(push_targets "$cmd") || not_checked "push not parsed: could not find t
 # Each line: "<src> <dst>" for a branch to judge. Tags and deletions are not
 # this guard's business.
 pairs=$(printf '%s\n' "$targets" | while IFS=' ' read -r kind val; do
+    # Every pattern in a case inside $(...) opens with "(": bash 3.2, which is
+    # macOS's /bin/sh, ends the substitution at the first unbalanced ")".
     case "$kind" in
-        none)
+        (none)
             [ "$val" = 1 ] && { echo "SWITCHED"; continue; }
             [ -n "$current" ] && printf '%s %s\n' "$current" "$current"
             ;;
-        ref)
+        (ref)
             spec=${val#+}
             case "$spec" in
-                '' | :*) continue ;;                       # deletion
-                *'$'* | *'`'* | *'*'* | *'?'* | *'['* | *'"'* | *"'"* | '~'*) echo "UNSAFE"; continue ;;
+                ('' | :*) continue ;;                       # deletion
+                (*'$'* | *'`'* | *'*'* | *'?'* | *'['* | *'"'* | *"'"* | '~'*) echo "UNSAFE"; continue ;;
             esac
             case "$spec" in
-                *:*) src=${spec%%:*} dst=${spec#*:} ;;
-                *) src=$spec dst=$spec ;;
+                (*:*) src=${spec%%:*} dst=${spec#*:} ;;
+                (*) src=$spec dst=$spec ;;
             esac
             [ "$dst" = HEAD ] && dst=$current
             [ "$src" = HEAD ] && src=HEAD
             case "$dst" in
-                refs/tags/* ) continue ;;
-                refs/heads/*) dst=${dst#refs/heads/} ;;
+                (refs/tags/* ) continue ;;
+                (refs/heads/*) dst=${dst#refs/heads/} ;;
             esac
             [ -n "$dst" ] && printf '%s %s\n' "$src" "$dst"
             ;;
