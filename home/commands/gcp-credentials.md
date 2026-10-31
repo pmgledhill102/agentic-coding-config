@@ -206,6 +206,7 @@ channel by the service that built it.
 | 7 | Approved, but the identity never became usable | **Not a deny** — nobody refused. Report the reason the helper printed. Requesting again is legitimate; if it recurs, say so, because the sandbox's agent identity needs attention. |
 | 8 | This helper is too old for the broker | Relay the remedy below and **stop**. Retrying cannot help — nothing is wrong with the request, the client simply cannot speak the current contract. Locally the fix is `chezmoi apply --refresh-externals`, **not** a plain `chezmoi apply`. |
 | 1 | Broker unreachable or mint failed | Report it. Do not proceed as if credentials exist. |
+| 1 | **HTTP 502 from something between this session and the broker** (no broker error in the response) | A path fault, not a broker fault: the broker may never have seen the request. Retry once after a minute rather than diagnosing the broker; if it persists, check the broker's request log for whether the call arrived. Only a 502 that says the *approval channel* is unavailable means the broker was reached and nobody was asked. |
 
 Exit 7 is worth distinguishing from exit 3 in what you tell the user. A deny is a
 decision and asking again without checking is rude; a failure is a fault, and
