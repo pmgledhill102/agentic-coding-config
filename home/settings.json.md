@@ -1039,6 +1039,11 @@ point at went away with the plugin in #312.
    - `git commit` → `--hook-stage pre-commit` on the **staged delta** (fast;
      correct commit-stage semantics). Falls back to `--all-files` for
      `git commit -a`/`--all`, where git stages files *after* the hook fires.
+     A `git add` earlier in the same command is the same situation, but is
+     deliberately **not** widened to `--all-files` (that would turn a
+     commit-stage check into a whole-tree one); a block there instead ends with
+     a note that the staged set was read before the command ran, so the fix is
+     to stage in a separate call (#696).
    - `git push` → `--hook-stage pre-push --all-files` (whole-tree backstop
      before CI; also covers manual / `--no-verify` commits the commit stage
      never saw).
