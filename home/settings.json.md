@@ -907,6 +907,20 @@ point at went away with the plugin in #312.
    invocation needs real parsing, and the costs are asymmetric: a blocked echo
    is rephrased, a leaked token is rotated.
 
+   **One carve-out (#691):** the body of a heredoc fed to `cat`, `tee`,
+   `python*`, `node`, `ruby` or `perl` is not scanned for the bearer header.
+   That body travels on stdin, never in argv, so writing a Go file or patching
+   docs that mention the header is not the exposure the check exists for. It is
+   deliberately narrow. A heredoc whose line names a shell (`bash <<EOF`,
+   `cat <<EOF | sh`) stays in view, because its body is code and a `curl -H` in
+   it is argv; an unterminated heredoc is left whole; and the `gcloud` forms are
+   still matched against the whole command. The wider fix the issue floated,
+   blocking only next to a network tool, was rejected: it would let
+   `printf '…Bearer %s' "$(cat token)"` through, and that `printf` puts the
+   live token in its own argv. `tests/credguard-test.sh` pins each of these,
+   and records a `python3` body that shells out to `curl` as *allowed*, the
+   same way the guard already accepts being evaded.
+
    **Considered and rejected: `terraform output`.** The broker skill names it
    as a third way a token can reach the transcript, and the guard deliberately
    does not match it (#520). Do not re-file it without one of the triggers

@@ -327,16 +327,26 @@ The access token is the more valuable of the two secrets.
 GOOGLE_OAUTH_ACCESS_TOKEN="$(cat ~/.config/claude/credential-broker/access_token)" terraform plan
 ```
 
-**`curl`, which is what an agent reaches for first** — use a config file, not
-`-H`:
+**A raw REST call, which is what an agent reaches for `curl` to do** — read the
+token inside a small script, so it never appears in any command line, including
+`printf`'s. Do not build the header in the shell: a `printf` that expands the
+token puts it in that process's argv just as `-H` does, and the credential guard
+refuses the command for the same reason.
 
-```sh
-printf 'header = "Authorization: Bearer %s"\n' \
-    "$(cat ~/.config/claude/credential-broker/access_token)" > /tmp/cb-hdr.conf
-chmod 600 /tmp/cb-hdr.conf
-curl -sS -K /tmp/cb-hdr.conf https://cloudresourcemanager.googleapis.com/v1/projects/example-project-sbx
-rm -f /tmp/cb-hdr.conf
+```python
+# call.py -- run as: python3 -I call.py   (from a scratch directory)
+import json, os, urllib.request
+
+tok = open(os.path.expanduser("~/.config/claude/credential-broker/access_token")).read().strip()
+url = "https://cloudresourcemanager.googleapis.com/v1/projects/example-project-sbx"
+req = urllib.request.Request(url, headers={"Authorization": "Bearer " + tok})
+print(json.dumps(json.load(urllib.request.urlopen(req)), indent=2))
 ```
+
+A second header such as `x-goog-user-project` goes in the same `headers` dict.
+`curl --config <0600 file>` also keeps the token out of argv, but the file has
+to be written without the token passing through a command line, which in a shell
+is the part that goes wrong; the script does not have that step.
 
 Or, when the API accepts it, skip the header entirely and let `gcloud` carry the
 auth — it is already pointed at the token file:
