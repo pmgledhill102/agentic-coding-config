@@ -1377,6 +1377,14 @@ if [ -f "$CB_TOKEN" ] && [ -z "${CB_NO_RENEW:-}" ]; then
     fi
 fi
 
+# An agent has no tty, so a prompt would wait forever. With prompts disabled
+# every one takes its default answer, which is "no" for a destructive confirm
+# and for "enable this API and retry?". The one default that is "yes" is
+# installing a missing component (`gcloud beta ...`): that installs and carries
+# on rather than hanging. The `:-1` form leaves a caller free to set 0.
+CLOUDSDK_CORE_DISABLE_PROMPTS="${CLOUDSDK_CORE_DISABLE_PROMPTS:-1}"
+export CLOUDSDK_CORE_DISABLE_PROMPTS
+
 if [ -n "${CLOUDSDK_AUTH_ACCESS_TOKEN:-}" ] && [ -f "$CB_TOKEN" ]; then
     exec env -u CLOUDSDK_AUTH_ACCESS_TOKEN @GCLOUD_SDK@/bin/gcloud "$@"
 fi
