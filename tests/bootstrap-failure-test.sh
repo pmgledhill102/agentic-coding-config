@@ -65,6 +65,32 @@ export BOOTSTRAP_REEXEC
 PASS=0
 FAIL=0
 
+# real_tool <name> [path] -- the first <name> on path (default PATH) that is not
+# an agent shim.
+#
+# `command -v` resolves to ~/.claude/bin/shims/<name> in a sandbox that has the
+# shims installed, and a shim finds the real tool by searching the rest of
+# PATH. Symlinked alone into a restricted PATH farm it has nothing to find and
+# exits 127, so the farm must hold the real binary. A shim is a symlink whose
+# target is named agent-shim.
+real_tool() {
+  _rt_ifs=$IFS
+  IFS=:
+  set -f
+  for _rt_d in ${2:-$PATH}; do
+    _rt_c="$_rt_d/$1"
+    [ -f "$_rt_c" ] && [ -x "$_rt_c" ] || continue
+    case $(readlink "$_rt_c" 2>/dev/null) in */agent-shim | agent-shim) continue ;; esac
+    set +f
+    IFS=$_rt_ifs
+    printf '%s\n' "$_rt_c"
+    return 0
+  done
+  set +f
+  IFS=$_rt_ifs
+  return 1
+}
+
 ok() {
   PASS=$((PASS + 1))
   printf '  ok    %s\n' "$1"
@@ -1080,8 +1106,29 @@ mkdir -p "$FARM"
 for t in sh cat cp mv rm ln mkdir chmod install mktemp date sed awk grep head tail \
   cut tr wc sort dirname basename find env stat tar gzip xz unzip curl git jq \
   id uname tee touch readlink ls true false; do
-  _p=$(command -v "$t" 2>/dev/null) && ln -s "$_p" "$FARM/$t"
+  _p=$(real_tool "$t") && ln -s "$_p" "$FARM/$t"
 done
+
+# Controls for real_tool (#708): it skips a shim, and it still reports a tool
+# that is genuinely absent rather than falling back to the shim.
+_rt_d=$(mktemp -d)
+mkdir -p "$_rt_d/shims" "$_rt_d/bin"
+printf '#!/bin/sh\nexit 0\n' >"$_rt_d/agent-shim"
+chmod +x "$_rt_d/agent-shim"
+ln -s ../agent-shim "$_rt_d/shims/faketool"
+if [ "$(real_tool faketool "$_rt_d/shims" || echo none)" = none ]; then
+  ok "real_tool: a PATH holding only a shim has no real tool"
+else
+  no "real_tool: returned a shim as the real tool"
+fi
+printf '#!/bin/sh\nexit 0\n' >"$_rt_d/bin/faketool"
+chmod +x "$_rt_d/bin/faketool"
+if [ "$(real_tool faketool "$_rt_d/shims:$_rt_d/bin")" = "$_rt_d/bin/faketool" ]; then
+  ok "real_tool: skips the shim and finds the real binary behind it"
+else
+  no "real_tool: did not skip the shim"
+fi
+rm -rf "$_rt_d"
 cat >"$FARM/npm" <<'STUB'
 #!/bin/sh
 echo "$*" >> "$STUB_LOG/npm.log"
