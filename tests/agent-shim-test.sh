@@ -74,7 +74,20 @@ EOF
 printf '#!/bin/sh\nexit 0\n' >"$REAL/quick"
 chmod 0755 "$REAL/fake-tool" "$REAL/quick"
 
-BASE_PATH=$PATH
+# Drop any other install's shim directory from the inherited PATH. In a sandbox
+# that has the real shims, the test's shim and that one each take the other for
+# the real tool and exec each other forever (#708). A directory is a shim
+# directory when its git is a symlink to an agent-shim.
+BASE_PATH=
+_ifs=$IFS
+IFS=:
+set -f
+for _d in $PATH; do
+  case $(readlink "$_d/git" 2>/dev/null) in */agent-shim | agent-shim) continue ;; esac
+  BASE_PATH="${BASE_PATH:+$BASE_PATH:}$_d"
+done
+set +f
+IFS=$_ifs
 PATH="$SHIMS:$REAL:$BASE_PATH"
 export PATH
 
