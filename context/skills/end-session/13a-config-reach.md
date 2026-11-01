@@ -14,12 +14,30 @@ Check whether anything the bootstrap delivers landed on the default branch
 recently:
 
 ```sh
-git log "origin/$DEFAULT_BRANCH" --since=1.day --name-only --pretty=format: -- \
-    home/ profiles/ context/ cloud/bootstrap.sh | sed '/^$/d' | sort -u
+shallow=$(git rev-parse --is-shallow-repository)
+for c in $(git rev-list --since=1.day --first-parent "origin/$DEFAULT_BRANCH"); do
+  if p=$(git rev-parse --verify -q "$c^1"); then
+    base=$p
+  elif [ "$shallow" = true ]; then
+    echo "note: window starts at the shallow boundary ($(git rev-parse --short "$c")); earlier changes are unverifiable" >&2
+    continue
+  else
+    base=$(git hash-object -t tree /dev/null)
+  fi
+  git diff --name-only "$base" "$c" -- home/ profiles/ context/ cloud/bootstrap.sh
+done | sort -u
 ```
 
-- **No output**: skip silently. Nothing a sandbox installs has moved.
-- **Any output**: add one line to the summary under "Needs attention":
+It walks merged commits by their net change rather than listing every file a
+commit touched, because on a shallow clone the oldest commit has no parent and
+git shows its whole tree as added.
+
+- **No paths and no `note:` line**: skip silently. Nothing a sandbox installs
+  has moved.
+- **A `note:` line**: the window starts at a shallow boundary, so changes before
+  it cannot be seen. With no paths, that is *unknown*, not *nothing changed*:
+  say so in the summary instead of skipping.
+- **Any paths**: add one line to the summary under "Needs attention":
 
   > `<N>` bootstrap-delivered path(s) changed on `<default>` — bump the `Rev:`
   > line in the environment setup script (claude.ai → environment settings), or
