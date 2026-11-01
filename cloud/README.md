@@ -277,6 +277,8 @@ registry.terraform.io
 developer.hashicorp.com
 semgrep.dev
 production.cloudfront.docker.com
+mirror.gcr.io
+dl-cdn.alpinelinux.org
 docs.github.com
 docs.cloud.google.com
 support.google.com
@@ -289,7 +291,7 @@ Obtain the broker hostname with `gcloud run services describe credential-broker`
 against the project it is deployed to — named, with the region, in the
 `sandbox-gcp-credentials` runbook in `gcp-org-management`. It is deliberately
 not written here: this repo is public, and while the URL is not a credential,
-publishing it hands a stranger the rate limit. The other eleven are ordinary
+publishing it hands a stranger the rate limit. The other thirteen are ordinary
 public hosts and carry no such exposure.
 
 The first two are what the bootstrap and the broker flow need; the rest are
@@ -304,6 +306,8 @@ each fails in a way that reads as something else:
 | `developer.hashicorp.com` | Terraform and provider documentation will not load | HashiCorp's docs live here now; `terraform.io` documentation links redirect to it |
 | `semgrep.dev` | `semgrep --config auto` fails before scanning anything | the rulesets are fetched from the registry at scan time, so it reads as a broken install, not a network block |
 | `production.cloudfront.docker.com` | `docker pull` resolves the image and then fails on its layers | Docker Hub redirects layer downloads to a CDN host; the registry host answering proves nothing about it |
+| `mirror.gcr.io` | `docker pull` of a Docker Hub base image fails with `429 Too Many Requests` | Docker Hub rate-limits anonymous pulls from the sandbox's shared egress IP; the CDN host above only gets a pull past the redirect. `dockerd-start-claude-hook` points the daemon at this mirror (#683) |
+| `dl-cdn.alpinelinux.org` | `apk add` inside a build fails with a DNS or fetch error | Alpine packages come from this CDN; any Alpine-based image build needs it |
 | `docs.github.com` | GitHub documentation will not load | a separate host from `github.com` and the API |
 | `docs.cloud.google.com` | GCP documentation returns `EGRESS_BLOCKED` | `cloud.google.com` docs pages redirect here, so the default-list entry no longer reaches the content |
 | `support.google.com` | Google help-centre articles will not load | a separate host from the documentation sites |
@@ -318,9 +322,10 @@ bootstrap itself needs nothing added.
 and the setting changes without a commit. Re-run this before trusting it:
 
 ```sh
-# verified 2026-10-04 in a Claude sandbox; re-run before trusting this list
+# verified 2026-10-31 in a Claude sandbox; re-run before trusting this list
 for d in dl.google.com registry.terraform.io developer.hashicorp.com \
-  semgrep.dev production.cloudfront.docker.com docs.github.com \
+  semgrep.dev production.cloudfront.docker.com mirror.gcr.io \
+  dl-cdn.alpinelinux.org docs.github.com \
   docs.cloud.google.com support.google.com knowledge.workspace.google.com \
   developers.google.com developers.googleblog.com \
   tunnel.cloudproxy.app endoflife.date agents.md; do
@@ -337,12 +342,18 @@ How to read it:
   all-statuses result means nothing.
 - **Two allowed hosts answer a bare root request with an error, and that is
   the origin, not the proxy.** `production.cloudfront.docker.com` returns
-  `403`; `support.google.com` returns `404` to `HEAD` (and `200` to `GET`).
+  `403` and `mirror.gcr.io` returns `405` to `HEAD`; `support.google.com` returns `404` to `HEAD` (and `200` to `GET`).
   Read either as "blocked" and the list looks wrong when it is not.
 - **The broker host is not in the loop**, because it is not written here.
   Probe it with `"$CREDENTIAL_BROKER_URL/"` instead; any status (its root is a
   `404`) means it is reachable. `developers.googleblog.com` stands in for the
   wildcard.
+
+**Two hosts a Docker build might want are not allowed**, and are not on the list
+above: `go.dev` (`000`) and `deb.debian.org` (`000`). Fetch Go toolchain
+tarballs from `https://dl.google.com/go/`, which serves the same files and is
+already allowed. Nothing measured needed `deb.debian.org`; use an Alpine base
+image, or ask for the host before building on Debian.
 
 On 2026-10-04 every listed host returned a status (`200`, `301`, `302`, or the
 two origin errors above) and all three negative controls returned `000`.
