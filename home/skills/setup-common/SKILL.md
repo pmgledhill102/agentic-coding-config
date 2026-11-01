@@ -55,12 +55,17 @@ repos:
   - repo: https://github.com/gitleaks/gitleaks
     rev: <latest tag>
     hooks:
+      # The v8.30.1 manifest lacks pass_filenames: false, and `gitleaks git`
+      # takes no file arguments, so pre-commit's appended filenames fail every run.
       - id: gitleaks-system
+        pass_filenames: false
 ```
 
 Look up the latest release tag for each repo and use those for the `rev:` values.
 
 Use `gitleaks-system`, not `gitleaks`. The plain id is `language: golang`, so pre-commit compiles gitleaks from source the first time it runs in a container, which takes about 30 seconds. The `-system` id runs the `gitleaks` binary on `PATH`; the workstation Brewfile and the cloud bootstrap both install it. It needs gitleaks 8.19 or later.
+
+Keep `pass_filenames: false` on the hook. Without it, pre-commit appends the staged filenames to the command and `gitleaks git`, which takes at most one `[repo]` argument, exits 1 with `accepts at most 1 arg(s), received N` on every run that touches more than one file. This was reproduced on v8.30.1, the version the claim is verified for. If a later release's manifest sets it itself the line is redundant but harmless.
 
 This hook is one of three gitleaks layers. Keep all three. On a personal account, GitHub's secret scanning and push protection are not available on private repos, so gitleaks is the only secret control those repos have:
 
