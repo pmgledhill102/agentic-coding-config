@@ -201,11 +201,31 @@ expect_out "renders the broker hint verbatim" "chezmoi apply --refresh-externals
 expect_out "names the client version it sent" "v4"
 expect_no_file "no approval was spent" "$CB_DIR/pending.json"
 
+# A 502 is only "the approval channel is down" when the broker says so. Any
+# other 502 came from the path between here and the broker (#645), and must not
+# send the caller off to diagnose a broker that never saw the request.
 reset_state
-canned request 502
+canned request 502 '{"error":"approval channel unavailable"}'
 run request --purpose t --project p
 expect_rc "approval channel unreachable" 1
 expect_out "says nobody was asked" "nobody was asked"
+expect_out "names the approval channel" "approval channel"
+
+reset_state
+canned request 502
+run request --purpose t --project p
+expect_rc "502 with no broker error" 1
+expect_out "blames the path between session and broker" "between this session and the broker"
+expect_no_out "does not name the approval channel" "approval channel"
+expect_no_out "does not claim nobody was asked" "nobody was asked"
+
+reset_state
+canned request 502 '<html><body>502 Server Error</body></html>'
+run request --purpose t --project p
+expect_rc "502 with an HTML body" 1
+expect_out "blames the path between session and broker" "between this session and the broker"
+expect_no_out "does not name the approval channel" "approval channel"
+expect_no_out "does not claim nobody was asked" "nobody was asked"
 
 reset_state
 canned request 401
@@ -693,6 +713,28 @@ reset_state
 canned request 426 '{"error":"client too old","hint":"chezmoi apply --refresh-externals"}'
 run_in "$TD_REPO" teardown
 expect_rc "stale client" 8
+
+reset_state
+canned request 502 '{"error":"approval channel unavailable"}'
+run_in "$TD_REPO" teardown
+expect_rc "approval channel unreachable" 1
+expect_out "says nobody was asked" "nobody was asked"
+
+reset_state
+canned request 502
+run_in "$TD_REPO" teardown
+expect_rc "502 with no broker error" 1
+expect_out "blames the path between session and broker" "between this session and the broker"
+expect_no_out "does not name the approval channel" "approval channel"
+expect_no_out "does not claim nobody was asked" "nobody was asked"
+
+reset_state
+canned request 502 '<html><body>502 Server Error</body></html>'
+run_in "$TD_REPO" teardown
+expect_rc "502 with an HTML body" 1
+expect_out "blames the path between session and broker" "between this session and the broker"
+expect_no_out "does not name the approval channel" "approval channel"
+expect_no_out "does not claim nobody was asked" "nobody was asked"
 
 # --- proxy-supplied request key ------------------------------------------------
 #
