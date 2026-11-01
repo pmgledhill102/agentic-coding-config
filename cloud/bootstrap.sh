@@ -233,7 +233,8 @@ record_failure() {
   _step="${FAILED_STEP:-unknown - exited without reaching a die}"
   _when=$(date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || echo unknown)
 
-  mkdir -p "$HOME/.agents" 2>/dev/null || return 0
+  _agents="${AGENTS_DIR:-$HOME/.agents}"
+  mkdir -p "$_agents" 2>/dev/null || return 0
   {
     echo "status=failed"
     echo "exit_code=$_rc"
@@ -242,18 +243,18 @@ record_failure() {
     echo "ref=$REF"
     echo "profile=$PROFILE"
     echo "log=$BOOTSTRAP_LOG"
-  } >"$HOME/.agents/.bootstrap-manifest" 2>/dev/null || true
+  } >"$_agents/.bootstrap-manifest" 2>/dev/null || true
   # Spooled too, if the helper got installed before the failure: a bootstrap
   # that died is the run most worth seeing.
   if [ -x "${BIN_DIR:-/nonexistent}/agent-telemetry" ]; then
-    "$BIN_DIR/agent-telemetry" record bootstrap "$HOME/.agents/.bootstrap-manifest" >/dev/null 2>&1 || true
+    "$BIN_DIR/agent-telemetry" record bootstrap "$_agents/.bootstrap-manifest" >/dev/null 2>&1 || true
   fi
 
   # The one policy file this profile's agent reads: a banner anywhere else is
   # one nothing ever overwrites, or one nobody reads.
   case "$PROFILE" in
-    claude-*) _targets="$HOME/.claude/CLAUDE.md" ;;
-    *) _targets="$HOME/.agents/AGENTS.md" ;;
+    claude-*) _targets="${CLAUDE_DIR:-$HOME/.claude}/CLAUDE.md" ;;
+    *) _targets="$_agents/AGENTS.md" ;;
   esac
 
   for _t in $_targets; do
@@ -507,6 +508,42 @@ else
   OPT_DIR="$PREFIX/opt"
 fi
 mkdir -p "$BIN_DIR" || die "could not create $BIN_DIR"
+
+# Is $HOME writable? Codex Cloud runs a task with $HOME and the root filesystem
+# read-only (#575), and everything below that lives under ~/.claude or
+# ~/.agents would otherwise die at its first mkdir, taking every later install
+# with it. The probe makes and removes a directory rather than creating
+# ~/.claude, so a read-only answer leaves nothing behind either way.
+#
+# When it is read-only, the session scripts, the matrix, the standards and the
+# manifest relocate under the prefix, where this run can write and a later step
+# can still find them. The policy and the skills do NOT: nothing on that
+# surface reads them from the prefix, so installing them there would report a
+# success that changes no agent's behaviour. They are skipped, and the manifest
+# says so (`policy=not-installed`, status degraded) rather than the run dying
+# or the gap being silent. Which channel replaces them is open in #575/#495.
+HOME_RW=yes
+mkdir -p "$HOME" 2>/dev/null || true
+if _probe=$(mktemp -d "$HOME/.bootstrap-probe.XXXXXX" 2>/dev/null); then
+  rmdir "$_probe" 2>/dev/null || true
+else
+  HOME_RW=no
+fi
+if [ "$HOME_RW" = yes ]; then
+  CLAUDE_DIR="$HOME/.claude"
+  AGENTS_DIR="$HOME/.agents"
+else
+  STATE_DIR="${PREFIX:-$OPT_DIR}/.agent-state"
+  CLAUDE_DIR="$STATE_DIR/claude"
+  AGENTS_DIR="$STATE_DIR/agents"
+  mkdir -p "$CLAUDE_DIR" "$AGENTS_DIR" \
+    || die "\$HOME is read-only and the state directory $STATE_DIR could not be created"
+  # Both write to ~/.claude/settings.json and ~/.claude.json, which this run
+  # cannot reach, so they are off rather than failing partway.
+  WITH_HOOKS=0
+  WITH_DEVKNOWLEDGE=0
+  log "home    : $HOME is read-only -- state, manifest and session scripts go to $STATE_DIR"
+fi
 
 # The caller's PATH is read before this script touches it: whether the bin dir
 # is on it is a fact about the environment a session will inherit, and it is
@@ -815,8 +852,8 @@ head -1 "$TMP/agent-telemetry" | grep -q '^#!' \
   || die "fetched telemetry helper is not a script — check that $REF exists"
 install -m 0755 "$TMP/agent-telemetry" "$BIN_DIR/agent-telemetry"
 log "helper  -> $BIN_DIR/agent-telemetry"
-mkdir -p "$HOME/.claude/bin"
-ln -sf "$BIN_DIR/agent-telemetry" "$HOME/.claude/bin/agent-telemetry"
+mkdir -p "$CLAUDE_DIR/bin"
+ln -sf "$BIN_DIR/agent-telemetry" "$CLAUDE_DIR/bin/agent-telemetry"
 
 # The skill still spells its invocations ~/.claude/bin/gcp-credentials, because
 # that is where chezmoi puts the helper on a laptop. Nothing here creates that
@@ -825,9 +862,9 @@ ln -sf "$BIN_DIR/agent-telemetry" "$HOME/.claude/bin/agent-telemetry"
 # there and run that instead. Symlink until the skill stops naming a path at
 # all, which is the real fix and is the corollary in ADR-0016 principle 3:
 # delivery assumptions do not belong in portable text.
-mkdir -p "$HOME/.claude/bin"
-ln -sf "$BIN_DIR/gcp-credentials" "$HOME/.claude/bin/gcp-credentials"
-log "compat  -> $HOME/.claude/bin/gcp-credentials -> $BIN_DIR/gcp-credentials"
+mkdir -p "$CLAUDE_DIR/bin"
+ln -sf "$BIN_DIR/gcp-credentials" "$CLAUDE_DIR/bin/gcp-credentials"
+log "compat  -> $CLAUDE_DIR/bin/gcp-credentials -> $BIN_DIR/gcp-credentials"
 
 # --- the skill: one file, vendor paths as adapters ----------------------------
 #
@@ -849,39 +886,43 @@ log "compat  -> $HOME/.claude/bin/gcp-credentials -> $BIN_DIR/gcp-credentials"
 # invoked it unprompted. What a symlinked skill directory does is the part still
 # worth watching; if Claude stops listing the skill, that is why.
 
-fetch "$RAW/home/commands/gcp-credentials.md" "$TMP/gcp-credentials.md" \
-  || die "could not fetch the skill from $REF"
+if [ "$HOME_RW" = yes ]; then
+  fetch "$RAW/home/commands/gcp-credentials.md" "$TMP/gcp-credentials.md" \
+    || die "could not fetch the skill from $REF"
 
-# SKILL.md wants frontmatter the command format does not carry. The first line
-# of the command file is its description by convention, so lift it — single
-# quoted, with any internal quote doubled, because that description contains a
-# colon and would otherwise be read as a YAML mapping.
-SKILL_DIR="$HOME/.agents/skills/gcp-credentials"
-mkdir -p "$SKILL_DIR"
-DESC=$(head -1 "$TMP/gcp-credentials.md" | sed "s/'/''/g")
-{
-  echo "---"
-  echo "name: gcp-credentials"
-  echo "description: '${DESC}'"
-  echo "---"
-  echo ""
-  tail -n +2 "$TMP/gcp-credentials.md"
-} >"$SKILL_DIR/SKILL.md"
-log "skill   -> $SKILL_DIR/SKILL.md (canonical)"
+  # SKILL.md wants frontmatter the command format does not carry. The first line
+  # of the command file is its description by convention, so lift it — single
+  # quoted, with any internal quote doubled, because that description contains a
+  # colon and would otherwise be read as a YAML mapping.
+  SKILL_DIR="$AGENTS_DIR/skills/gcp-credentials"
+  mkdir -p "$SKILL_DIR"
+  DESC=$(head -1 "$TMP/gcp-credentials.md" | sed "s/'/''/g")
+  {
+    echo "---"
+    echo "name: gcp-credentials"
+    echo "description: '${DESC}'"
+    echo "---"
+    echo ""
+    tail -n +2 "$TMP/gcp-credentials.md"
+  } >"$SKILL_DIR/SKILL.md"
+  log "skill   -> $SKILL_DIR/SKILL.md (canonical)"
 
-# An earlier run left a real directory here, and `ln -s` onto one links *inside*
-# it rather than replacing it. Remove first; the path is fixed and ours.
-rm -rf "$HOME/.claude/skills/gcp-credentials"
-mkdir -p "$HOME/.claude/skills"
-ln -sfn "$SKILL_DIR" "$HOME/.claude/skills/gcp-credentials"
-log "adapter -> $HOME/.claude/skills/gcp-credentials"
+  # An earlier run left a real directory here, and `ln -s` onto one links *inside*
+  # it rather than replacing it. Remove first; the path is fixed and ours.
+  rm -rf "$CLAUDE_DIR/skills/gcp-credentials"
+  mkdir -p "$CLAUDE_DIR/skills"
+  ln -sfn "$SKILL_DIR" "$CLAUDE_DIR/skills/gcp-credentials"
+  log "adapter -> $CLAUDE_DIR/skills/gcp-credentials"
 
-# Claude merged custom commands into skills: a commands/*.md and a
-# skills/*/SKILL.md both register the same /name and behave the same way. So an
-# earlier run's commands copy is now a second, Claude-only registration of a
-# skill that already works from the neutral path. Remove it rather than leave
-# two sources for one command.
-rm -f "$HOME/.claude/commands/gcp-credentials.md"
+  # Claude merged custom commands into skills: a commands/*.md and a
+  # skills/*/SKILL.md both register the same /name and behave the same way. So an
+  # earlier run's commands copy is now a second, Claude-only registration of a
+  # skill that already works from the neutral path. Remove it rather than leave
+  # two sources for one command.
+  rm -f "$CLAUDE_DIR/commands/gcp-credentials.md"
+else
+  log "skip    : gcp-credentials skill not installed (home-read-only)"
+fi
 
 # --- the agent policy ---------------------------------------------------------
 #
@@ -919,31 +960,35 @@ rm -f "$HOME/.claude/commands/gcp-credentials.md"
 # read it, and it carried no environment fragment (#310), so it is no longer
 # composed, and a copy an older run left in a resumed container is removed.
 
-PROFILE_DIR="$HOME/.agents"
-mkdir -p "$PROFILE_DIR"
+if [ "$HOME_RW" = yes ]; then
+  PROFILE_DIR="$AGENTS_DIR"
+  mkdir -p "$PROFILE_DIR"
 
-case "$PROFILE" in
-  claude-*) POLICY_FILE=CLAUDE.md POLICY_DEST="$HOME/.claude/CLAUDE.md" ;;
-  *) POLICY_FILE=AGENTS.md POLICY_DEST="$PROFILE_DIR/AGENTS.md" ;;
-esac
+  case "$PROFILE" in
+    claude-*) POLICY_FILE=CLAUDE.md POLICY_DEST="$CLAUDE_DIR/CLAUDE.md" ;;
+    *) POLICY_FILE=AGENTS.md POLICY_DEST="$PROFILE_DIR/AGENTS.md" ;;
+  esac
 
-fetch "$RAW/profiles/$PROFILE/$POLICY_FILE" "$TMP/$POLICY_FILE" \
-  || die "could not fetch profile '$PROFILE' ($POLICY_FILE) from $REF — check the name against profiles/ in the repo"
+  fetch "$RAW/profiles/$PROFILE/$POLICY_FILE" "$TMP/$POLICY_FILE" \
+    || die "could not fetch profile '$PROFILE' ($POLICY_FILE) from $REF — check the name against profiles/ in the repo"
 
-# Same 404-as-content guard as everything else here: a bad ref or a mistyped
-# profile can return an HTML error page with a 200 from some proxies, and
-# policy whose first line is <!DOCTYPE reads as a broken agent rather than a
-# broken fetch.
-head -1 "$TMP/$POLICY_FILE" | grep -q "^<!-- GENERATED" \
-  || die "fetched profile is not a composed artefact — check that $REF and profile '$PROFILE' exist"
+  # Same 404-as-content guard as everything else here: a bad ref or a mistyped
+  # profile can return an HTML error page with a 200 from some proxies, and
+  # policy whose first line is <!DOCTYPE reads as a broken agent rather than a
+  # broken fetch.
+  head -1 "$TMP/$POLICY_FILE" | grep -q "^<!-- GENERATED" \
+    || die "fetched profile is not a composed artefact — check that $REF and profile '$PROFILE' exist"
 
-mkdir -p "$(dirname "$POLICY_DEST")"
-cp "$TMP/$POLICY_FILE" "$POLICY_DEST"
-log "policy  -> $POLICY_DEST (profile: $PROFILE)"
+  mkdir -p "$(dirname "$POLICY_DEST")"
+  cp "$TMP/$POLICY_FILE" "$POLICY_DEST"
+  log "policy  -> $POLICY_DEST (profile: $PROFILE)"
 
-case "$PROFILE" in
-  claude-*) rm -f "$PROFILE_DIR/AGENTS.md" ;;
-esac
+  case "$PROFILE" in
+    claude-*) rm -f "$PROFILE_DIR/AGENTS.md" ;;
+  esac
+else
+  log "skip    : policy not installed (home-read-only)"
+fi
 
 # --- the workflow skills ------------------------------------------------------
 #
@@ -1028,27 +1073,27 @@ BIN_SCRIPTS="start-session-gather-state start-session-claude-drift session-repo-
 
 # Defensive: the credential-helper section above already creates this, but the
 # dependency is invisible from here and a reordering would break it silently.
-mkdir -p "$HOME/.claude/bin"
+mkdir -p "$CLAUDE_DIR/bin"
 
 for script in $BIN_SCRIPTS; do
   fetch "$RAW/home/bin/$script" "$TMP/$script" \
     || die "could not fetch helper script $script from $REF"
   head -1 "$TMP/$script" | grep -q '^#!' \
     || die "fetched $script is not a script — check that $REF exists"
-  install -m 0755 "$TMP/$script" "$HOME/.claude/bin/$script"
+  install -m 0755 "$TMP/$script" "$CLAUDE_DIR/bin/$script"
 done
-log "helpers -> $HOME/.claude/bin/ ($(echo "$BIN_SCRIPTS" | wc -w | tr -d ' ') session scripts)"
+log "helpers -> $CLAUDE_DIR/bin/ ($(echo "$BIN_SCRIPTS" | wc -w | tr -d ' ') session scripts)"
 
 # The capability matrix env-conformance probes. Data, not a script, so the
 # shebang guard above does not fit; a stanza header is what a bad ref's HTML
 # error page will not have.
-mkdir -p "$HOME/.claude/conformance"
+mkdir -p "$CLAUDE_DIR/conformance"
 fetch "$RAW/home/conformance/matrix.conf" "$TMP/matrix.conf" \
   || die "could not fetch the capability matrix from $REF"
 grep -q '^\[[a-z0-9-]*\]$' "$TMP/matrix.conf" \
   || die "fetched matrix.conf has no stanzas — check that $REF exists"
-install -m 0644 "$TMP/matrix.conf" "$HOME/.claude/conformance/matrix.conf"
-log "matrix  -> $HOME/.claude/conformance/matrix.conf"
+install -m 0644 "$TMP/matrix.conf" "$CLAUDE_DIR/conformance/matrix.conf"
+log "matrix  -> $CLAUDE_DIR/conformance/matrix.conf"
 
 # --- the standards ------------------------------------------------------------
 #
@@ -1066,7 +1111,7 @@ log "matrix  -> $HOME/.claude/conformance/matrix.conf"
 #
 # ~/.claude/standards/ is the same path chezmoi writes on a workstation, so a
 # skill or a tool naming it works unchanged on both.
-mkdir -p "$HOME/.claude/standards"
+mkdir -p "$CLAUDE_DIR/standards"
 
 for standard in github-repo.json github-standards.md; do
   fetch "$RAW/home/standards/$standard" "$TMP/$standard" \
@@ -1080,43 +1125,47 @@ for standard in github-repo.json github-standards.md; do
     *.md) head -1 "$TMP/$standard" | grep -q '^#' \
       || die "fetched $standard is not markdown — check that $REF exists" ;;
   esac
-  install -m 0644 "$TMP/$standard" "$HOME/.claude/standards/$standard"
+  install -m 0644 "$TMP/$standard" "$CLAUDE_DIR/standards/$standard"
 done
-log "standards -> $HOME/.claude/standards/ (spec + prose)"
+log "standards -> $CLAUDE_DIR/standards/ (spec + prose)"
 
-for skill in $SKILLS $COMPOSED_SKILLS; do
-  # One loop, one difference: where the body comes from. Recomputing it per
-  # skill keeps the install, symlink and de-duplication steps below in a
-  # single place rather than duplicated per source.
-  case " $COMPOSED_SKILLS " in
-    *" $skill "*) src="profiles/$PROFILE/skills/$skill/SKILL.md" ;;
-    *) src="home/skills/$skill/SKILL.md" ;;
-  esac
+if [ "$HOME_RW" = yes ]; then
+  for skill in $SKILLS $COMPOSED_SKILLS; do
+    # One loop, one difference: where the body comes from. Recomputing it per
+    # skill keeps the install, symlink and de-duplication steps below in a
+    # single place rather than duplicated per source.
+    case " $COMPOSED_SKILLS " in
+      *" $skill "*) src="profiles/$PROFILE/skills/$skill/SKILL.md" ;;
+      *) src="home/skills/$skill/SKILL.md" ;;
+    esac
 
-  fetch "$RAW/$src" "$TMP/$skill.SKILL.md" \
-    || die "could not fetch the $skill skill from $REF ($src) — a composed skill needs a profiles/$PROFILE/skills/ entry in context/manifest.json"
+    fetch "$RAW/$src" "$TMP/$skill.SKILL.md" \
+      || die "could not fetch the $skill skill from $REF ($src) — a composed skill needs a profiles/$PROFILE/skills/ entry in context/manifest.json"
 
-  # Same 404-as-content guard as the helper: a bad ref returns an HTML error
-  # page with a 200 from some proxies, and a skill whose body is HTML fails
-  # in a way that reads like the skill being wrong rather than absent.
-  head -1 "$TMP/$skill.SKILL.md" | grep -q '^---$' \
-    || die "fetched $skill skill has no frontmatter — check that $REF exists"
+    # Same 404-as-content guard as the helper: a bad ref returns an HTML error
+    # page with a 200 from some proxies, and a skill whose body is HTML fails
+    # in a way that reads like the skill being wrong rather than absent.
+    head -1 "$TMP/$skill.SKILL.md" | grep -q '^---$' \
+      || die "fetched $skill skill has no frontmatter — check that $REF exists"
 
-  dir="$HOME/.agents/skills/$skill"
-  mkdir -p "$dir"
-  cp "$TMP/$skill.SKILL.md" "$dir/SKILL.md"
+    dir="$AGENTS_DIR/skills/$skill"
+    mkdir -p "$dir"
+    cp "$TMP/$skill.SKILL.md" "$dir/SKILL.md"
 
-  # Same canonical/adapter split as the credential skill above: the real file
-  # lives in the vendor-neutral tree, each vendor path is a symlink that
-  # cannot drift. See that comment for the reasoning.
-  rm -rf "$HOME/.claude/skills/$skill"
-  ln -sfn "$dir" "$HOME/.claude/skills/$skill"
-  log "skill   -> $dir/SKILL.md (+ ~/.claude/skills/$skill)"
+    # Same canonical/adapter split as the credential skill above: the real file
+    # lives in the vendor-neutral tree, each vendor path is a symlink that
+    # cannot drift. See that comment for the reasoning.
+    rm -rf "$CLAUDE_DIR/skills/$skill"
+    ln -sfn "$dir" "$CLAUDE_DIR/skills/$skill"
+    log "skill   -> $dir/SKILL.md (+ ~/.claude/skills/$skill)"
 
-  # A previous chezmoi-era or hand-copied command file registers the same
-  # /name a second time. Same reasoning as gcp-credentials above.
-  rm -f "$HOME/.claude/commands/$skill.md"
-done
+    # A previous chezmoi-era or hand-copied command file registers the same
+    # /name a second time. Same reasoning as gcp-credentials above.
+    rm -f "$CLAUDE_DIR/commands/$skill.md"
+  done
+else
+  log "skip    : workflow skills not installed (home-read-only)"
+fi
 
 # --- harness hooks, on request ------------------------------------------------
 #
@@ -1150,18 +1199,18 @@ if [ "$WITH_HOOKS" -eq 1 ]; then
     fetch "$RAW/home/bin/$script" "$TMP/$script" \
       || die "could not fetch hook script $script from $REF"
     head -1 "$TMP/$script" | grep -q '^#!' || die "fetched $script is not a script"
-    install -m 0755 "$TMP/$script" "$HOME/.claude/bin/$script"
+    install -m 0755 "$TMP/$script" "$CLAUDE_DIR/bin/$script"
   done
 
   # Sourced (not run) by prepush-guard and precommit, from lib/ next to
   # themselves. Without it both hooks stand down, so any new home/bin/lib/
   # file a hook above sources needs fetching here too.
-  mkdir -p "$HOME/.claude/bin/lib"
+  mkdir -p "$CLAUDE_DIR/bin/lib"
   fetch "$RAW/home/bin/lib/resolve-command-dir" "$TMP/resolve-command-dir" \
     || die "could not fetch hook library lib/resolve-command-dir from $REF"
   head -1 "$TMP/resolve-command-dir" | grep -q '^#!' \
     || die "fetched lib/resolve-command-dir is not a script"
-  install -m 0644 "$TMP/resolve-command-dir" "$HOME/.claude/bin/lib/resolve-command-dir"
+  install -m 0644 "$TMP/resolve-command-dir" "$CLAUDE_DIR/bin/lib/resolve-command-dir"
 
   fetch "$RAW/home/settings.json" "$TMP/settings.json" \
     || die "could not fetch home/settings.json from $REF"
@@ -1176,7 +1225,7 @@ if [ "$WITH_HOOKS" -eq 1 ]; then
   #
   # Note ~/.claude/launcher-settings.json is a DIFFERENT file with its own
   # hooks, written by the harness. Nothing here touches it, and both are read.
-  SETTINGS="$HOME/.claude/settings.json"
+  SETTINGS="$CLAUDE_DIR/settings.json"
   if [ -f "$SETTINGS" ]; then
     jq -s '.[0] * {hooks: .[1]}' "$SETTINGS" "$TMP/hooks.json" >"$TMP/merged.json" \
       || die "could not merge into existing $SETTINGS"
@@ -1364,7 +1413,7 @@ if [ -f "$CB_TOKEN" ] && [ -z "${CB_NO_RENEW:-}" ]; then
     cb_now=$(date +%s)
     cb_mtime=$(stat -c %Y "$CB_TOKEN" 2> /dev/null || stat -f %m "$CB_TOKEN" 2> /dev/null || echo "$cb_now")
     if [ $((cb_now - cb_mtime)) -ge "$CB_MAX_AGE" ]; then
-        cb_helper=$(command -v gcp-credentials 2> /dev/null || echo "$HOME/.claude/bin/gcp-credentials")
+        cb_helper=$(command -v gcp-credentials 2> /dev/null || echo "$CLAUDE_DIR/bin/gcp-credentials")
         if [ -x "$cb_helper" ]; then
             # Quiet on success: this runs before an unrelated command and must
             # not pollute output a script may be parsing. Failure is worth a
@@ -2018,9 +2067,9 @@ cap_shims() {
   fetch "$RAW/home/bin/agent-shim" "$TMP/agent-shim" \
     || die "could not fetch agent-shim from $REF"
   head -1 "$TMP/agent-shim" | grep -q '^#!' || die "fetched agent-shim is not a script"
-  install -m 0755 "$TMP/agent-shim" "$HOME/.claude/bin/agent-shim" \
+  install -m 0755 "$TMP/agent-shim" "$CLAUDE_DIR/bin/agent-shim" \
     || die "could not install agent-shim"
-  _sd="$HOME/.claude/bin/shims"
+  _sd="$CLAUDE_DIR/bin/shims"
   rm -rf "$_sd" || die "could not clear $_sd"
   mkdir -p "$_sd" || die "could not create $_sd"
   _made=""
@@ -2098,8 +2147,8 @@ capability "$WITH_HOOKS" shims cap_shims
 # the run, because everything is fetched from that commit; the manifest records
 # them.
 
-MANIFEST="$HOME/.agents/.bootstrap-manifest"
-mkdir -p "$HOME/.agents"
+MANIFEST="$AGENTS_DIR/.bootstrap-manifest"
+mkdir -p "$AGENTS_DIR"
 
 TOTAL_SECS=$(($(now_s) - BOOT_START))
 record_timing total "$TOTAL_SECS"
@@ -2108,6 +2157,9 @@ record_timing total "$TOTAL_SECS"
 # a missing one is fatal and never reaches here -- and `degraded` says some
 # capability is not. Named rather than counted, because "which" is the only
 # form of the answer anyone can act on.
+if [ "$HOME_RW" = no ]; then
+  DEGRADED="${DEGRADED:+$DEGRADED }policy-and-skills:home-read-only"
+fi
 if [ -n "$DEGRADED" ]; then
   manifest_status=degraded
 else
@@ -2127,13 +2179,27 @@ fi
   echo "sha=$resolved"
   echo "installed_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   echo "profile=$PROFILE"
-  echo "skills=$SKILLS $COMPOSED_SKILLS"
-  echo "composed_skills=$COMPOSED_SKILLS"
+  # Empty when $HOME was read-only: the list says what is installed, and
+  # nothing is.
+  if [ "$HOME_RW" = yes ]; then
+    echo "skills=$SKILLS $COMPOSED_SKILLS"
+    echo "composed_skills=$COMPOSED_SKILLS"
+  else
+    echo "skills="
+    echo "composed_skills="
+  fi
   echo "helpers=$BIN_SCRIPTS"
   # Where the commands went (system, user or an explicit prefix), and whether
   # the caller's PATH reaches them. `no` is the line to read when a session
   # cannot find a tool this run reports installing.
   echo "install_mode=$INSTALL_MODE"
+  # no = $HOME was read-only: state lives under agents_dir, and policy and
+  # skills were not installed. The reader finds the manifest by this path.
+  echo "home_writable=$HOME_RW"
+  echo "agents_dir=$AGENTS_DIR"
+  if [ "$HOME_RW" = no ]; then
+    echo "policy=not-installed reason=home-read-only"
+  fi
   echo "bin_dir=$BIN_DIR"
   echo "bin_dir_on_path=$BIN_ON_PATH"
   echo "precommit=$WITH_PRECOMMIT"

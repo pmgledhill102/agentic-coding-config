@@ -628,7 +628,15 @@ points at itself:
 ### What #575 has to solve before this is usable
 
 - The provisioning script taking effect at all.
-- The bootstrap not dying when `$HOME` is read-only.
+- ~~The bootstrap not dying when `$HOME` is read-only.~~ Done: the run probes
+  `$HOME`, and when it cannot write there it relocates the session scripts, the
+  matrix, the standards and the manifest under `<prefix>/.agent-state/`, skips
+  the policy and the skills, and finishes `status=degraded` with
+  `degraded=policy-and-skills:home-read-only` and `policy=not-installed
+  reason=home-read-only`. `agents_dir=` in the manifest says where it went.
+  Still open: the gcp-credentials helper's own state directory and gcloud's
+  config default to `$HOME`, so a read-only task still needs
+  `CREDENTIAL_BROKER_HOME` and `CLOUDSDK_CONFIG` pointed at the prefix.
 - Commands on `PATH` without per-command exports. The preferred route is
   `~/.local/bin`, already first on Codex's PATH, if setup can write there.
 - Policy and skills through a channel Codex actually reads.
