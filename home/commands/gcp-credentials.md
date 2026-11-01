@@ -206,6 +206,7 @@ channel by the service that built it.
 | 7 | Approved, but the identity never became usable | **Not a deny** — nobody refused. Report the reason the helper printed. Requesting again is legitimate; if it recurs, say so, because the sandbox's agent identity needs attention. |
 | 8 | This helper is too old for the broker | Relay the remedy below and **stop**. Retrying cannot help — nothing is wrong with the request, the client simply cannot speak the current contract. Locally the fix is `chezmoi apply --refresh-externals`, **not** a plain `chezmoi apply`. |
 | 1 | Broker unreachable or mint failed | Report it. Do not proceed as if credentials exist. |
+| 1 | **HTTP 502 from something between this session and the broker** (no broker error in the response) | A path fault, not a broker fault: the broker may never have seen the request. Retry once after a minute rather than diagnosing the broker; if it persists, check the broker's request log for whether the call arrived. Only a 502 that says the *approval channel* is unavailable means the broker was reached and nobody was asked. |
 
 Exit 7 is worth distinguishing from exit 3 in what you tell the user. A deny is a
 decision and asking again without checking is rude; a failure is a fault, and
@@ -327,16 +328,26 @@ The access token is the more valuable of the two secrets.
 GOOGLE_OAUTH_ACCESS_TOKEN="$(cat ~/.config/claude/credential-broker/access_token)" terraform plan
 ```
 
-**`curl`, which is what an agent reaches for first** — use a config file, not
-`-H`:
+**A raw REST call, which is what an agent reaches for `curl` to do** — read the
+token inside a small script, so it never appears in any command line, including
+`printf`'s. Do not build the header in the shell: a `printf` that expands the
+token puts it in that process's argv just as `-H` does, and the credential guard
+refuses the command for the same reason.
 
-```sh
-printf 'header = "Authorization: Bearer %s"\n' \
-    "$(cat ~/.config/claude/credential-broker/access_token)" > /tmp/cb-hdr.conf
-chmod 600 /tmp/cb-hdr.conf
-curl -sS -K /tmp/cb-hdr.conf https://cloudresourcemanager.googleapis.com/v1/projects/example-project-sbx
-rm -f /tmp/cb-hdr.conf
+```python
+# call.py -- run as: python3 -I call.py   (from a scratch directory)
+import json, os, urllib.request
+
+tok = open(os.path.expanduser("~/.config/claude/credential-broker/access_token")).read().strip()
+url = "https://cloudresourcemanager.googleapis.com/v1/projects/example-project-sbx"
+req = urllib.request.Request(url, headers={"Authorization": "Bearer " + tok})
+print(json.dumps(json.load(urllib.request.urlopen(req)), indent=2))
 ```
+
+A second header such as `x-goog-user-project` goes in the same `headers` dict.
+`curl --config <0600 file>` also keeps the token out of argv, but the file has
+to be written without the token passing through a command line, which in a shell
+is the part that goes wrong; the script does not have that step.
 
 Or, when the API accepts it, skip the header entirely and let `gcloud` carry the
 auth — it is already pointed at the token file:

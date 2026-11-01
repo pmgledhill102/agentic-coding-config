@@ -53,6 +53,7 @@ sh tests/prepush-guard-test.sh           # push guard judges the repo the push t
 sh tests/sh-parse-test.sh                # home/bin #!/bin/sh scripts parse (bash 3.2 case-in-$(...))  <1s
 sh tests/session-cache-verdict-test.sh   # rebuild-vs-cache verdict, and it never fails a session  <1s
 sh tests/wsl-mnt-guard-test.sh           # /mnt guard speaks only on WSL, never fails a session  <1s
+sh tests/dockerd-start-hook-test.sh      # dockerd starts only in a sandbox with none running, never fails a session  ~4s
 sh tests/env-conformance-test.sh         # every conformance status reachable; the runner writes nothing  ~1s
 sh tests/agent-telemetry-test.sh         # telemetry helper never fails/slows its caller; no key in argv  ~5s
 sh tests/agent-shim-test.sh              # toolchain shims change no tool's behaviour; <10 ms a call  ~3s

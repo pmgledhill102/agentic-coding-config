@@ -12,15 +12,14 @@ description: Set up shell script linting and formatting for a project — shellc
 Create `.shellcheckrc` in the project root (if it doesn't already exist). If one exists, review and suggest additions.
 
 ```ini
-# Default shell dialect
-shell=bash
-
 # Allow sourcing from paths that can't be followed
 external-sources=true
 
 # Disable specific rules if needed (keep this minimal)
 # disable=SC1091
 ```
+
+**Do not set `shell=` here.** A `shell=` key in `.shellcheckrc` overrides every script's shebang, so a `#!/bin/sh` script is checked as bash and POSIX-only findings (for example SC3010, `[[ ]]` in a POSIX script) are never reported. Let the dialect come from each script's shebang instead. A bash script must say so itself, either with a `#!/usr/bin/env bash` shebang or a `# shellcheck shell=bash` directive. If an existing `.shellcheckrc` already has a `shell=` key, suggest removing it and fixing whatever it was hiding.
 
 ### 2. shfmt
 

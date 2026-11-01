@@ -177,6 +177,62 @@ expect_push "genuine finding -> still blocked" "$WORK/real.txt" 1 2 'blocked'
 expect_push "mixed -> blocked, absence reported" "$WORK/mixed.txt" 1 2 'Not checked'
 expect_push "everything passes -> silent allow" "$WORK/clean.txt" 0 0 ''
 
+# --- Stage 2b: a block that predates the command's own `git add` (#696) -----
+#
+# The hook runs before the Bash command does, so `fix && git add -A && git
+# commit` is linted against the staged set from before the `git add`. The block
+# can then be for something the command already fixed, and "Fix these and
+# re-run" gives no hint of that. The hook says so when a `git add` precedes the
+# commit, and only then.
+
+# expect_cmd <label> <command> <fixture> <stub-exit> <want-exit> <present> <absent>
+# Empty <present>/<absent> skip that half; both are fixed-string greps on stderr.
+expect_cmd() {
+  cat >"$WORK/bin/pre-commit" <<STUB
+#!/bin/sh
+cat "$3"
+exit $4
+STUB
+  chmod 0755 "$WORK/bin/pre-commit"
+  _err=$(printf '{"tool_input":{"command":%s},"cwd":"%s"}\n' \
+    "$(printf '%s' "$2" | jq -Rs .)" "$WORK/repo" \
+    | PATH="$WORK/bin:$PATH" sh "$HOOK" 2>&1 >/dev/null)
+  _code=$?
+  _ok=yes
+  [ "$_code" = "$5" ] || _ok=no
+  [ -z "$6" ] || printf '%s' "$_err" | grep -qF "$6" || _ok=no
+  [ -z "$7" ] || ! printf '%s' "$_err" | grep -qF "$7" || _ok=no
+  if [ "$_ok" = yes ]; then
+    PASS=$((PASS + 1))
+    printf 'ok    %-52s -> exit %s\n' "$1" "$_code"
+  else
+    FAIL=$((FAIL + 1))
+    printf 'FAIL  %-52s -> exit %s (want %s, present "%s", absent "%s")\n' \
+      "$1" "$_code" "$5" "$6" "$7"
+    printf '      stderr: %s\n' "$_err"
+  fi
+}
+
+HINT='checked the previously staged set'
+expect_cmd "add && commit, blocked -> says staged set was stale" \
+  'git add -A && git commit -m x' "$WORK/real.txt" 1 2 "$HINT" ''
+expect_cmd "sed && add && commit, blocked -> says it" \
+  "sed -i 's/ *\$//' f && git add -A && git commit -m x" "$WORK/real.txt" 1 2 "$HINT" ''
+expect_cmd "add && commit, mixed failures -> says it too" \
+  'git add -A && git commit -m x' "$WORK/mixed.txt" 1 2 "$HINT" ''
+expect_cmd "...and still reports the unchecked tool" \
+  'git add -A && git commit -m x' "$WORK/mixed.txt" 1 2 'Not checked (tool not installed)' ''
+expect_cmd "add && commit, still names the finding" \
+  'git add -A && git commit -m x' "$WORK/real.txt" 1 2 'MD009' ''
+expect_cmd "control: plain commit, blocked -> no hint" \
+  'git commit -m x' "$WORK/real.txt" 1 2 'blocked' "$HINT"
+expect_cmd "control: add AFTER the commit -> no hint" \
+  'git commit -m x && git add -A' "$WORK/real.txt" 1 2 'blocked' "$HINT"
+expect_cmd "control: add && push (all-files stage) -> no hint" \
+  'git add -A && git push' "$WORK/real.txt" 1 2 'blocked' "$HINT"
+expect_cmd "add && commit, clean -> still silent" \
+  'git add -A && git commit -m x' "$WORK/clean.txt" 0 0 '' "$HINT"
+
 # --- Stage 3: lint the repo the command targets, not the payload cwd (#519) -
 #
 # Two fixture repos, the shape of tests/prepush-guard-test.sh: LINTED has a

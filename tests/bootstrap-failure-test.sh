@@ -1230,5 +1230,78 @@ if [ "$FAIL" -gt 0 ]; then
 fi
 rm -rf "$H"
 
+# --- 12. a read-only $HOME degrades the run, it does not kill it (#575) ----
+#
+# Codex Cloud runs a task with $HOME and the root filesystem read-only. The
+# run used to die at its first `mkdir ~/.claude`, in Tier 1, so no tool was
+# installed and no manifest was written. A root user cannot be stopped by a
+# mode bit, so for root the read-only home is a read-only tmpfs inside a
+# private mount namespace; anyone else is simply chmod'ed out of it.
+ro_run() {
+  # ro_run <dir> <script> -- runs the bootstrap with <dir>/home read-only.
+  _d="$1"
+  _s="$2"
+  mkdir -p "$_d/home" "$_d/prefix"
+  : >"$_d/run.sh"
+  if [ "$(id -u)" -eq 0 ]; then
+    command -v unshare >/dev/null 2>&1 || return 97
+    printf 'mount -t tmpfs tmpfs "%s" && mount -o remount,ro "%s" || exit 99\n' \
+      "$_d/home" "$_d/home" >>"$_d/run.sh"
+  else
+    chmod 555 "$_d/home"
+  fi
+  {
+    printf 'if touch "%s/.probe" 2>/dev/null; then exit 98; fi\n' "$_d/home"
+    printf 'HOME="%s" BOOTSTRAP_REEXEC=1 sh "%s" "%s" \\\n' "$_d/home" "$_s" "$BOOTSTRAP_TEST_REF"
+    printf '  --profile codex-cloud-sandbox --prefix "%s" \\\n' "$_d/prefix"
+    printf '  --no-gcloud --no-precommit --no-hooks --no-terraform --no-devknowledge\n'
+  } >>"$_d/run.sh"
+  if [ "$(id -u)" -eq 0 ]; then
+    unshare -m sh "$_d/run.sh" >"$_d/run.log" 2>&1
+  else
+    sh "$_d/run.sh" >"$_d/run.log" 2>&1
+  fi
+}
+
+H=$(mktemp -d)
+ro_run "$H" "$BOOTSTRAP_FULL"
+rc=$?
+# 97-99 mean the environment could not make a read-only home, which says
+# nothing about the bootstrap -- and a skipped case that reads as a pass is the
+# failure this test exists to prevent.
+case "$rc" in
+  97 | 98 | 99) no "could not make a read-only HOME here (rc=$rc)" ;;
+  *)
+    M="$H/prefix/.agent-state/agents/.bootstrap-manifest"
+    check "a read-only HOME does not abort the run" "0" "$rc"
+    check "  tools still install under the prefix" "1" \
+      "$([ -x "$H/prefix/bin/gcp-credentials" ] && echo 1 || echo 0)"
+    check "  the manifest is written under the prefix" "1" \
+      "$([ -f "$M" ] && echo 1 || echo 0)"
+    check "  status is degraded, never ok" "degraded" "$(sed -n 's/^status=//p' "$M")"
+    check "  and names what is missing" "policy-and-skills:home-read-only" \
+      "$(sed -n 's/^degraded=//p' "$M")"
+    check "  and records the policy outcome with its reason" \
+      "policy=not-installed reason=home-read-only" "$(grep '^policy=' "$M")"
+    check "  and claims no skills it did not install" "" "$(sed -n 's/^skills=//p' "$M")"
+    check "  the session scripts relocate with it" "1" \
+      "$([ -x "$H/prefix/.agent-state/claude/bin/start-session-gather-state" ] && echo 1 || echo 0)"
+    check "  nothing was written to HOME" "0" \
+      "$(find "$H/home" -mindepth 1 2>/dev/null | wc -l | tr -d ' ')"
+    ;;
+esac
+rm -rf "$H"
+
+# Negative control: the same run with the probe forced to answer "writable" is
+# the script as it stood before the fix, and it must fail -- otherwise the
+# assertions above could be passing for any reason at all.
+H=$(mktemp -d)
+sed 's/^  HOME_RW=no$/  HOME_RW=yes/' "$BOOTSTRAP_FULL" >"$H/defeated.sh"
+check "the control really defeats the probe" "1" "$([ -n "$(diff "$BOOTSTRAP_FULL" "$H/defeated.sh")" ] && echo 1 || echo 0)"
+ro_run "$H" "$H/defeated.sh"
+rc=$?
+check "without the probe, a read-only HOME still fails the run" "1" "$([ "$rc" -ne 0 ] && [ "$rc" -lt 97 ] && echo 1 || echo 0)"
+rm -rf "$H"
+
 printf '\n%s passed, %s failed\n' "$PASS" "$FAIL"
 [ "$FAIL" -eq 0 ]

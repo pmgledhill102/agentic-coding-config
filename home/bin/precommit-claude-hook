@@ -86,6 +86,7 @@ git_subcommand() {
 # would otherwise expand against this hook's cwd, and the extra words would
 # shift a filename into the subcommand position.
 stage=""
+stages_itself=""
 set -f
 cls_ifs=$IFS
 # nosemgrep: bash.lang.security.ifs-tampering.ifs-tampering -- deliberate newline-only IFS for the split below, restored to cls_ifs right after.
@@ -97,6 +98,7 @@ set -- $(printf '%s' "$cmd" | tr ';&|' '\n')
 IFS=$cls_ifs
 for seg in "$@"; do
     case "$(git_subcommand "$seg")" in
+        add) stages_itself=1 ;;
         commit)
             stage="pre-commit"
             break
@@ -183,6 +185,17 @@ else
   esac
 fi
 
+# This hook runs BEFORE the command does, so `... && git add -A && git commit`
+# is linted against the staged set as it stood before that `git add`. A fix made
+# earlier in the same command (a sed, a dictionary word) is not in it, so the
+# block can be for a problem the command has already fixed. Widening this run to
+# --all-files would hide that by turning a commit-stage check into a whole-tree
+# one; the hint says it instead, and costs nothing unless the hook blocks.
+hint=""
+if [ "$stage" = "pre-commit" ] && [ -n "$stages_itself" ]; then
+    hint='This command stages files itself, but the hook ran before it, so it checked the previously staged set. Stage in a separate call, then commit.'
+fi
+
 # --- Run it. Block (exit 2) on failure; silent on success. ----------------
 # shellcheck disable=SC2086
 out=$(pre-commit run --hook-stage "$stage" $scope 2>&1) && exit 0
@@ -238,6 +251,7 @@ real=$(printf '%s\n' "$verdict" | sed -n 's/^real=//p')
 # unreadable result must not become a free pass.
 if [ -z "$verdict" ]; then
     printf 'pre-commit (%s) failed — blocked. Fix these and re-run:\n\n%s\n' "$stage" "$out" >&2
+    [ -n "$hint" ] && printf '\n%s\n' "$hint" >&2
     exit 2
 fi
 
@@ -245,6 +259,7 @@ if [ -n "$real" ]; then
     printf 'pre-commit (%s) failed — blocked. Fix these and re-run:\n\n%s\n' "$stage" "$out" >&2
     [ -n "$unavailable" ] &&
         printf '\nNot checked (tool not installed): %s\n' "$unavailable" >&2
+    [ -n "$hint" ] && printf '\n%s\n' "$hint" >&2
     exit 2
 fi
 

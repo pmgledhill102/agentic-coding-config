@@ -907,6 +907,20 @@ point at went away with the plugin in #312.
    invocation needs real parsing, and the costs are asymmetric: a blocked echo
    is rephrased, a leaked token is rotated.
 
+   **One carve-out (#691):** the body of a heredoc fed to `cat`, `tee`,
+   `python*`, `node`, `ruby` or `perl` is not scanned for the bearer header.
+   That body travels on stdin, never in argv, so writing a Go file or patching
+   docs that mention the header is not the exposure the check exists for. It is
+   deliberately narrow. A heredoc whose line names a shell (`bash <<EOF`,
+   `cat <<EOF | sh`) stays in view, because its body is code and a `curl -H` in
+   it is argv; an unterminated heredoc is left whole; and the `gcloud` forms are
+   still matched against the whole command. The wider fix the issue floated,
+   blocking only next to a network tool, was rejected: it would let
+   `printf '…Bearer %s' "$(cat token)"` through, and that `printf` puts the
+   live token in its own argv. `tests/credguard-test.sh` pins each of these,
+   and records a `python3` body that shells out to `curl` as *allowed*, the
+   same way the guard already accepts being evaded.
+
    **Considered and rejected: `terraform output`.** The broker skill names it
    as a third way a token can reach the transcript, and the guard deliberately
    does not match it (#520). Do not re-file it without one of the triggers
@@ -1039,6 +1053,11 @@ point at went away with the plugin in #312.
    - `git commit` → `--hook-stage pre-commit` on the **staged delta** (fast;
      correct commit-stage semantics). Falls back to `--all-files` for
      `git commit -a`/`--all`, where git stages files *after* the hook fires.
+     A `git add` earlier in the same command is the same situation, but is
+     deliberately **not** widened to `--all-files` (that would turn a
+     commit-stage check into a whole-tree one); a block there instead ends with
+     a note that the staged set was read before the command ran, so the fix is
+     to stage in a separate call (#696).
    - `git push` → `--hook-stage pre-push --all-files` (whole-tree backstop
      before CI; also covers manual / `--no-verify` commits the commit stage
      never saw).
@@ -1111,6 +1130,31 @@ stop a later `cd /mnt/c` or a write there.
 would catch work drifting there mid-session, but it would also block a write the
 user asked for, so it needs a session override to be livable. That decision
 belongs on #569. `SessionStart` alone is the minimum the issue sets.
+
+### SessionStart: `dockerd-start-claude-hook`
+
+The fourth `SessionStart` hook (#683). A Claude Code cloud sandbox ships
+`dockerd`, `containerd` and `runc` but starts no daemon, so `docker info` fails
+until something starts one. This starts `dockerd` once per session and again
+after a resume, because the process does not survive a worker restart while
+`/var/lib/docker` (images and build cache) does.
+
+It writes `/etc/docker/daemon.json` with a `mirror.gcr.io` registry mirror only
+when no `daemon.json` exists: Docker Hub answers 429 to the sandbox's shared
+egress IP on anonymous pulls, and the mirror is what makes base images pull. The
+daemon is started with `setsid nohup` from the hook's own environment, so it
+inherits `HTTPS_PROXY` and image pulls and `ADD <url>` go through the agent
+proxy. It waits up to 10 s for the socket, hence the 20 s timeout.
+
+**A no-op off a cloud sandbox**, so it ships in this one shared file: it exits 0
+unless `CLAUDE_CODE_REMOTE=true`, the user is root, and both `dockerd` and
+`docker` are on `PATH`. A daemon that already answers `docker info` is left
+alone, which is what makes it idempotent. It prints nothing and exits 0
+unconditionally: a session must not fail to start over a daemon.
+
+The bootstrap delivers it under `--with-hooks`, not from the setup script,
+because a hook-started daemon is proven to survive the hook and a resume
+(#683), where one started during the setup phase is not.
 
 ### PostToolUse (Write|Edit)
 

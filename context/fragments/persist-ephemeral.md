@@ -21,6 +21,7 @@ next session. What must survive belongs in the repo or the setup script.
   GCP" but **"I am about to assert something about live GCP state"**.
 - **Skills delivered by the bootstrap** are the whole set — absent here means
   held back deliberately, not lost. Say so rather than improvising.
+- **Docker** builds here go through the egress proxy: read `sandbox-docker` first.
 - **A blocked host is not a dead end.** Ask for it: the proxy takes the new
   domain within seconds, though `WebFetch` may keep refusing until the session
   resumes, so retry with `curl` first. Re-test recorded blocks; they age badly.
