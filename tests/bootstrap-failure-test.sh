@@ -1157,6 +1157,27 @@ check "  and still strips the preset token for a broker grant" "1" \
   "$(count 'exec env -u CLOUDSDK_AUTH_ACCESS_TOKEN' "$P/bin/gcloud")"
 check "  the wrapper runs the SDK it names" "Google Cloud SDK 999.0.0 (fixture)" \
   "$(HOME="$H/home" PATH="$FARM" "$P/bin/gcloud" --version 2>/dev/null)"
+# The wrapper takes every gcloud prompt's default, because an agent has no tty
+# to answer one (#652). Probed through a copy that points at a stub SDK which
+# reports the variable it was handed, so what is asserted is what gcloud sees.
+mkdir -p "$H/probe-sdk/bin"
+# shellcheck disable=SC2016 # the stub must expand it, not this shell
+printf '#!/bin/sh\necho "prompts=${CLOUDSDK_CORE_DISABLE_PROMPTS-unset}"\n' >"$H/probe-sdk/bin/gcloud"
+chmod +x "$H/probe-sdk/bin/gcloud"
+sed "s#$P/opt/google-cloud-sdk#$H/probe-sdk#g" "$P/bin/gcloud" >"$H/probe-gcloud"
+chmod +x "$H/probe-gcloud"
+check "  the wrapper copy really points at the probe SDK" "0" \
+  "$(count "$P/opt/google-cloud-sdk" "$H/probe-gcloud")"
+check "  gcloud prompts default to disabled" "prompts=1" \
+  "$(HOME="$H/home" PATH="$FARM" "$H/probe-gcloud" 2>/dev/null)"
+check "  and a caller can still turn them back on" "prompts=0" \
+  "$(HOME="$H/home" PATH="$FARM" CLOUDSDK_CORE_DISABLE_PROMPTS=0 "$H/probe-gcloud" 2>/dev/null)"
+# Negative control: without the export the probe must read "unset", or the
+# assertions above could be passing for any reason at all.
+grep -v 'CLOUDSDK_CORE_DISABLE_PROMPTS' "$H/probe-gcloud" >"$H/probe-gcloud-bare"
+chmod +x "$H/probe-gcloud-bare"
+check "  control: a wrapper without the export leaves it unset" "prompts=unset" \
+  "$(HOME="$H/home" PATH="$FARM" "$H/probe-gcloud-bare" 2>/dev/null)"
 check "  uv installed all three Python tools" "3" "$(count . "$H/uv.log")"
 check "  each with its tools and Python under the prefix" "3" \
   "$(count "UV_TOOL_DIR=$P/share/uv/tools UV_TOOL_BIN_DIR=$P/bin UV_PYTHON_INSTALL_DIR=$P/share/uv/python\$" "$H/uv.log")"
