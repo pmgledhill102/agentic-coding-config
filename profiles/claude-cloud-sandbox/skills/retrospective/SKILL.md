@@ -76,7 +76,7 @@ Do **not** probe for which surface this is. This file is composed for one surfac
 Identify the **at most 3 biggest costs** this session paid: time lost, wrong turns, rework, context burned on things that didn't matter. For each:
 
 - **The cost**, with one line of evidence from the transcript ("40 minutes on a CI round-trip a local lint would have caught", "three approval stalls on the same read-only call").
-- **The one lever pull that would have prevented it** — a single, concrete change, named against the lever table in step 5.
+- **The one change that would have prevented it** — a single, concrete change. Usually that is a lever pull, named against the lever table in step 5. When the cost was a **defect in the code the session was working on** (a bug, a missing header, a broken default), the prevention is a **product fix** instead: say so, and step 5 routes it as a product finding rather than forcing it into the lever table.
 
 Work strictly backward from impact. If the session paid no notable costs, say so — that finding is the whole of step 3, and the retro will end with a journal entry and no proposals. Do not go looking for candidate categories to fill the gap; that is the deleted scan reasserting itself.
 
@@ -120,6 +120,16 @@ Merge the step-3 levers and step-4 candidates into **at most 3 proposals, ranked
 
 **A finding that cannot state all four is a journal observation, not a proposal.** Do not weaken a criterion to promote it. Equally, do not pad to three: zero or one well-priced proposal is a better retro than three padded ones, and the cap is a ceiling, not a target.
 
+#### Product findings are a separate kind
+
+The four criteria, the lever table and the cap of three price **changes to how agents work**. A bug in the code the session was working on is not one: it costs no context and pulls no lever, so it can never state a lever, and filing it under the rule above would leave it as a journal observation that no later `start-session` ever surfaces. Route it as a **product finding** instead, with its own short bar:
+
+- **Evidence** — what broke or nearly broke, from the transcript.
+- **Impact** — who or what it hurts.
+- **Not already filed** — check the subject repo's open issues.
+
+Product findings **do not count against the cap of three**, and the agent-lever bar is unchanged for everything else. A product finding that was found **and fixed inside this session's own PRs** needs no issue; give it one line in the journal under Observations so the record shows what the session uncovered.
+
 ### 6. Categorise and route
 
 For each proposal and observation, decide what artifact it produces:
@@ -129,6 +139,7 @@ For each proposal and observation, decide what artifact it produces:
 | **Journal entry** | Always (unless the session was uneventful — then skip and stop). Carries the narrative, the closed-loop fate summary, and every observation that didn't make the proposal cap | Draft via the inbox/promote pattern — see step 8 |
 | **Fix in place** | **The first test for every same-repo proposal.** All four hold: the change is text only (docs, comments, a README line, a gate list, an ADR status line); it is confined to the current cwd's repo; it needs no decision; and it is small enough to review as a tag-along | A commit, not an issue — see step 8. **Never both**: no "fixed in `abc123`, tracking issue #N" pairs |
 | **Same-repo Issue** | Proposal whose subject is the **current cwd's repo** and which fails the fix-in-place test: it needs a decision, changes code behaviour, or would not be reviewable as a tag-along | Create an issue in the current repo with a `type: <task/bug/feature>` label and a `P0`–`P4` priority (P2 is "do this soon", P3 is "next time we touch this") — `mcp__github__issue_write` when connected, else `gh issue create --title=... --label "type: <type>,P<n>"`. **Body MUST include**: "From retro: paul-context/journal/<file>.md" |
+| **Product bug** | A product finding (step 5) in the **current cwd's repo** or in another personal repo. It never falls through to *Observation only* for lacking an agent lever | Same routes as the Same-repo and Cross-repo rows: `type: bug` and a `P0`–`P4` priority, an explicit `owner`/`repo`, and the journal cross-reference in the body. Lever / Tier reads `product, no context cost`. A small text-only fix still takes the **Fix in place** route |
 | **Idea** | Proposal that is an idea rather than a fix: nothing is broken, and it adds or redesigns a capability no current work needs. An issue means "I will do this", so it is not one | Write `ideas/<slug>.md` in the subject repo (`paul-context/ideas/` if it spans repos or has no home), in the shape [`docs/github-issues-workflow.md`](https://github.com/pmgledhill102/agentic-coding-config/blob/main/docs/github-issues-workflow.md) gives, **with a concrete `Trigger:`** — no trigger, no idea file; leave it in the journal's Observations instead. Land it by the same branch and PR route as any other change |
 | **Cross-repo Issue** | Proposal whose subject is a *different* personal repo from cwd | Create an issue against `pmgledhill102/<target>` — `mcp__github__issue_write` with an explicit `owner`/`repo`, else `gh issue create --repo pmgledhill102/<target>`. Picked up by `start-session` there. **Body MUST include** the journal cross-reference |
 | **paul-context Issue** | Cross-cutting or no-clear-home findings | Create an issue against `pmgledhill102/paul-context`, same two routes as above. **Body MUST include** the journal cross-reference |
@@ -179,7 +190,7 @@ When a finding clearly mentions a target, route there. Otherwise apply this defa
 
 ### 7. Propose to the user
 
-Show the user a single table of proposed artifacts. **Do not create anything yet.** The journal entry is **always row 1** unless the session was uneventful (in which case the table has just one observation row and the flow stops). At most 3 rows are proposals; each names its lever and tier price.
+Show the user a single table of proposed artifacts. **Do not create anything yet.** The journal entry is **always row 1** unless the session was uneventful (in which case the table has just one observation row and the flow stops). At most 3 rows are agent/workflow proposals; each names its lever and tier price. Product findings (step 5) get their own rows beyond that cap, with `product` in the Lever / Tier column.
 
 Emit the closed-loop lines as prose, then the proposals as a **markdown table** — not as hand-aligned columns inside a fence:
 
@@ -194,7 +205,8 @@ Proposed retrospective output:
 | 1 | journal | paul-context | `2026-08-19-acc-retro-redesign` | — | — |
 | 2 | issue | agentic-coding-config | Remove stale heredoc rationale (`core.md`) | Context / always-loaded (frees) | P2 task |
 | 3 | issue | *current repo* | Cache lint deps in setup script | Installs / on-invoke | P3 task |
-| 4 | observation | — | CI green first try; no friction | — | — |
+| 4 | issue | *current repo* | Serve `/static/` with caching headers | product, no context cost | P2 bug |
+| 5 | observation | — | CI green first try; no friction | — | — |
 
 Reply 'yes' to create all, override per-item ('3: priority=2, type=bug'),
 'skip <n>' to drop, or 'cancel' to abort.
