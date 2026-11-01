@@ -49,6 +49,7 @@ python3 tests/allowlist-covers-commands.py  # allow rules match documented invoc
 python3 tests/github-repo-standard.py       # the repo-settings spec holds its own invariants  ~1s
 python3 tests/tool-manifest.py              # tools.json is valid and bootstrap.sh installs its versions  <1s
 sh tests/estate-report-test.sh           # estate flag thresholds and bucketing  <1s
+sh tests/bootstrap-absent-hook-test.sh   # the hook that says a container never ran the bootstrap  <1s
 sh tests/credguard-test.sh               # credential-printing guard classification  <1s
 sh tests/prepush-guard-test.sh           # push guard judges the repo the push targets  ~1s
 sh tests/sh-parse-test.sh                # home/bin #!/bin/sh scripts parse (bash 3.2 case-in-$(...))  <1s
