@@ -6,6 +6,8 @@
 # `Authorization: Bearer` header anywhere in a command — the latter because
 # /proc/<pid>/cmdline is world-readable, so a token passed as an argument is
 # exposed to every other process on the box for the life of the call (#375).
+# The one carve-out is the body of a heredoc fed to cat, tee or an interpreter
+# (#691), which travels on stdin rather than in argv.
 #
 # THIS IS A GUARDRAIL, NOT A SECURITY BOUNDARY. It matches strings in a Bash
 # command, and that is evadable by eval, variable indirection, $(printf …),
@@ -39,7 +41,47 @@ cmd=$(printf '%s' "$payload" | jq -r '.tool_input.command // empty')
 # form past a matcher written for single spaces. The `sed` is what handles a
 # line continuation: turning the newline into a space leaves the backslash
 # behind, and `gcloud auth \ print-access-token` then matches nothing.
-norm=$(printf '%s' "$cmd" | tr '\n\t' '  ' | sed 's/\\ / /g' | tr -s ' ')
+normalise() { tr '\n\t' '  ' | sed 's/\\ / /g' | tr -s ' '; }
+norm=$(printf '%s' "$cmd" | normalise)
+
+# The bearer check reads the command with the bodies of data heredocs removed.
+# `cat > f <<'EOF'` and `python3 - <<'PY'` carry their body on stdin, never in
+# argv, so a header written into a file or a script is not the /proc exposure
+# this check exists for (#691). Only consumers that are not a shell qualify:
+# the body of `bash <<EOF` is code, and a `curl -H` inside it is argv, so a
+# line naming a shell keeps its body in view. An unterminated heredoc is left
+# whole rather than guessed at, and the gcloud check below still reads the
+# unstripped command.
+#
+# This is a heuristic, not a parser (#440): `python3` can shell out to curl
+# from inside its own body, which the test records as allowed.
+stripped=$(printf '%s\n' "$cmd" | awk '
+function flush(   i) { for (i = 1; i <= n; i++) print buf[i]; n = 0 }
+BEGIN { q = sprintf("%c", 39) }
+{
+    if (hd) {
+        t = $0
+        if (dash) sub(/^\t+/, "", t)
+        if (t == term) { hd = 0; n = 0; next }
+        buf[++n] = $0
+        next
+    }
+    print $0
+    if (!match($0, /<<-?[ \t]*[^ \t;|&<>)]+/)) next
+    if (RSTART > 1 && substr($0, RSTART - 1, 1) == "<") next
+    pre = substr($0, 1, RSTART - 1)
+    tok = substr($0, RSTART, RLENGTH)
+    if (pre !~ /(^|[;&|(`])[ \t]*(cat|tee|python[0-9.]*|node|ruby|perl)([ \t]|$)/) next
+    if ($0 ~ /(^|[^A-Za-z0-9_.-])(sh|bash|zsh|dash|ksh)([ \t]|$)/) next
+    dash = (tok ~ /^<<-/)
+    sub(/^<<-?[ \t]*/, "", tok)
+    gsub(q, "", tok); gsub(/"/, "", tok); gsub(/\\/, "", tok)
+    if (tok == "") next
+    term = tok; hd = 1; n = 0
+}
+END { if (hd) flush() }
+')
+norm_bearer=$(printf '%s' "$stripped" | normalise)
 
 # Interleaved flags are the point of the `( +-[^ ]+)*` runs: `gcloud --quiet
 # auth print-access-token` and `gcloud auth --project x print-access-token`
@@ -49,7 +91,7 @@ gcloud_token='gcloud( +-[^ ]+)* +auth( +-[^ ]+)*( +application-default( +-[^ ]+)
 blocked=""
 if printf '%s' "$norm" | grep -Eq -- "$gcloud_token"; then
     blocked="a gcloud token-printing command"
-elif printf '%s' "$norm" | grep -Eqi -- 'authorization: *bearer'; then
+elif printf '%s' "$norm_bearer" | grep -Eqi -- 'authorization: *bearer'; then
     blocked="an Authorization: Bearer header in argv"
 fi
 
