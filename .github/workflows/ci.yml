@@ -168,6 +168,12 @@ jobs:
       - name: The spec must hold its own invariants
         run: python3 tests/github-repo-standard.py
 
+      # The tool manifest is the one declaration of which tools the estate
+      # installs and at which version (ADR-0020). The sandbox installer keeps
+      # its own literals, so this asserts they agree rather than trusting it.
+      - name: The sandbox installs the manifest's versions
+        run: python3 tests/tool-manifest.py
+
   estate-report:
     name: estate-report thresholds
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
