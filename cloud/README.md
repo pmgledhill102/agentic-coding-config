@@ -901,6 +901,29 @@ GraphQL behind `gh pr view`, which the sandbox refuses (#317).
 `precommit-claude-hook` needs the pre-commit framework, so it does nothing
 without `--with-precommit`.
 
+## When the bootstrap never ran at all
+
+Everything above assumes the bootstrap ran, at least partway: a failed run
+leaves `status=failed` in the manifest and a banner in the policy file. A
+container whose setup script was empty, stale or absent leaves neither, and
+looks normal: no `~/.claude/bin`, no managed `CLAUDE.md`, no `/end-session`.
+One session worked five days like that (#545).
+
+Nothing the bootstrap installs can report its own absence, so the check is
+committed in the repo instead: `.claude/hooks/bootstrap-absent-check.sh`,
+registered as a `SessionStart` hook in `.claude/settings.json`. In a cloud
+session (`CLAUDE_CODE_REMOTE=true`) with neither `~/.agents/.bootstrap-manifest`
+nor `~/.claude/bin`, it prints one fixed warning that the model reads as
+context. It starts no program and cannot fail a session.
+
+**What it does not cover.** A repo's `.claude/settings.json` is read only when
+the session is in that repo, so this protects sessions in this repo and reports
+nothing in any other. A repo that wants the same warning copies the script and
+the `settings.json` entry; the repo-footprint cost is deliberate, because
+there is no bootstrap-independent route that costs less. The other half of
+issue 545, why that environment skipped its setup script, is a setting in the
+vendor's environment configuration and cannot be found from here.
+
 ## Knowing whether a container is stale
 
 The environment re-runs its setup script only when the script text changes, the
