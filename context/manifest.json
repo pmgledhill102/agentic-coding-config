@@ -39,14 +39,14 @@
       "title": "Agent context — Codex in a cloud sandbox",
       "os": "os-ubuntu", "persistence": "persist-ephemeral",
       "outputs": {
-        "profiles/codex-cloud-sandbox/AGENTS.md": { "budget": 325, "fragments": ["core", "ephemeral-first", "os-ubuntu", "persist-ephemeral", "provider-codex"] }
+        "profiles/codex-cloud-sandbox/AGENTS.md": { "budget": 326, "fragments": ["core", "ephemeral-first", "os-ubuntu", "persist-ephemeral", "provider-codex"] }
       }
     },
     "claude-cloud-sandbox": {
       "title": "Agent context — Claude Code in a cloud sandbox",
       "os": "os-ubuntu", "persistence": "persist-ephemeral",
       "outputs": {
-        "profiles/claude-cloud-sandbox/CLAUDE.md": { "budget": 325, "fragments": ["core", "ephemeral-first", "os-ubuntu", "persist-ephemeral", "provider-claude"] }
+        "profiles/claude-cloud-sandbox/CLAUDE.md": { "budget": 326, "fragments": ["core", "ephemeral-first", "os-ubuntu", "persist-ephemeral", "provider-claude"] }
       }
     }
   },

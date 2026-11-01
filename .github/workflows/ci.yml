@@ -97,6 +97,10 @@ jobs:
       # WSL under /mnt/<drive> and be silent and exit 0 everywhere else.
       - name: Run the WSL /mnt guard tests
         run: sh tests/wsl-mnt-guard-test.sh
+      # A SessionStart hook in every surface's settings.json: it must start a
+      # daemon in a cloud sandbox and start nothing anywhere else.
+      - name: Run the dockerd-start hook tests
+        run: sh tests/dockerd-start-hook-test.sh
       # curl and gh are stubbed on PATH, so every status is driven offline.
       # The runner's real job is in a sandbox; this proves it can fail.
       - name: Run the environment-conformance tests
