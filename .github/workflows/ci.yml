@@ -101,6 +101,10 @@ jobs:
       # daemon in a cloud sandbox and start nothing anywhere else.
       - name: Run the dockerd-start hook tests
         run: sh tests/dockerd-start-hook-test.sh
+      # The committed hook that tells a session its container never ran the
+      # bootstrap; nothing the bootstrap installs could report that itself.
+      - name: Run the bootstrap-absent hook tests
+        run: sh tests/bootstrap-absent-hook-test.sh
       # curl and gh are stubbed on PATH, so every status is driven offline.
       # The runner's real job is in a sandbox; this proves it can fail.
       - name: Run the environment-conformance tests
