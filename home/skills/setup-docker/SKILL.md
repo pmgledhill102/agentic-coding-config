@@ -5,6 +5,8 @@ description: Set up container linting and image security scanning for a project 
 
 # Set up Docker linting and scanning
 
+This skill is about linting and scanning. To build or run images in a cloud sandbox, see `sandbox-docker`.
+
 ## What to install and configure
 
 ### 1. Hadolint
