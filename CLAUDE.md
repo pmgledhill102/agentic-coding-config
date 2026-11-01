@@ -47,6 +47,7 @@ sh tests/retired-paths-test.sh           # ...and its validator still catches   
 python3 tests/compose-context.py         # composed profiles and skills match their fragments  <1s
 python3 tests/allowlist-covers-commands.py  # allow rules match documented invocations  <1s
 python3 tests/github-repo-standard.py       # the repo-settings spec holds its own invariants  ~1s
+python3 tests/tool-manifest.py              # tools.json is valid and bootstrap.sh installs its versions  <1s
 sh tests/estate-report-test.sh           # estate flag thresholds and bucketing  <1s
 sh tests/credguard-test.sh               # credential-printing guard classification  <1s
 sh tests/prepush-guard-test.sh           # push guard judges the repo the push targets  ~1s
