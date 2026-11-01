@@ -357,6 +357,11 @@
             "type": "command",
             "command": "~/.claude/bin/wsl-mnt-guard-claude-hook",
             "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "~/.claude/bin/dockerd-start-claude-hook",
+            "timeout": 20
           }
         ]
       }

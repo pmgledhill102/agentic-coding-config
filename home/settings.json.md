@@ -1117,6 +1117,31 @@ would catch work drifting there mid-session, but it would also block a write the
 user asked for, so it needs a session override to be livable. That decision
 belongs on #569. `SessionStart` alone is the minimum the issue sets.
 
+### SessionStart: `dockerd-start-claude-hook`
+
+The fourth `SessionStart` hook (#683). A Claude Code cloud sandbox ships
+`dockerd`, `containerd` and `runc` but starts no daemon, so `docker info` fails
+until something starts one. This starts `dockerd` once per session and again
+after a resume, because the process does not survive a worker restart while
+`/var/lib/docker` (images and build cache) does.
+
+It writes `/etc/docker/daemon.json` with a `mirror.gcr.io` registry mirror only
+when no `daemon.json` exists: Docker Hub answers 429 to the sandbox's shared
+egress IP on anonymous pulls, and the mirror is what makes base images pull. The
+daemon is started with `setsid nohup` from the hook's own environment, so it
+inherits `HTTPS_PROXY` and image pulls and `ADD <url>` go through the agent
+proxy. It waits up to 10 s for the socket, hence the 20 s timeout.
+
+**A no-op off a cloud sandbox**, so it ships in this one shared file: it exits 0
+unless `CLAUDE_CODE_REMOTE=true`, the user is root, and both `dockerd` and
+`docker` are on `PATH`. A daemon that already answers `docker info` is left
+alone, which is what makes it idempotent. It prints nothing and exits 0
+unconditionally: a session must not fail to start over a daemon.
+
+The bootstrap delivers it under `--with-hooks`, not from the setup script,
+because a hook-started daemon is proven to survive the hook and a resume
+(#683), where one started during the setup phase is not.
+
 ### PostToolUse (Write|Edit)
 
 1. **terraform fmt** — Auto-formats `.tf` files after every Write or Edit.

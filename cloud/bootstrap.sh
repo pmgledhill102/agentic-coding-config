@@ -1045,7 +1045,7 @@ fi
 # the same change (see home/retired-paths): once the Bundle Issue carries the
 # files, the gates and the stop rule, working one is ordinary session work.
 
-SKILLS="promote-journal-inbox bundle-issues env-conformance"
+SKILLS="promote-journal-inbox bundle-issues env-conformance sandbox-docker"
 COMPOSED_SKILLS="retrospective start-session end-session"
 
 # Helper scripts the session skills shell out to. They are NOT optional: the
@@ -1195,7 +1195,7 @@ if [ "$WITH_HOOKS" -eq 1 ]; then
   # script this container never fetched. credguard is the one that matters
   # most, because permissions.deny does not travel to a sandbox at all --
   # this hook is the only credential guard that reaches this surface (#440).
-  for script in credguard-claude-hook prchecks-wait-claude-hook prepush-guard-claude-hook precommit-claude-hook agent-telemetry-claude-hook wsl-mnt-guard-claude-hook; do
+  for script in credguard-claude-hook prchecks-wait-claude-hook prepush-guard-claude-hook precommit-claude-hook agent-telemetry-claude-hook wsl-mnt-guard-claude-hook dockerd-start-claude-hook; do
     fetch "$RAW/home/bin/$script" "$TMP/$script" \
       || die "could not fetch hook script $script from $REF"
     head -1 "$TMP/$script" | grep -q '^#!' || die "fetched $script is not a script"
