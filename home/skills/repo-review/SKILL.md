@@ -348,25 +348,42 @@ So the auto-merge workflow's *contents* are not checked here. Its load-bearing p
 
 ```sh
 # Route in order of preference: mcp__github__* where the MCP server is
-# connected, then `gh api` where the CLI is present, then curl. The last one
-# works in a cloud sandbox, which has no `gh`.
+# connected, then `gh api` where the CLI is present, then this script. The last
+# one works in a cloud sandbox, which has no `gh`.
+#
+# The token is read inside the script, never built into a command line: a
+# header passed to `curl -H` is in argv, which every process on the machine can
+# read, and the credential guard refuses such a command outright.
 #
 # Two `sed` expressions, not one: ERE has no non-greedy quantifier, so the
 # `.git` suffix is stripped separately. Both remote forms are in live use.
 R=$(git remote get-url origin | sed -E 's#^.*[:/]([^/]+/[^/]+)$#\1#; s#\.git$##')
-A="https://api.github.com/repos/$R"
-H="Authorization: Bearer ${GH_TOKEN:-$GITHUB_TOKEN}"
-J=$(curl -sS -H "$H" "$A")
+python3 -I - "$R" <<'PY'
+import json, os, sys, urllib.request
 
-printf '%s' "$J" | jq -c '{merge: .allow_merge_commit, squash: .allow_squash_merge, rebase: .allow_rebase_merge, auto: .allow_auto_merge}'
+repo = sys.argv[1]
+tok = os.environ.get("GH_TOKEN") or os.environ["GITHUB_TOKEN"]
+
+
+def get(path):
+    req = urllib.request.Request(
+        "https://api.github.com/repos/" + repo + path,
+        headers={"Authorization": "Bearer " + tok},
+    )
+    return json.load(urllib.request.urlopen(req))
+
+
+j = get("")
+print(json.dumps({"merge": j["allow_merge_commit"], "squash": j["allow_squash_merge"],
+                  "rebase": j["allow_rebase_merge"], "auto": j["allow_auto_merge"]}))
 
 # The DEFAULT branch, never HEAD. A review normally runs from a feature
 # branch, which carries no ruleset, so HEAD returns `[]` -- indistinguishable
 # from "this repo has no rules configured". That is a silent wrong answer of
 # exactly the kind this phase exists to catch, and it was shipped here until
 # the snippet was run rather than read.
-B=$(printf '%s' "$J" | jq -r .default_branch)
-curl -sS -H "$H" "$A/rules/branches/$B" | jq -c '[.[].type]'
+print(json.dumps([r["type"] for r in get("/rules/branches/" + j["default_branch"])]))
+PY
 ```
 
 **Both of these work in a cloud sandbox.** Measured against a repo the session is bound to: `200` and `200`. Do not skip F1 because `gh` is absent — see Degradation for what genuinely cannot run, and why the difference matters.
