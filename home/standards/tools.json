@@ -58,6 +58,34 @@
       }
     },
     {
+      "name": "hadolint",
+      "version": "2.15.1",
+      "bootstrap_var": "HL_VER",
+      "capability": "precommit",
+      "why": "The upstream hadolint hook /setup-docker stamps runs the binary on PATH; not packaged in Ubuntu. The release has no checksum asset, so the bootstrap pins the digest as first fetched (HL_SHA256).",
+      "surfaces": {
+        "ubuntu-ephemeral": {
+          "source": "github-release",
+          "asset": "hadolint-linux-x86_64",
+          "on_failure": "degraded"
+        }
+      }
+    },
+    {
+      "name": "trivy",
+      "version": "0.76.2",
+      "bootstrap_var": "TV_VER",
+      "capability": "precommit",
+      "why": "trivy config before a push (/setup-docker's CI scan) and the terraform_trivy hook /setup-terraform stamps, which runs the binary on PATH. Digest pinned in the bootstrap (TV_SHA256), checked against the release's checksums file.",
+      "surfaces": {
+        "ubuntu-ephemeral": {
+          "source": "github-release",
+          "asset": "trivy_{v}_Linux-64bit.tar.gz",
+          "on_failure": "degraded"
+        }
+      }
+    },
+    {
       "name": "markdownlint-cli2",
       "version": "0.23.2",
       "bootstrap_var": "ML_VER",
@@ -203,17 +231,6 @@
       }
     }
   ],
-  "not_installed": [
-    {
-      "name": "hadolint",
-      "surface": "ubuntu-ephemeral",
-      "why": "Wanted for Dockerfile lint; tracked in #692 and #680."
-    },
-    {
-      "name": "trivy",
-      "surface": "ubuntu-ephemeral",
-      "why": "Wanted for image scan; tracked in #680."
-    }
-  ],
+  "not_installed": [],
   "exclusion_rule": "A tool left off a surface on weight grounds is listed in not_installed with its reason. The consumer must keep reporting it as NOT CHECKED rather than treating absence as a pass."
 }

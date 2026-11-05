@@ -638,6 +638,12 @@ fetch() {
     "$1" -o "$2"
 }
 
+sha256_is() {
+  # sha256_is <file> <hex digest>: GNU sha256sum, else BSD/perl shasum.
+  _sum=$(sha256sum "$1" 2>/dev/null || shasum -a 256 "$1" 2>/dev/null) || return 1
+  [ "${_sum%% *}" = "$2" ]
+}
+
 # --- self-check: is this the script the ref resolves to? -------------------
 #
 # Fetching everything else by sha does not help if the copy that is running was
@@ -1518,6 +1524,44 @@ cap_precommit() {
   log "gitleak -> $(command -v gitleaks)"
   step_end precommit.gitleaks
 
+  # hadolint for the upstream `hadolint` hook /setup-docker stamps, which runs
+  # the binary on PATH. Not packaged in Ubuntu. The `hadolint-docker` variant
+  # is no substitute: with no daemon it aborts the whole pre-commit run.
+  #
+  # The release publishes no checksum asset, so HL_SHA256 is the digest of
+  # the asset as first fetched. Pinning it still turns a replaced asset into
+  # a failed install rather than a silent one. Bump the two together.
+  if ! command -v hadolint >/dev/null 2>&1; then
+    HL_VER=2.15.1
+    HL_SHA256=c7187db94eeeeca956519a6af171adc31453941a1e777961f6e680f697c8c507
+    fetch "https://github.com/hadolint/hadolint/releases/download/v${HL_VER}/hadolint-linux-x86_64" \
+      "$TMP/hadolint" \
+      || die "could not download hadolint ${HL_VER}"
+    sha256_is "$TMP/hadolint" "$HL_SHA256" \
+      || die "hadolint ${HL_VER} does not match its pinned sha256"
+    install -m 0755 "$TMP/hadolint" "$BIN_DIR/hadolint" || die "could not install hadolint"
+  fi
+  log "hadolnt -> $(command -v hadolint)"
+  step_end precommit.hadolint
+
+  # trivy for `trivy config` (/setup-docker's CI scan, run locally before a
+  # push) and the `terraform_trivy` hook /setup-terraform stamps, which shells
+  # out to the binary on PATH. TV_SHA256 is checked against the release's
+  # trivy_<v>_checksums.txt when bumped; bump the two together.
+  if ! command -v trivy >/dev/null 2>&1; then
+    TV_VER=0.76.2
+    TV_SHA256=bc0fc726e017b8927a62b2d3531d7a84ee01769daf5c99ed866dced54089fdbf
+    fetch "https://github.com/aquasecurity/trivy/releases/download/v${TV_VER}/trivy_${TV_VER}_Linux-64bit.tar.gz" \
+      "$TMP/trivy.tar.gz" \
+      || die "could not download trivy ${TV_VER}"
+    sha256_is "$TMP/trivy.tar.gz" "$TV_SHA256" \
+      || die "trivy ${TV_VER} does not match its pinned sha256"
+    tar -xzf "$TMP/trivy.tar.gz" -C "$TMP" trivy || die "could not unpack trivy"
+    install -m 0755 "$TMP/trivy" "$BIN_DIR/trivy" || die "could not install trivy"
+  fi
+  log "trivy   -> $(command -v trivy)"
+  step_end precommit.trivy
+
   # Serves `markdownlint-cli2 "**/*.md"`, the gate CLAUDE.md documents, which
   # needs the binary on PATH. Unlike the three above this is not a
   # `language: system` hook -- the pre-commit hook builds its own node
@@ -2069,7 +2113,7 @@ cap_golangci() {
 #
 # Runs after every other capability so the tools it looks for are installed,
 # and only with --with-hooks, because the hook is what makes the shims reachable.
-SHIM_TOOLS="semgrep markdownlint-cli2 cspell checkov terraform tflint shellcheck gitleaks actionlint pre-commit git"
+SHIM_TOOLS="semgrep markdownlint-cli2 cspell checkov terraform tflint shellcheck gitleaks actionlint hadolint trivy pre-commit git"
 
 cap_shims() {
   fetch "$RAW/home/bin/agent-shim" "$TMP/agent-shim" \
