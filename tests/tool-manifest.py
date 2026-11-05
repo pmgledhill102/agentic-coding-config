@@ -120,7 +120,7 @@ def main():
         "undefined on_failure": lambda s: s["tools"][0]["surfaces"][SANDBOX].__setitem__("on_failure", "ignore"),
         "pre-release pin": lambda s: s["tools"][0].__setitem__("version", "1.0.0-rc1"),
         "unpinned without reason": lambda s: [s["tools"][-1].pop("unpinned_why")],
-        "both version and version_from": lambda s: s["tools"][5].__setitem__("version", "1.0.0"),
+        "both version and version_from": lambda s: next(t for t in s["tools"] if t.get("version_from")).__setitem__("version", "1.0.0"),
         "installed and not_installed": lambda s: s["not_installed"].append({"name": "gh", "surface": SANDBOX, "why": "x"}),
         "no exclusion rule": lambda s: s.pop("exclusion_rule"),
     }
