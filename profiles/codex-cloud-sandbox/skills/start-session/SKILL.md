@@ -388,7 +388,7 @@ Filter the listing to entries matching `^[0-9]{4}-[0-9]{2}-[0-9]{2}-[a-z0-9-]+\.
     - **yes** → invoke `/promote-journal-inbox` directly. That command's pre-flight verifies cwd, then drains both filesystem `_incoming/` and `journal-draft`-labeled Issues from `pmgledhill102/paul-context`, commits each draft separately, single-pushes, and closes the drained Issues. Carry the result into the session brief.
     - **no / empty / cancel** → carry on. Surface the count in the session brief under "Needs attention" so it's visible at a glance.
 
-Note: this surface only counts the **filesystem** half of the inbox. The Issue-side half (sandbox-fallback drafts) isn't enumerated here — surfacing it would require an extra issue-listing call filtered to the `journal-draft` label, and the filesystem count is the dominant signal because that is where drafts normally land. `/promote-journal-inbox` itself drains both inboxes when invoked, so user action is consistent regardless of which path filed the draft.
+Note: this surface only counts the **filesystem** half of the inbox. The Issue-side half isn't enumerated here — surfacing it would require an extra issue-listing call filtered to the `journal-draft` label. Neither half is where entries normally land any more: the retro writes each one straight to `journal/` (#453), so a draft in either inbox is a fallback or predates that change. `/promote-journal-inbox` itself drains both inboxes when invoked, so user action is consistent regardless of which path filed the draft.
 
 ### 6b. Ready bundles (Tier 1 — surface)
 
