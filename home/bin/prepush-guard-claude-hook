@@ -108,6 +108,7 @@ push_targets() (
     set -f
     nl='
 '
+    # nosemgrep: bash.lang.security.ifs-tampering.ifs-tampering -- newline-only IFS for the split below; push_targets is a subshell, so it cannot leak.
     IFS=$nl
     # shellcheck disable=SC2046,SC2086  # deliberate: split on the separators.
     set -- $(printf '%s' "$1" |
@@ -115,6 +116,7 @@ push_targets() (
         tr ';&' '\n')
     switched=0
     for seg in "$@"; do
+        # nosemgrep: bash.lang.security.ifs-tampering.ifs-tampering -- space-and-tab IFS to split the segment into words, inside the push_targets subshell.
         IFS=' 	'
         # shellcheck disable=SC2086  # deliberate: split the segment into words.
         set -- $seg
