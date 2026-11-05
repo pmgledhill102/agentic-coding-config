@@ -35,6 +35,7 @@ case "$0" in */*) shim_dir=${0%/*} ;; *) shim_dir=. ;; esac
 # second route to the shim dir (a symlinked copy of it on PATH) recursing.
 real=""
 _ifs=$IFS
+# nosemgrep: bash.lang.security.ifs-tampering.ifs-tampering -- deliberate colon IFS to walk PATH below, restored to _ifs right after.
 IFS=:
 set -f
 for _d in $PATH; do
@@ -47,6 +48,7 @@ for _d in $PATH; do
     fi
 done
 set +f
+# nosemgrep: bash.lang.security.ifs-tampering.ifs-tampering -- restores the IFS saved in _ifs before the PATH walk.
 IFS=$_ifs
 
 if [ -z "$real" ]; then
