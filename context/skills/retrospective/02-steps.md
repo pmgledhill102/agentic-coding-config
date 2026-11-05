@@ -1,13 +1,13 @@
 ## Steps
 
-Journal drafts are filed as `journal-draft` Issues on
-`pmgledhill102/paul-context`, on every surface, with no local-tree branch.
-Nothing below needs to resolve where that repo is checked out in order to
-*write*; only step 1 looks for a tree, and only to read.
+The journal entry is written **straight to `journal/` on `paul-context`
+`main`** through the GitHub contents API, on every surface: no clone, no
+branch, no PR and no draft Issue. Step 1 reads history back the same way. A
+`journal-draft` Issue is only the **fallback**, for when that write cannot
+happen (step 8).
 
-That uniformity is the point. The route used to depend on whether a
-`paul-context` checkout happened to be at hand, and the preferred arm of that
-branch wrote into a gitignored `_incoming/`, so a draft could evaporate with
-the container. One route, durable the instant it is created, is worth the one
-API call it costs
-([#336](https://github.com/pmgledhill102/agentic-coding-config/issues/336)).
+One store is the point. An entry used to be a draft Issue or a `journal/` file
+depending on whether a promotion had run. On a cloud session the promotion
+opened a PR, so the entry stayed invisible until a human merged it, and drafts
+piled up with nothing prompting a drain. Written directly, an entry is readable the moment it exists
+([#453](https://github.com/pmgledhill102/agentic-coding-config/issues/453)).

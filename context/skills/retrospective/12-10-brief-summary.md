@@ -6,7 +6,7 @@ Print a compact wrap-up as plain labelled lines — label, colon, single space, 
 Retrospective complete.
 
 Closed loop: 4 accepted / 3 rejected / 1 pending; MCP-opportunity category retired
-Journal: paul-context/journal/2026-08-19-acc-foo.md (Issue #57; pending /promote-journal-inbox)
+Journal: paul-context/journal/2026-08-19-acc-foo.md (commit 4e1d9b2 on main)
 Proposals: 2 of 3 cap used — 1 removal, 1 addition
 Fixed in place: 1 — 3f9c2a1 on PR #88
 Issues created (here): 0
@@ -16,6 +16,8 @@ Phrasing: nothing notable
 
 Next /start-session in the cross-repo'd repos will surface the new Issues as ready work.
 ```
+
+On the fallback route the journal line reads `(fallback Issue #57: <why>; pending /promote-journal-inbox)` instead, naming why the direct write did not happen.
 
 "Issues created: 0, fixed in place: N" is a successful retro, not a thin one: the backlog shrank instead of growing.
 

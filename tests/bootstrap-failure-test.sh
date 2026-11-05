@@ -524,6 +524,25 @@ check "  and does NOT report state=failed" "0" \
   "$(printf '%s\n' "$cur" | grep -c 'state=failed')"
 rm -rf "$H"
 
+# --- 7b. sha256_is: a digest pin that can refuse ----------------------------
+#
+# hadolint and trivy are installed only when their download matches a pinned
+# digest, so the check has to be able to say no.
+echo
+echo "cloud/bootstrap.sh — sha256_is"
+H=$(mktemp -d)
+sed -n '/^sha256_is() {/,/^}$/p' "$BOOTSTRAP" >"$H/fn.sh"
+check "sha256_is was extractable from the script" "1" "$(count '^sha256_is() {' "$H/fn.sh")"
+printf 'payload\n' >"$H/f"
+_good=$(sha256sum "$H/f" | cut -d' ' -f1)
+check "  accepts the file's own digest" "0" \
+  "$(sh -c '. "$1"; sha256_is "$2" "$3"; echo $?' _ "$H/fn.sh" "$H/f" "$_good")"
+check "  refuses a different digest" "1" \
+  "$(sh -c '. "$1"; sha256_is "$2" "$3"; echo $?' _ "$H/fn.sh" "$H/f" "0000$_good")"
+check "  refuses a missing file" "1" \
+  "$(sh -c '. "$1"; sha256_is "$2" "$3"; echo $?' _ "$H/fn.sh" "$H/nope" "$_good")"
+rm -rf "$H"
+
 # --- 8. the pre-commit warm ------------------------------------------------
 #
 # The invariant: a fresh container must not meet a cold pre-commit cache on its
@@ -1060,8 +1079,9 @@ FIX="$H/fix"
 pin() { sed -n "s/^[[:space:]]*$1=\([0-9.]*\)\$/\1/p" "$BOOTSTRAP" | head -1; }
 AL=$(pin AL_VER) SC=$(pin SC_VER) TF=$(pin TF_VER) TFL=$(pin TFL_VER)
 TFG=$(pin TFL_GOOGLE_VER) GHV=$(pin GH_VER) GCL=$(pin GCL_VER) GL=$(pin GL_VER)
-check "every pin the fixture needs was found" "8" \
-  "$(printf '%s\n' "$AL" "$SC" "$TF" "$TFL" "$TFG" "$GHV" "$GCL" "$GL" | grep -c .)"
+HL=$(pin HL_VER) TV=$(pin TV_VER)
+check "every pin the fixture needs was found" "10" \
+  "$(printf '%s\n' "$AL" "$SC" "$TF" "$TFL" "$TFG" "$GHV" "$GCL" "$GL" "$HL" "$TV" | grep -c .)"
 
 fake() { # fake <path> <version line>
   mkdir -p "$(dirname "$1")"
@@ -1075,6 +1095,15 @@ tar -czf "$FIX/github.com/rhysd/actionlint/releases/download/v$AL/actionlint_${A
 fake "$S/gl/gitleaks" "$GL"
 mkdir -p "$FIX/github.com/gitleaks/gitleaks/releases/download/v$GL"
 tar -czf "$FIX/github.com/gitleaks/gitleaks/releases/download/v$GL/gitleaks_${GL}_linux_x64.tar.gz" -C "$S/gl" gitleaks
+# hadolint and trivy are digest-pinned, so the fixture's own digests replace
+# the real ones in the rewritten script below.
+mkdir -p "$FIX/github.com/hadolint/hadolint/releases/download/v$HL"
+fake "$FIX/github.com/hadolint/hadolint/releases/download/v$HL/hadolint-linux-x86_64" "Haskell Dockerfile Linter $HL"
+HL_FIX_SHA=$(sha256sum "$FIX/github.com/hadolint/hadolint/releases/download/v$HL/hadolint-linux-x86_64" | cut -d' ' -f1)
+fake "$S/tv/trivy" "Version: $TV"
+mkdir -p "$FIX/github.com/aquasecurity/trivy/releases/download/v$TV"
+tar -czf "$FIX/github.com/aquasecurity/trivy/releases/download/v$TV/trivy_${TV}_Linux-64bit.tar.gz" -C "$S/tv" trivy
+TV_FIX_SHA=$(sha256sum "$FIX/github.com/aquasecurity/trivy/releases/download/v$TV/trivy_${TV}_Linux-64bit.tar.gz" | cut -d' ' -f1)
 fake "$S/sc/shellcheck-v$SC/shellcheck" "ShellCheck $SC"
 mkdir -p "$FIX/github.com/koalaman/shellcheck/releases/download/v$SC"
 tar -cJf "$FIX/github.com/koalaman/shellcheck/releases/download/v$SC/shellcheck-v$SC.linux.x86_64.tar.xz" -C "$S/sc" "shellcheck-v$SC/shellcheck"
@@ -1105,7 +1134,7 @@ FARM="$H/farm"
 mkdir -p "$FARM"
 for t in sh cat cp mv rm ln mkdir chmod install mktemp date sed awk grep head tail \
   cut tr wc sort dirname basename find env stat tar gzip xz unzip curl git jq \
-  id uname tee touch readlink ls true false; do
+  id uname tee touch readlink ls true false sha256sum; do
   _p=$(real_tool "$t") && ln -s "$_p" "$FARM/$t"
 done
 
@@ -1169,6 +1198,8 @@ with_system "$H/sys/bin" "$H/sys/opt" "$BOOTSTRAP" "$H/bs-sys.sh"
 sed -e "s#https://github.com/\([^\"]*\)/releases/download/#file://$FIX/github.com/\1/releases/download/#g" \
   -e "s#https://releases.hashicorp.com/#file://$FIX/releases.hashicorp.com/#g" \
   -e "s#https://dl.google.com/#file://$FIX/dl.google.com/#g" \
+  -e "s#^\([[:space:]]*\)HL_SHA256=.*#\1HL_SHA256=$HL_FIX_SHA#" \
+  -e "s#^\([[:space:]]*\)TV_SHA256=.*#\1TV_SHA256=$TV_FIX_SHA#" \
   "$H/bs-sys.sh" >"$H/bootstrap.sh"
 check "the fixture rewrote every release download" "0" \
   "$(grep -cE 'https://(github.com/[^ ]*/releases/download|releases.hashicorp.com|dl.google.com)/' "$H/bootstrap.sh")"
@@ -1191,7 +1222,7 @@ check "  install_mode=prefix" "prefix" "$(mval install_mode "$M")"
 check "  bin_dir is the prefix's bin" "$P/bin" "$(mval bin_dir "$M")"
 check "  bin_dir_on_path=no is recorded" "no" "$(mval bin_dir_on_path "$M")"
 missing=
-for t in gcp-credentials gcloud gsutil shellcheck actionlint gitleaks markdownlint-cli2 cspell \
+for t in gcp-credentials gcloud gsutil shellcheck actionlint gitleaks hadolint trivy markdownlint-cli2 cspell \
   semgrep terraform tflint checkov pre-commit gh golangci-lint; do
   [ -x "$P/bin/$t" ] || missing="$missing $t"
 done
