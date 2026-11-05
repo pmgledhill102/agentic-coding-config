@@ -1,11 +1,13 @@
 ---
 name: promote-journal-inbox
-description: 'Drain the journal-draft inbox for paul-context: move filesystem drafts from _incoming/ to journal/, drain journal-draft-labelled Issues into journal/, commit each, push once, then close the drained Issues with back-links. Use when journal drafts are pending, when start-session reports a non-empty inbox, or when asked to promote or file journal entries. Runs from a paul-context checkout on any surface.'
+description: 'Drain journal drafts left behind into paul-context journal/: the retro writes entries directly, so this covers its fallback Issues and older drafts. Moves filesystem drafts from _incoming/ and journal-draft-labelled Issues into journal/, commits each, pushes once, then closes the drained Issues with back-links. Use when journal drafts are pending, when start-session reports a non-empty inbox, or when asked to promote journal drafts. Runs from a paul-context checkout on any surface.'
 ---
 
 # Promote the journal-draft inbox
 
 See `paul-context/decisions/2026-05-05-journal-inbox-promotion.md` for the design rationale.
+
+**This is the drain, not the write path.** The `retrospective` skill writes each entry straight to `journal/` on `main` ([#453](https://github.com/pmgledhill102/agentic-coding-config/issues/453)), so no new entry needs promoting. What is left here is what the direct route could not handle: `journal-draft` Issues from the retro's fallback (a gitleaks finding, a refused write, no network), and drafts filed before #453 shipped. An empty inbox is the expected state.
 
 ## Pre-flight
 

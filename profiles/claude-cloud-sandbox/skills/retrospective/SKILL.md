@@ -1,6 +1,6 @@
 ---
 name: retrospective
-description: 'Run an end-of-session retrospective: close the loop on past retro output, name the biggest costs of the session, propose at most three tier-priced changes (removals co-equal with additions), draft a per-session journal entry as a journal-draft-labelled Issue on paul-context, and route findings into GitHub Issues same-repo and cross-repo. Use when a work session is wrapping up, when the user asks for a retro or retrospective, or when end-session hands off to one.'
+description: 'Run an end-of-session retrospective: close the loop on past retro output, name the biggest costs of the session, propose at most three tier-priced changes (removals co-equal with additions), write a per-session journal entry straight to paul-context journal/ on main, and route findings into GitHub Issues same-repo and cross-repo. Use when a work session is wrapping up, when the user asks for a retro or retrospective, or when end-session hands off to one.'
 ---
 
 # Run a session retrospective
@@ -22,36 +22,36 @@ This command was redesigned by #263 around one measurement: the owner accepted 2
 
 ## Steps
 
-Journal drafts are filed as `journal-draft` Issues on
-`pmgledhill102/paul-context`, on every surface, with no local-tree branch.
-Nothing below needs to resolve where that repo is checked out in order to
-*write*; only step 1 looks for a tree, and only to read.
+The journal entry is written **straight to `journal/` on `paul-context`
+`main`** through the GitHub contents API, on every surface: no clone, no
+branch, no PR and no draft Issue. Step 1 reads history back the same way. A
+`journal-draft` Issue is only the **fallback**, for when that write cannot
+happen (step 8).
 
-That uniformity is the point. The route used to depend on whether a
-`paul-context` checkout happened to be at hand, and the preferred arm of that
-branch wrote into a gitignored `_incoming/`, so a draft could evaporate with
-the container. One route, durable the instant it is created, is worth the one
-API call it costs
-([#336](https://github.com/pmgledhill102/agentic-coding-config/issues/336)).
+One store is the point. An entry used to be a draft Issue or a `journal/` file
+depending on whether a promotion had run. On a cloud session the promotion
+opened a PR, so the entry stayed invisible until a human merged it, and drafts
+piled up with nothing prompting a drain. Written directly, an entry is readable the moment it exists
+([#453](https://github.com/pmgledhill102/agentic-coding-config/issues/453)).
 
 ### 1. Close the loop (always first)
 
 Start with `~/.claude/bin/agent-telemetry event retrospective start`; step 10's
 run record is timed from it.
 
-**Before reading anything, check the session can reach `paul-context` at all.** The closed-loop reads below, the journal draft in step 8, and every cross-repo Issue step 6 routes all target a repo that is *not* the one this session is working in — most often `pmgledhill102/paul-context`. A **repo-scoped session** — a cloud sandbox is one — can only reach the repos attached to it, and a GitHub call against an unattached repo is **refused outright**. This is a different failure from having no local clone: the API call itself is denied, and the denial arrives as a 403 or a 404 that reads like "no such Issues" rather than "no access", so it is easy to record as an empty history and move on.
+**Before reading anything, check the session can reach `paul-context` at all.** The closed-loop reads below, the journal entry in step 8, and every cross-repo Issue step 6 routes all target a repo that is *not* the one this session is working in — most often `pmgledhill102/paul-context`. A **repo-scoped session** — a cloud sandbox is one — can only reach the repos attached to it, and a GitHub call against an unattached repo is **refused outright**. This is a different failure from having no local clone: the API call itself is denied, and the denial arrives as a 403 or a 404 that reads like "no such Issues" rather than "no access", so it is easy to record as an empty history and move on.
 
-Confirm the scope *here*, at the top, rather than at the point of the first write. A cheap read is enough — listing that repo's Issues either works or is denied. Discovering the denial in step 8 means the whole session has been analysed with nowhere to put the output.
+Confirm the scope *here*, at the top, rather than at the point of the first write. A cheap read is enough: `mcp__github__get_file_contents` on `journal/` with `fields: ["name"]` either works or is denied, and its listing is the input to the history read below. Discovering the denial in step 8 means the whole session has been analysed with nowhere to put the output.
 
 If the repo is out of scope, the remedy is to **attach it** (`add_repo`, on surfaces that have it). Who decides depends on the repo:
 
-- **`pmgledhill102/paul-context` only:** if the scope probe (listing its `journal-draft` Issues) is denied and `add_repo` is available, call `add_repo(owner: "pmgledhill102", repo: "paul-context", access: "push")`, re-run the probe, and say in one line that it was attached. Do not ask. Push access is needed because step 8 creates the journal-draft Issue there. A surface's own confirmation prompt on `add_repo` does not count as the skill asking.
+- **`pmgledhill102/paul-context` only:** if the scope probe (listing its `journal/` directory) is denied and `add_repo` is available, call `add_repo(owner: "pmgledhill102", repo: "paul-context", access: "push")`, re-run the probe, and say in one line that it was attached. Do not ask. Push access is needed because step 8 writes the journal entry there. A surface's own confirmation prompt on `add_repo` does not count as the skill asking.
 - **Every other repo:** attaching is the user's call, not yours. Say which repo is missing and what it blocks, and ask. Do not attach repos unilaterally.
-- **If `add_repo` is absent or the attach fails:** do not silently continue as though the history were empty. A retro that cannot reach `paul-context` can still analyse the session, but it must say up front that the journal draft and the cross-repo Issues have no destination.
+- **If `add_repo` is absent or the attach fails:** do not silently continue as though the history were empty. A retro that cannot reach `paul-context` can still analyse the session, but it must say up front that the journal entry and the cross-repo Issues have no destination.
 
 With scope confirmed, read what the last few retros produced and what became of it:
 
-- **Recent journal entries** — the last 3–5. List recent `journal-draft`-labeled Issues on `pmgledhill102/paul-context` (`mcp__github__list_issues` when connected, else `gh issue list --repo pmgledhill102/paul-context --label journal-draft --state all`), which covers everything not yet promoted. If a `paul-context` checkout happens to be at hand — you are standing in it, or it sits beside the current repo — also read its `journal/` (newest by filename date) for the promoted ones. This lookup is **read-only and best-effort**: missing it costs a little history, never a lost draft, which is why it carries none of the care that resolving a *write* destination used to need.
+- **Recent journal entries** — the last 3–5. From the scope probe's listing of `journal/`, take the newest filenames (they sort by their date prefix) and read each with `mcp__github__get_file_contents` (else `gh api repos/pmgledhill102/paul-context/contents/journal/<file>`). No checkout is needed on any surface. Then list **open** `journal-draft` Issues on `pmgledhill102/paul-context` (`mcp__github__list_issues` with `labels: ["journal-draft"]` and `fields`): only fallback entries from step 8 and older drafts not yet drained live there, so fold in any that are newer than the files. This lookup is **read-only and best-effort**: missing it costs a little history, never a lost entry.
 - **Retro-filed Issues** — their bodies carry the `From retro: paul-context/journal/...` backlink. Check the repos the recent journals routed to, listing both open and closed Issues. These are historical, so body-text search is acceptable here (the never-search rule guards *time-sensitive* reads; a week-old issue is safely indexed).
 
 Report a short fate summary before proposing anything new:
@@ -136,7 +136,7 @@ For each proposal and observation, decide what artifact it produces:
 
 | Kind | When to use | How to produce |
 | --- | --- | --- |
-| **Journal entry** | Always (unless the session was uneventful — then skip and stop). Carries the narrative, the closed-loop fate summary, and every observation that didn't make the proposal cap | Draft via the inbox/promote pattern — see step 8 |
+| **Journal entry** | Always (unless the session was uneventful — then skip and stop). Carries the narrative, the closed-loop fate summary, and every observation that didn't make the proposal cap | Written straight to `paul-context` `journal/` on `main`, with a draft Issue as the fallback — see step 8 |
 | **Fix in place** | **The first test for every same-repo proposal.** All four hold: the change is text only (docs, comments, a README line, a gate list, an ADR status line); it is confined to the current cwd's repo; it needs no decision; and it is small enough to review as a tag-along | A commit, not an issue — see step 8. **Never both**: no "fixed in `abc123`, tracking issue #N" pairs |
 | **Same-repo Issue** | Proposal whose subject is the **current cwd's repo** and which fails the fix-in-place test: it needs a decision, changes code behaviour, or would not be reviewable as a tag-along | Create an issue in the current repo with a `type: <task/bug/feature>` label and a `P0`–`P4` priority (P2 is "do this soon", P3 is "next time we touch this") — `mcp__github__issue_write` when connected, else `gh issue create --title=... --label "type: <type>,P<n>"`. **Body MUST include**: "From retro: paul-context/journal/<file>.md" |
 | **Product bug** | A product finding (step 5) in the **current cwd's repo** or in another personal repo. It never falls through to *Observation only* for lacking an agent lever | Same routes as the Same-repo and Cross-repo rows: `type: bug` and a `P0`–`P4` priority, an explicit `owner`/`repo`, and the journal cross-reference in the body. Lever / Tier reads `product, no context cost`. A small text-only fix still takes the **Fix in place** route |
@@ -224,9 +224,17 @@ Wait for explicit confirmation. Don't proceed on ambiguous input.
 
 1. **journal** (first, after any approved fix):
    - **Derive the filename.** `<source-repo-slug>` = sanitised basename of `git remote get-url origin` from the current cwd (lowercase, `[a-z0-9-]+`). If no git remote, use `basename "$PWD"`. `<topic-slug>` = kebab-cased session summary, ≤5 words. `<filename>` = `<YYYY-MM-DD>-<source-repo-slug>-<topic-slug>.md`.
-   - **Resolve same-project same-day collisions** at write-time: if an open Issue with the same title already exists, append `-2`, `-3`, … before `.md` until unique. Rare in practice — same project, same day, same topic — but the suffix prevents silent merge of two distinct retros.
-   - **Stage the draft first, always.** `Write` the journal markdown to `/tmp/<filename>`. `Edit(/tmp/**)` is auto-allowed on every surface (and `Edit` rules cover the `Write` tool), so this write always succeeds and the draft exists on disk before any network call. Nothing below can lose it.
-   - **Then file it as an Issue — on every surface, with no branch.** Create the issue on `pmgledhill102/paul-context` with the `journal-draft` and `P4` labels and the title `journal: <filename-without-.md>`, body taken from the staged file. Prefer `mcp__github__issue_write`; the `gh` form is the portable fallback:
+   - **Resolve same-project same-day collisions** at write-time: if `journal/<filename>` already exists on `paul-context` `main` (step 1's listing, or a `get_file_contents` on the path), or an open `journal-draft` Issue has the same title, append `-2`, `-3`, … before `.md` until unique. Rare in practice — same project, same day, same topic — but the suffix prevents silently merging two distinct retros. The write below creates a file and never passes a `sha`, so it cannot overwrite one either.
+   - **Stage the draft first, always.** `Write` the journal markdown to `/tmp/<filename>`, ending in exactly one newline (`paul-context`'s `end-of-file-fixer` requires it). `Edit(/tmp/**)` is auto-allowed on every surface (and `Edit` rules cover the `Write` tool), so this write always succeeds and the draft exists on disk before any network call. Nothing below can lose it.
+   - **Gate it for personal data before it leaves.** A contents-API write skips `paul-context`'s pre-commit, so run its gitleaks check here instead. Fetch `.gitleaks.toml` from `pmgledhill102/paul-context` `main` with `get_file_contents`, write it to `/tmp/paul-context.gitleaks.toml`, then:
+
+     ```sh
+     gitleaks dir --no-banner --redact --config /tmp/paul-context.gitleaks.toml /tmp/<filename>
+     ```
+
+     **Exit 0 is the only pass.** Any other outcome takes the fallback below: a finding, a config that could not be fetched, or no `gitleaks` on `PATH`. Never write the entry without the gate having passed. Do not quote a finding into the session log or any Issue; say only that the gate fired.
+   - **Write it to `journal/` on `main` — on every surface, with no branch.** `mcp__github__create_or_update_file` with `owner: pmgledhill102`, `repo: paul-context`, `branch: main`, `path: journal/<filename>`, the staged file as `content` and `message: journal: <YYYY-MM-DD> <source-repo-slug>-<topic-slug>`. That is the same message `promote-journal-inbox` uses, so history reads the same either way. The `gh` form is `gh api -X PUT repos/pmgledhill102/paul-context/contents/journal/<filename> --input <json>`, where the JSON carries `message`, `branch` and the base64 `content`. Capture the commit SHA. This is the direct-commit exception the agent policy names for a journal entry. An assigned branch in another repo does not change it. **If this session is itself working in `paul-context` on an assigned branch**, commit the file to that branch instead, so it lands with the session's PR.
+   - **Fallback: file it as a draft Issue.** When the gate did not pass, or the write was refused (no push access, a ruleset, offline), do not retry and do not block `end-session`. Create the issue on `pmgledhill102/paul-context` with the `journal-draft` and `P4` labels and the title `journal: <filename-without-.md>`, body taken from the staged file. `/promote-journal-inbox` drains it later. A gate finding is the one case to also tell the user, since the draft holds what the gate flagged. Prefer `mcp__github__issue_write`; the `gh` form is the portable fallback:
 
      ```sh
      gh issue create --repo pmgledhill102/paul-context \
@@ -240,8 +248,8 @@ Wait for explicit confirmation. Don't proceed on ambiguous input.
      **`P4` is load-bearing, not decoration — don't drop it as noise.** `estate-report` counts an issue with no `P0`–`P4` label as untriaged and flags a repo above five of them, so unlabelled drafts accumulate into a flag that points at the journal inbox rather than at any real triage debt. A priority keeps them out of that count. `P4` is also the honest reading: a draft awaiting a mechanical move is the lowest-urgency thing in the repo.
 
      **Never copy the draft into a local `_incoming/` instead.** That route used to be preferred and was the worse of the two: `_incoming/*` is gitignored, so a copy there cannot be committed and dies with the container — during `end-session`, exactly when the container is about to be walked away from. An Issue is durable the instant it is created, and is the same route on every surface.
-   - **If the Issue create fails** (offline, no GitHub route): print the full draft to the session log with clear `===BEGIN JOURNAL===` / `===END JOURNAL===` delimiters and tell the user to save it manually. The staged `/tmp` copy also still exists. Don't silently discard content.
-   - Capture `paul-context/journal/<filename>` (the eventual post-promotion path) for cross-references in subsequent issues.
+   - **If the fallback Issue create fails too** (offline, no GitHub route): print the full draft to the session log with clear `===BEGIN JOURNAL===` / `===END JOURNAL===` delimiters and tell the user to save it manually. The staged `/tmp` copy also still exists. Don't silently discard content.
+   - Capture `paul-context/journal/<filename>` for cross-references in subsequent issues. It is the live path on the direct route and the post-promotion path on the fallback, so the reference is the same either way.
 2. **durable lesson**: execute whatever route step 6 named for this surface. Step 6 is where that decision lives; do not restate or second-guess it here.
 3. **fix** (same-repo, approved in step 7): the one place the retro changes repo state, and only for rows the user confirmed.
    - **Find a live home first, by a fresh read.** Check the session's PR is still open **now** (`mcp__github__pull_request_read` method `get`, else `gh pr view`) — not from anything read earlier in the session. The user often merges while the session runs, and a merged PR's branch is usually deleted. Open → commit on that branch and push. Merged, closed, or no PR → a new branch from the up-to-date default branch and a small PR of its own, titled for what it fixes.
@@ -304,7 +312,7 @@ Print a compact wrap-up as plain labelled lines — label, colon, single space, 
 Retrospective complete.
 
 Closed loop: 4 accepted / 3 rejected / 1 pending; MCP-opportunity category retired
-Journal: paul-context/journal/2026-08-19-acc-foo.md (Issue #57; pending /promote-journal-inbox)
+Journal: paul-context/journal/2026-08-19-acc-foo.md (commit 4e1d9b2 on main)
 Proposals: 2 of 3 cap used — 1 removal, 1 addition
 Fixed in place: 1 — 3f9c2a1 on PR #88
 Issues created (here): 0
@@ -314,6 +322,8 @@ Phrasing: nothing notable
 
 Next /start-session in the cross-repo'd repos will surface the new Issues as ready work.
 ```
+
+On the fallback route the journal line reads `(fallback Issue #57: <why>; pending /promote-journal-inbox)` instead, naming why the direct write did not happen.
 
 "Issues created: 0, fixed in place: N" is a successful retro, not a thin one: the backlog shrank instead of growing.
 
