@@ -1034,8 +1034,8 @@ fi
 # dies naming the skill, rather than a session quietly running the wrong body.
 #
 # SKILLS holds the two skills that need no composition. promote-journal-inbox
-# is the drain half of the journal loop whose fill half runs here: a sandbox
-# retro files a journal-draft Issue, and this is what empties that inbox. One
+# drains the journal-draft Issues a retro files when it cannot write its entry
+# straight to paul-context journal/ (a gitleaks finding, a refused write). One
 # body serves both surfaces — its pre-flight tests the repo rather than a path,
 # and it already prefers MCP with gh as the fallback — so it needs no
 # composition, which is ADR-0018 principle 8 working as intended rather than an
