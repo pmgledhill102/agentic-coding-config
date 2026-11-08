@@ -38,7 +38,11 @@ os.makedirs(PUTS, exist_ok=True)
 
 
 def mode(name, default_status):
-    """(status, extra headers) from the control file, else the default."""
+    """(status, extra headers) from the control file, else the default.
+
+    `times=<n>` applies the status to the next n requests only and the default
+    after that, counted in $STUB_DIR/<name>.count: a transient failure.
+    """
     try:
         with open(os.path.join(STUB_DIR, name + ".mode")) as f:
             parts = f.read().split()
@@ -51,6 +55,17 @@ def mode(name, default_status):
     for p in parts[1:]:
         k, _, v = p.partition("=")
         headers[k] = v
+    if "times" in headers:
+        counter = os.path.join(STUB_DIR, name + ".count")
+        try:
+            with open(counter) as f:
+                seen = int(f.read() or 0)
+        except OSError:
+            seen = 0
+        with open(counter, "w") as f:
+            f.write(str(seen + 1))
+        if seen >= int(headers["times"]):
+            return default_status, {}
     return status, headers
 
 

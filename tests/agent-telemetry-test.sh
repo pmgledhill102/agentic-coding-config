@@ -618,6 +618,41 @@ while [ "$i" -lt 50 ] && [ "$(requests)" -lt 1 ]; do
   i=$((i + 1))
 done
 expect "session-start records the marker and ships it" /v1/records/session-marker "$(sed -n 1p "$RECEIVED" | jq -r .path)"
+sleep 0.5
+expect "a first ship that succeeds is not retried" 1 "$(requests)"
+
+# The proxy can start attaching the key after the session does, so the first
+# ship's 401 is retried, and only that one (#734).
+AGENT_TELEMETRY_AUTH_RETRY_DELAYS="0 0 0" && export AGENT_TELEMETRY_AUTH_RETRY_DELAYS
+reset
+rm -f "$STUB_DIR/records.count"
+configure_proxy
+write_marker
+set_mode records "401 times=2"
+printf '{"session_id":"sess-abc-123","source":"startup"}' | "$HOOK" session-start >/dev/null 2>&1
+i=0
+while [ "$i" -lt 50 ] && [ "$(offset)" -eq 0 ]; do
+  sleep 0.2
+  i=$((i + 1))
+done
+expect "session-start retries a transient 401 until it ships" "$(spool_size)" "$(offset)"
+expect "...in three requests: two refused, one accepted" 3 "$(requests)"
+
+reset
+rm -f "$STUB_DIR/records.count"
+configure_proxy
+write_marker
+set_mode records "401"
+printf '{"session_id":"sess-abc-123","source":"startup"}' | "$HOOK" session-start >/dev/null 2>&1
+i=0
+while [ "$i" -lt 50 ] && [ "$(requests)" -lt 4 ]; do
+  sleep 0.2
+  i=$((i + 1))
+done
+sleep 1
+expect "a persistent 401 gives up after the bound (1 + 3 retries)" 4 "$(requests)"
+expect "...and leaves the offset alone" 0 "$(offset)"
+unset AGENT_TELEMETRY_AUTH_RETRY_DELAYS
 
 reset
 configure_proxy

@@ -83,6 +83,22 @@ case "$event" in
             # manifest: there is simply nothing to record.
             [ -f "$MARKER" ] && "$HELPER" record session-marker "$MARKER"
             "$HELPER" ship
+            # The one place a 401 is retried. In a proxy-injected environment
+            # the proxy can start attaching the write key a little after the
+            # session does, so this first ship can be refused while every later
+            # one would be accepted, and a session that ends before its first
+            # Stop then ships nothing at all. Bounded, background, and only
+            # while spool bytes are still unsent, so a stale 401 from an
+            # earlier session with nothing pending does not start it. Every
+            # other 401 keeps the contract's "do not retry".
+            for d in ${AGENT_TELEMETRY_AUTH_RETRY_DELAYS:-2 4 8 16 32 60}; do
+                grep -q '^[^ ]* 401 ' "$STATE/last-ship" 2> /dev/null || break
+                off=$(head -1 "$STATE/shipped.offset" 2> /dev/null || echo 0)
+                size=$(wc -c < "$STATE/spool.jsonl" 2> /dev/null | tr -d ' ')
+                [ "${off:-0}" -lt "${size:-0}" ] 2> /dev/null || break
+                sleep "$d"
+                "$HELPER" ship
+            done
         ) < /dev/null > /dev/null 2>&1 &
         ;;
     prompt-submit)
