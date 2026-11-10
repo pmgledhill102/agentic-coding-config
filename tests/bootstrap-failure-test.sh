@@ -545,6 +545,8 @@ tf_case() {
 check "precommit aborted before terraform: terraform=0, degraded names it" \
   "0|precommit terraform" "$(tf_case 1 1 0 precommit)"
 check "terraform installed: terraform=1, nothing added" "1|" "$(tf_case 1 1 1)"
+check "pc_terraform already named it: not named twice" \
+  "0|precommit.terraform" "$(tf_case 1 1 0 precommit.terraform)"
 check "--no-terraform: terraform=0, not degraded" "0|" "$(tf_case 0 1 0)"
 check "--no-precommit installs nothing, by design: not degraded" "0|" "$(tf_case 1 0 0)"
 # The marker must be written by the step it attests to, after the install.
@@ -809,6 +811,58 @@ RUN
 out=$(TMP="$H/t8e" FNS="$H/fn-steps.sh" sh "$H/t8e-run.sh" 2>&1)
 check "step timings are folded in after the capability's own entry" \
   "timings=fake=0s fake.one=0s fake.two=0s fake.two.pip-attempt=2 other=0s" \
+  "$(printf '%s\n' "$out" | sed 's/=[0-9]*s/=0s/g' | grep '^timings=')"
+
+# --- 8c''. one pre-commit tool failing costs that tool, not the gate (#631) -----
+#
+# pc_tool isolates each tool in its own subshell; precommit_retry tries the
+# failures once more after the other capabilities; what still fails is named
+# precommit.<tool>. The fakes: one fails for good, one fails only the first
+# time (a stall that clears), and the tool after them must still install.
+{
+  for fn in now_s record_timing step_begin step_end capability pc_tool precommit_retry die; do
+    sed -n "/^$fn() {/,/^}\$/p" "$BOOTSTRAP"
+  done
+} >"$H/fn-pc.sh"
+check "pc_tool and precommit_retry were extractable" "2" \
+  "$(grep -c '^pc_tool() {\|^precommit_retry() {' "$H/fn-pc.sh")"
+mkdir -p "$H/t8f"
+cat >"$H/t8f-run.sh" <<'RUN'
+set -eu
+log() { :; }
+TIMINGS=
+DEGRADED=
+FAIL_FILE="$TMP/fail-reason"
+. "$FNS"
+pc_dead() { die "could not download dead"; }
+pc_flaky() {
+  [ -f "$TMP/flaky-seen" ] || { : >"$TMP/flaky-seen"; die "stalled"; }
+  step_end precommit.flaky
+}
+pc_after() { : >"$TMP/after-ran"; step_end precommit.after; }
+fake_precommit() {
+  pc_tool dead pc_dead
+  pc_tool flaky pc_flaky
+  pc_tool after pc_after
+}
+capability 1 precommit fake_precommit
+precommit_retry
+echo "SURVIVED"
+echo "degraded=$DEGRADED"
+echo "timings=$TIMINGS"
+echo "after=$([ -f "$TMP/after-ran" ] && echo ran || echo skipped)"
+RUN
+out=$(TMP="$H/t8f" FNS="$H/fn-pc.sh" sh "$H/t8f-run.sh" 2>&1)
+check "a failing tool does not end the run" "1" \
+  "$(printf '%s\n' "$out" | grep -c '^SURVIVED$')"
+check "  the tool after it still installs" "after=ran" \
+  "$(printf '%s\n' "$out" | grep '^after=')"
+check "  only the tool that failed twice is degraded" "degraded=precommit.dead" \
+  "$(printf '%s\n' "$out" | grep '^degraded=')"
+check "  the capability itself is not degraded" "0" \
+  "$(printf '%s\n' "$out" | grep '^degraded=' | grep -c 'precommit\( \|$\)')"
+check "  first attempts, retries and the capability are each timed" \
+  "timings=precommit=0s precommit.dead=0s precommit.flaky=0s precommit.after=0s precommit.dead.retry=0s precommit.flaky.retry=0s" \
   "$(printf '%s\n' "$out" | sed 's/=[0-9]*s/=0s/g' | grep '^timings=')"
 
 # --- 8d. the core.hooksPath claim cloud/README.md now makes ----------------
