@@ -50,6 +50,15 @@ EOF
   echo "$_d"
 }
 launches() { grep -c launched "$1/launches" 2>/dev/null || echo 0; }
+# The launcher returns as soon as it has forked, so the detached fake run may
+# not have written its first line yet. Give it up to 3 s.
+await_launch() {
+  _i=0
+  while [ "$(launches "$1")" -lt 1 ] && [ "$_i" -lt 30 ]; do
+    sleep 0.1
+    _i=$((_i + 1))
+  done
+}
 
 echo "toolchain-start"
 
@@ -65,6 +74,7 @@ check "no args file: --wait returns at once" "0" "$(TOOLCHAIN_DIR=$D sh "$START"
 D=$(fixture ok 1 "done")
 out=$(printf '{}' | TOOLCHAIN_DIR=$D sh "$START" --hook 2>&1)
 check "--hook prints nothing and exits 0" "0:" "$?:$out"
+await_launch "$D"
 check "--hook launched the deferred run once" "1" "$(launches "$D")"
 check "  and the state says running while it runs" "running" "$(TOOLCHAIN_DIR=$D sh "$START" --status)"
 TOOLCHAIN_DIR=$D sh "$START" --hook </dev/null
