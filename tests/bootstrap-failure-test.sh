@@ -867,6 +867,7 @@ mkdir -p "$H/t8f"
 cat >"$H/t8f-run.sh" <<'RUN'
 set -eu
 log() { :; }
+TOOLCHAIN=eager
 TIMINGS=
 DEGRADED=
 FAIL_FILE="$TMP/fail-reason"
@@ -901,6 +902,36 @@ check "  the capability itself is not degraded" "0" \
 check "  first attempts, retries and the capability are each timed" \
   "timings=precommit=0s precommit.dead=0s precommit.flaky=0s precommit.after=0s precommit.dead.retry=0s precommit.flaky.retry=0s" \
   "$(printf '%s\n' "$out" | sed 's/=[0-9]*s/=0s/g' | grep '^timings=')"
+
+# The deferred run (--toolchain=run) retries up to three rounds, with growing
+# gaps. sleep is stubbed to record the gaps instead of waiting them out.
+cat >"$H/t8g-run.sh" <<'RUN'
+set -eu
+log() { :; }
+sleep() { GAPS="${GAPS:+$GAPS }$1"; }
+TOOLCHAIN=run
+TIMINGS=
+DEGRADED=
+GAPS=
+FAIL_FILE="$TMP/fail-reason"
+. "$FNS"
+pc_dead() { die "could not download dead"; }
+fake_precommit() { pc_tool dead pc_dead; }
+capability 1 precommit fake_precommit
+precommit_retry
+echo "degraded=$DEGRADED"
+echo "gaps=$GAPS"
+echo "timings=$TIMINGS"
+RUN
+mkdir -p "$H/t8g"
+out=$(TMP="$H/t8g" FNS="$H/fn-pc.sh" sh "$H/t8g-run.sh" 2>&1)
+check "the deferred run retries three rounds, 30, 60 and 120 s apart" "gaps=30 60 120" \
+  "$(printf '%s\n' "$out" | grep '^gaps=')"
+check "  each attempt has its own timing key" \
+  "timings=precommit=0s precommit.dead=0s precommit.dead.retry=0s precommit.dead.retry2=0s precommit.dead.retry3=0s" \
+  "$(printf '%s\n' "$out" | sed 's/=[0-9]*s/=0s/g' | grep '^timings=')"
+check "  and a tool that never installs is still degraded" "degraded=precommit.dead" \
+  "$(printf '%s\n' "$out" | grep '^degraded=')"
 
 # --- 8d. the core.hooksPath claim cloud/README.md now makes ----------------
 #
