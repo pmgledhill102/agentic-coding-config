@@ -1929,7 +1929,24 @@ if [ -x "$tc_dir/start" ] && [ -f "$tc_dir/args" ]; then
   esac
 fi
 
-if ! command -v pre-commit > /dev/null 2>&1; then
+# Is a REAL pre-commit installed? `command -v` is not enough here: the
+# toolchain shims sit first on a session's PATH and include pre-commit, so the
+# shim answers even when nothing is behind it. A shim is a symlink to
+# agent-shim, so skip those. The exec below still goes through PATH, shim
+# included, so the call is timed as usual.
+have_pc=no
+tc_ifs=$IFS
+IFS=:
+for tc_d in $PATH; do
+  [ -x "$tc_d/pre-commit" ] || continue
+  case "$(readlink "$tc_d/pre-commit" 2> /dev/null)" in
+    *agent-shim) continue ;;
+  esac
+  have_pc=yes
+  break
+done
+IFS=$tc_ifs
+if [ "$have_pc" = no ]; then
   # Loud only where pre-commit was meant to be here. A workstation without it
   # is not this hook's business.
   [ -f "$tc_dir/args" ] && echo "pre-commit: NOT CHECKED -- pre-commit is not installed in this container." >&2
