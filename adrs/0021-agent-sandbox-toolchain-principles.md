@@ -1,6 +1,7 @@
 # ADR-0021: Principles for agent sandbox toolchains
 
-- **Status**: Accepted (2026-10-19)
+- **Status**: Accepted (2026-10-19); amended 2026-11-10 with the per-tool
+  classification (#631)
 - **Date**: 2026-10-19
 - **Tags**: cloud, toolchain, developer-experience, observability, ci
 - **Scope**: user (applies to all personal repos and agent surfaces)
@@ -97,6 +98,55 @@ That gives one generic environment both parity and a fast start, which is
 also why principle 4 needs no "no commits" environment. Whether background
 install actually beats eager install, per tool, is decided by principle 3.
 Issue #625 measures watched wait time, and its acceptance records the result.
+
+## Amendment (2026-11-10): the per-tool classification
+
+Principle 3 has now been applied. The data is in
+[`docs/toolchain-install-classification.md`](../docs/toolchain-install-classification.md):
+103 sessions, 88 builds and 48 sessions of shim events. The criterion is
+**watched wait time**, as principle 2 says, not machine seconds.
+
+Two numbers decide it:
+
+- **About 72% of sessions are rebuilds**, and the first prompt arrives about 3 s
+  after session start. So on most sessions the whole setup is watched.
+- **The toolchain is first needed late**: the first `pre-commit` run is p50 505 s
+  after session start, and only about 4% of sessions need it in a watched turn
+  before a background install would finish.
+
+At those numbers, eager install costs about 91 watched seconds per session. A
+background installer costs about 2 s at a median install, and 21 s at a
+pessimistic bound that applies p90 to every session.
+
+The classification:
+
+| Class | Tools |
+| --- | --- |
+| **Eager** (setup script) | the toolkit, helpers, skills, shims, gcloud, gh, and the global git hook with `core.hooksPath` |
+| **Background, first in the queue** | pre-commit, gitleaks, shellcheck, actionlint |
+| **Background** | cspell, markdownlint-cli2, semgrep, hadolint, trivy, terraform, tflint, the tflint ruleset, checkov, golangci-lint, and the pre-commit hook-environment warm |
+| **On-demand** | none |
+
+The background installer has three obligations:
+
+- **The git hook waits for it, and never skips.** The hook is installed eagerly
+  for exactly this reason. A commit that arrives while the install is still
+  running waits for it, bounded well under the agent's 120 s foreground
+  timeout. If the bound runs out, the commit fails with a "still installing"
+  message rather than passing unchecked (principle 1).
+- **A failure is reported per tool.** One stalled download costs one tool. The
+  installer writes its own manifest, and a failed tool reads as `degraded`,
+  never as absent (#631, #738).
+- **Nobody watches it, so it may retry patiently.** A backoff measured in
+  minutes is fine in the background, where it would not be on the setup path.
+
+On-demand is empty on purpose. An inline install inside a commit runs within one
+agent Bash call, close to that call's timeout, and a commit that waits on the
+background installer is strictly better.
+
+The classification is revisited when the manifest `timings=` line shows the
+predicted saving (about 93 watched seconds per session) not arriving, or when
+the shims record a non-zero `blocked_ms` often enough to matter.
 
 ## Consequences
 
