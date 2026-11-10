@@ -159,7 +159,7 @@ copy, its flags and a launcher under `~/.agents/toolchain/`. The
 record rather than a second `bootstrap` one. A commit that arrives first waits
 for the install, up to 75 s. If it is still running after that, the commit is
 stopped with a message, never passed unchecked. A shimmed tool waits the same
-way and records the time in `blocked_ms`. The default is still `eager`.
+way and records the time in `blocked_ms`. It is the default for `claude-cloud-sandbox`; every other profile stays `eager`, and `--toolchain=eager` is the refund.
 
 This buys **coverage**, not the ability to push. A container without these
 tools pushes fine: `precommit-claude-hook` classifies a hook that fails purely

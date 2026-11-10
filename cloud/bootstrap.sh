@@ -347,11 +347,12 @@ WITH_DEVKNOWLEDGE=
 PROFILE=claude-cloud-sandbox
 PREFIX=
 # When the pre-commit toolchain installs (ADR-0021, 2026-11-10 amendment):
-#   eager       in this run, before the first prompt (the default)
+#   eager       in this run, before the first prompt
 #   background  defer it: this run installs the git hook and leaves a copy of
 #               itself for toolchain-start, which a SessionStart hook runs
 #   run         internal: the deferred run itself, started by toolchain-start
-TOOLCHAIN=eager
+# Unset, it follows the profile: see def_toolchain below.
+TOOLCHAIN=
 
 # The trap goes on before anything that can fail, which is why TMP is declared
 # empty here and filled in much further down: an exit trap installed after the
@@ -408,7 +409,7 @@ while [ $# -gt 0 ]; do
   shift
 done
 case "$TOOLCHAIN" in
-  eager | background | run) ;;
+  "" | eager | background | run) ;;
   *) die "--toolchain takes eager, background or run, not '$TOOLCHAIN'" ;;
 esac
 
@@ -481,6 +482,17 @@ WITH_GH=$(resolve "$WITH_GH" 0)
 # Before that fix "off" meant every push needed --no-verify, which made
 # installing them look mandatory for the wrong reason.
 WITH_TERRAFORM=$(resolve "$WITH_TERRAFORM" "$def_terraform")
+
+# Background for the Claude cloud sandbox, whose SessionStart hook starts the
+# deferred run and whose agent phase has the network to finish it. Eager
+# everywhere else: Codex's agent phase is offline, so a deferred download
+# there could never finish (docs/cloud-sandbox-design.md section 5).
+# --toolchain=eager is the refund.
+case "$PROFILE" in
+  claude-cloud-sandbox) def_toolchain=background ;;
+  *) def_toolchain=eager ;;
+esac
+TOOLCHAIN=$(resolve "$TOOLCHAIN" "$def_toolchain")
 
 # Developer Knowledge is on for claude-cloud-sandbox. Whether it works is a
 # property of the environment's API credentials, which nothing here can check:
