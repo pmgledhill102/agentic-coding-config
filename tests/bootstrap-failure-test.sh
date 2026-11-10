@@ -51,7 +51,8 @@ fi
 # those cases is about. Section 10 tests the capability itself, and section 11
 # runs it against a fixture.
 BOOTSTRAP_FULL=$(mktemp)
-sed 's/^capability 1 golangci cap_golangci$/capability 0 golangci cap_golangci/' \
+# shellcheck disable=SC2016 # $TC_TOOLS is a literal the sed matches
+sed 's/^capability "\$TC_TOOLS" golangci cap_golangci$/capability 0 golangci cap_golangci/' \
   "$BOOTSTRAP" >"$BOOTSTRAP_FULL"
 trap 'rm -f "$BOOTSTRAP_FULL"' EXIT
 
@@ -556,6 +557,40 @@ check "cap_precommit writes the marker right after the terraform step" "1" \
     | grep -c ': >"\$TMP/terraform-installed"$')"
 rm -rf "$H"
 
+# --- 7c. --toolchain=background: the setup run defers the toolchain (#631) ---
+#
+# The setup phase installs the toolkit and the git hook, installs no pre-commit
+# tool, and leaves what toolchain-start needs to re-run this script at the same
+# sha. The deferred run itself installs the real toolchain, which is minutes of
+# downloads, so tests/toolchain-start-test.sh covers the launcher and the
+# hook's waiting against a fake run instead.
+H=$(mktemp -d)
+HOME="$H" sh "$BOOTSTRAP_FULL" "$BOOTSTRAP_TEST_REF" --toolchain=background \
+  --no-gcloud --no-hooks --no-gh --no-devknowledge >"$H/run.log" 2>&1
+check "a background-mode setup run succeeds" "0" "$?"
+M="$H/.agents/.bootstrap-manifest"
+TCD="$H/.agents/toolchain"
+check "  status ok and nothing degraded" "ok|" \
+  "$(sed -n 's/^status=//p' "$M")|$(sed -n 's/^degraded=//p' "$M")"
+check "  the manifest says the toolchain was deferred" "background" \
+  "$(sed -n 's/^toolchain=//p' "$M")"
+check "  terraform is deferred, not claimed and not degraded" "deferred" \
+  "$(sed -n 's/^terraform=//p' "$M")"
+check "  no pre-commit tool was installed by this run" "0" \
+  "$(sed -n 's/^timings=//p' "$M" | tr ' ' '\n' | grep -c '^precommit')"
+check "  the deferred run is pending" "pending" "$(cat "$TCD/state" 2>/dev/null)"
+check "  its launcher and script are in place" "1 1" \
+  "$([ -x "$TCD/start" ] && echo 1 || echo 0) $([ -s "$TCD/bootstrap.sh" ] && echo 1 || echo 0)"
+check "  args start with a resolved sha and end in --toolchain=run" "1 --toolchain=run" \
+  "$(head -1 "$TCD/args" | grep -c '^[0-9a-f]\{40\}$') $(tail -1 "$TCD/args")"
+check "  the git hook is installed, pointing at the toolchain dir" "1" \
+  "$(count "$TCD" "$H/.config/git/hooks/pre-commit")"
+check "  and core.hooksPath points at it" "$H/.config/git/hooks" \
+  "$(HOME="$H" git config --global core.hooksPath)"
+check "  the launcher reports pending" "pending" \
+  "$(TOOLCHAIN_DIR="$TCD" sh "$TCD/start" --status)"
+rm -rf "$H"
+
 # --- 7b. sha256_is: a digest pin that can refuse ----------------------------
 #
 # hadolint and trivy are installed only when their download matches a pinned
@@ -1022,8 +1057,11 @@ rm -rf "$H"
 echo
 echo "cloud/bootstrap.sh — golangci-lint"
 
+# Unconditional in every run that installs the toolchain: eager, and the
+# deferred run. Only a background setup run, which defers it, skips it.
+# shellcheck disable=SC2016 # $TC_TOOLS is a literal the grep matches
 check "golangci-lint is installed unconditionally" "1" \
-  "$(count '^capability 1 golangci cap_golangci$' "$BOOTSTRAP")"
+  "$(count '^capability "\$TC_TOOLS" golangci cap_golangci$' "$BOOTSTRAP")"
 check "  and the full runs above really did skip it" "1" \
   "$(count '^capability 0 golangci cap_golangci$' "$BOOTSTRAP_FULL")"
 check "  the manifest records its version" "1" \

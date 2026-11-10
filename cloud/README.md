@@ -146,6 +146,21 @@ It installs inside `--with-precommit`, since serving that config is the whole
 reason the binaries are here: `--with-terraform --no-precommit` installs
 nothing.
 
+`--toolchain=background` defers the pre-commit toolchain (pre-commit, its
+linters, the Terraform tools, golangci-lint and the hook-environment warm) from
+the setup phase to the session (ADR-0021, 2026-11-10 amendment; #631). Most
+sessions are rebuilds, so the setup phase is watched by the user waiting for the
+first prompt, while the toolchain is first needed minutes later. The setup run
+installs the toolkit and the global git hook, then leaves its own sha-addressed
+copy, its flags and a launcher under `~/.agents/toolchain/`. The
+`toolchain-start --hook` SessionStart entry re-runs it there as
+`--toolchain=run`, in the background. That run reports to
+`~/.agents/toolchain/manifest` and `state`, and spools a `toolchain` telemetry
+record rather than a second `bootstrap` one. A commit that arrives first waits
+for the install, up to 75 s. If it is still running after that, the commit is
+stopped with a message, never passed unchecked. A shimmed tool waits the same
+way and records the time in `blocked_ms`. The default is still `eager`.
+
 This buys **coverage**, not the ability to push. A container without these
 tools pushes fine: `precommit-claude-hook` classifies a hook that fails purely
 because its binary is missing as *not checked* and lets the command through,

@@ -105,6 +105,10 @@ jobs:
       # bootstrap; nothing the bootstrap installs could report that itself.
       - name: Run the bootstrap-absent hook tests
         run: sh tests/bootstrap-absent-hook-test.sh
+      # The deferred toolchain (#631): it starts once, restarts when its process
+      # died, and a commit that arrives before it finishes is stopped, not passed.
+      - name: Run the background toolchain launcher tests
+        run: sh tests/toolchain-start-test.sh
       # curl and gh are stubbed on PATH, so every status is driven offline.
       # The runner's real job is in a sandbox; this proves it can fail.
       - name: Run the environment-conformance tests

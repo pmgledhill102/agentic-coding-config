@@ -51,6 +51,7 @@ python3 tests/tool-manifest.py              # tools.json is valid and bootstrap.
 python3 tests/precommit-pins.py             # setup skills stamp precommit-warm.yaml's hook revs  <1s
 sh tests/estate-report-test.sh           # estate flag thresholds and bucketing  <1s
 sh tests/bootstrap-absent-hook-test.sh   # the hook that says a container never ran the bootstrap  <1s
+sh tests/toolchain-start-test.sh         # deferred toolchain starts once; a commit waits or fails, never skips  ~5s
 sh tests/credguard-test.sh               # credential-printing guard classification  <1s
 sh tests/prepush-guard-test.sh           # push guard judges the repo the push targets  ~1s
 sh tests/sh-parse-test.sh                # home/bin #!/bin/sh scripts parse (bash 3.2 case-in-$(...))  <1s

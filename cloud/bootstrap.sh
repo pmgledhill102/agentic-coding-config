@@ -243,6 +243,27 @@ record_failure() {
 
   _agents="${AGENTS_DIR:-$HOME/.agents}"
   mkdir -p "$_agents" 2>/dev/null || return 0
+
+  # The deferred toolchain run reports into its own manifest and state file.
+  # The setup run's manifest and the policy file describe a toolkit that did
+  # install, so a toolchain failure must not overwrite them with a banner.
+  if [ "${TOOLCHAIN:-}" = run ]; then
+    mkdir -p "$_agents/toolchain" 2>/dev/null || return 0
+    {
+      echo "status=failed"
+      echo "exit_code=$_rc"
+      echo "failed_step=$_step"
+      echo "failed_at=$_when"
+      echo "ref=$REF"
+      echo "log=$_agents/toolchain/install.log"
+    } >"$_agents/toolchain/manifest" 2>/dev/null || true
+    echo failed >"$_agents/toolchain/state" 2>/dev/null || true
+    if [ -x "${BIN_DIR:-/nonexistent}/agent-telemetry" ]; then
+      "$BIN_DIR/agent-telemetry" record toolchain "$_agents/toolchain/manifest" >/dev/null 2>&1 || true
+    fi
+    return 0
+  fi
+
   {
     echo "status=failed"
     echo "exit_code=$_rc"
@@ -325,6 +346,12 @@ WITH_TERRAFORM=
 WITH_DEVKNOWLEDGE=
 PROFILE=claude-cloud-sandbox
 PREFIX=
+# When the pre-commit toolchain installs (ADR-0021, 2026-11-10 amendment):
+#   eager       in this run, before the first prompt (the default)
+#   background  defer it: this run installs the git hook and leaves a copy of
+#               itself for toolchain-start, which a SessionStart hook runs
+#   run         internal: the deferred run itself, started by toolchain-start
+TOOLCHAIN=eager
 
 # The trap goes on before anything that can fail, which is why TMP is declared
 # empty here and filled in much further down: an exit trap installed after the
@@ -375,10 +402,15 @@ while [ $# -gt 0 ]; do
       PREFIX="$1"
       ;;
     --prefix=*) PREFIX="${1#--prefix=}" ;;
+    --toolchain=*) TOOLCHAIN="${1#--toolchain=}" ;;
     *) die "unknown argument: $1" ;;
   esac
   shift
 done
+case "$TOOLCHAIN" in
+  eager | background | run) ;;
+  *) die "--toolchain takes eager, background or run, not '$TOOLCHAIN'" ;;
+esac
 
 # --- what the profile implies ------------------------------------------------
 #
@@ -1083,7 +1115,7 @@ COMPOSED_SKILLS="retrospective start-session end-session"
 # env-conformance is start-session's too: its gather runs the fast subset, and
 # reads the matrix from ../conformance/ beside it, installed just below.
 # env-conformance-stamp is the env-conformance skill's, for its scheduled mode.
-BIN_SCRIPTS="start-session-gather-state start-session-claude-drift session-repo-resolve end-session-gather-state end-session-squash-merged session-cache-verdict env-conformance env-conformance-stamp"
+BIN_SCRIPTS="start-session-gather-state start-session-claude-drift session-repo-resolve end-session-gather-state end-session-squash-merged session-cache-verdict env-conformance env-conformance-stamp toolchain-start"
 
 # Defensive: the credential-helper section above already creates this, but the
 # dependency is invisible from here and a reordering would break it silently.
@@ -1833,6 +1865,14 @@ cap_precommit() {
   log "precmit -> $(command -v pre-commit) ($(pre-commit --version))"
   step_end precommit.pre-commit
 
+  install_git_hook
+}
+
+# install_git_hook: the global pre-commit hook. In eager and run modes
+# cap_precommit installs it last. In background mode it installs on its own,
+# at setup time, because the hook is what makes a commit wait for the deferred
+# toolchain rather than skip a gate that has not arrived yet.
+install_git_hook() {
   # A GLOBAL hook via core.hooksPath, not `pre-commit install` per repo.
   #
   # `pre-commit install` writes into an existing clone's .git/hooks, and this
@@ -1856,7 +1896,7 @@ cap_precommit() {
   # cloud/README.md carries this for the repos that have to write against it.
   HOOK_DIR="$HOME/.config/git/hooks"
   mkdir -p "$HOOK_DIR"
-  cat >"$HOOK_DIR/pre-commit" <<'HOOK'
+  sed "s#@TOOLCHAIN_DIR@#$AGENTS_DIR/toolchain#g" >"$HOOK_DIR/pre-commit" <<'HOOK'
 #!/bin/sh
 # Installed by agentic-coding-config cloud/bootstrap.sh.
 #
@@ -1866,12 +1906,84 @@ cap_precommit() {
 # configuration to run, and blocking its commits would be this container
 # inventing policy the repo never asked for.
 [ -f .pre-commit-config.yaml ] || exit 0
-command -v pre-commit > /dev/null 2>&1 || exit 0
+
+# A container bootstrapped with --toolchain=background installs pre-commit
+# after the session starts. A commit that arrives first WAITS for it, and never
+# passes unchecked (ADR-0021, 2026-11-10 amendment). The wait is bounded well
+# under an agent's 120 s foreground timeout, and a commit still waiting at the
+# bound fails loudly. The launcher also restarts an install whose process died.
+tc_dir="${TOOLCHAIN_DIR:-@TOOLCHAIN_DIR@}"
+if [ -x "$tc_dir/start" ] && [ -f "$tc_dir/args" ]; then
+  TOOLCHAIN_DIR="$tc_dir" "$tc_dir/start" --wait "${TOOLCHAIN_WAIT_S:-75}" > /dev/null
+  case $? in
+    0) ;;
+    2)
+      echo "pre-commit: the background toolchain install is still running (log: $tc_dir/install.log)." >&2
+      echo "pre-commit: this commit was NOT checked and was stopped. Retry it in a minute." >&2
+      exit 1
+      ;;
+    *)
+      echo "pre-commit: the background toolchain install FAILED (manifest: $tc_dir/manifest, log: $tc_dir/install.log)." >&2
+      echo "pre-commit: running whatever hooks can run; anything missing is reported below, not passed." >&2
+      ;;
+  esac
+fi
+
+if ! command -v pre-commit > /dev/null 2>&1; then
+  # Loud only where pre-commit was meant to be here. A workstation without it
+  # is not this hook's business.
+  [ -f "$tc_dir/args" ] && echo "pre-commit: NOT CHECKED -- pre-commit is not installed in this container." >&2
+  exit 0
+fi
 exec pre-commit run --hook-stage pre-commit
 HOOK
   chmod 0755 "$HOOK_DIR/pre-commit"
   git config --global core.hooksPath "$HOOK_DIR"
   log "githook -> $HOOK_DIR/pre-commit (core.hooksPath, all repos)"
+}
+
+# --- deferring the toolchain to the session (--toolchain=background) ----------
+#
+# Leaves everything toolchain-start needs to re-run this script later, at the
+# same commit, as `--toolchain=run`:
+#   bootstrap.sh  this commit's script, fetched by sha, so the deferred run
+#                 installs the same pins as the toolkit already in place
+#   args          the resolved sha and this run's resolved flags, one per line
+#   start         the launcher, copied here so the git hook can find it by a
+#                 path fixed at install time
+#   state         `pending` until the launcher starts the run
+# A ref that did not resolve (no network at setup) is passed as the ref itself,
+# and the deferred run resolves it again.
+on_off_flag() { # on_off_flag <0|1> <name> -> --with-<name> | --no-<name>
+  if [ "$1" -eq 1 ]; then echo "--with-$2"; else echo "--no-$2"; fi
+}
+cap_toolchain_defer() {
+  _tc="$AGENTS_DIR/toolchain"
+  mkdir -p "$_tc" || die "could not create $_tc"
+  fetch "$RAW/cloud/bootstrap.sh" "$_tc/bootstrap.sh" \
+    || die "could not fetch this commit's bootstrap.sh for the deferred run"
+  install -m 0755 "$CLAUDE_DIR/bin/toolchain-start" "$_tc/start" \
+    || die "toolchain-start is not installed, so nothing could start the deferred run"
+  _ref=$resolved
+  [ "$kind" != unresolved ] || _ref=$REF
+  {
+    echo "$_ref"
+    echo "--profile=$PROFILE"
+    on_off_flag "$WITH_PRECOMMIT" precommit
+    on_off_flag "$WITH_TERRAFORM" terraform
+    on_off_flag "$WITH_HOOKS" hooks
+    # The deferred run installs the toolchain and nothing else, so the
+    # capabilities this run already handled are switched off for it.
+    echo "--no-gcloud"
+    echo "--no-gh"
+    echo "--no-devknowledge"
+    if [ -n "$PREFIX" ]; then echo "--prefix=$PREFIX"; fi
+    echo "--toolchain=run"
+  } >"$_tc/args.tmp" || die "could not write $_tc/args"
+  rm -f "$_tc/pid" "$_tc/manifest" "$_tc/lock" 2>/dev/null || true
+  echo pending >"$_tc/state" || die "could not write $_tc/state"
+  mv "$_tc/args.tmp" "$_tc/args" || die "could not write $_tc/args"
+  log "toolchn -> deferred to the session: $_tc (started by toolchain-start)"
 }
 
 # --- warming the pre-commit cache ---------------------------------------------
@@ -2272,18 +2384,37 @@ capability() {
   return 0
 }
 
-capability "$WITH_GCLOUD" gcloud cap_gcloud
-capability "$WITH_PRECOMMIT" precommit cap_precommit
+# Which capabilities this run owns. Eager does everything. Background defers
+# the toolchain (precommit, its warm, golangci) and installs the git hook in its
+# place. Run is that deferred toolchain and nothing else (ADR-0021, 2026-11-10
+# amendment).
+TC_TOOLS=1
+TC_SETUP=1
+TC_DEFER=0
+case "$TOOLCHAIN" in
+  background)
+    TC_TOOLS=0
+    TC_DEFER=1
+    ;;
+  run) TC_SETUP=0 ;;
+esac
+WANT_PRECOMMIT=$((WITH_PRECOMMIT * TC_TOOLS))
+WANT_DEFER=$((WITH_PRECOMMIT * TC_DEFER))
+
+capability $((WITH_GCLOUD * TC_SETUP)) gcloud cap_gcloud
+capability "$WANT_PRECOMMIT" precommit cap_precommit
+capability "$WANT_DEFER" githook install_git_hook
+capability "$WANT_DEFER" toolchain-defer cap_toolchain_defer
 # Separate from cap_precommit, not folded into it, because they fail
 # differently. Without pre-commit there is no gate at all; without the warm the
 # gate is present and the first commit in a fresh container pays the build for
 # it. Its own entry means `degraded=` says which of the two happened, and
 # `timings` carries its duration rather than burying it in the install's (#441).
-capability "$WITH_PRECOMMIT" precommit-warm cap_precommit_warm
-capability "$WITH_GH" gh cap_gh
-capability "$WITH_DEVKNOWLEDGE" devknowledge cap_devknowledge
-capability 1 golangci cap_golangci
-capability "$WITH_HOOKS" shims cap_shims
+capability "$WANT_PRECOMMIT" precommit-warm cap_precommit_warm
+capability $((WITH_GH * TC_SETUP)) gh cap_gh
+capability $((WITH_DEVKNOWLEDGE * TC_SETUP)) devknowledge cap_devknowledge
+capability "$TC_TOOLS" golangci cap_golangci
+capability $((WITH_HOOKS * TC_SETUP)) shims cap_shims
 
 # precommit_retry: one more attempt at each tool pc_tool recorded as failed,
 # now that every other capability has run (see pc_tool). It runs at the top
@@ -2291,13 +2422,33 @@ capability "$WITH_HOOKS" shims cap_shims
 # a second `die` from ending the run. Whatever still fails is named in
 # `degraded=` as precommit.<name>.
 precommit_retry() {
-  [ -s "$TMP/precommit-failed" ] || return 0
-  mv "$TMP/precommit-failed" "$TMP/precommit-failed.first"
-  STEP_SUFFIX=.retry
-  while read -r _pr_name _pr_fn; do
-    log "retry   : precommit.$_pr_name, once more after the other capabilities"
-    pc_tool "$_pr_name" "$_pr_fn" </dev/null
-  done <"$TMP/precommit-failed.first"
+  # Eager: one retry, straight away, because the first prompt is waiting.
+  # Run (the deferred toolchain): nobody is watching, so up to three more
+  # rounds 30, 60 and 120 s apart, which covers the minutes-long stalls seen
+  # at container start.
+  _pr_rounds=1
+  _pr_gap=0
+  if [ "$TOOLCHAIN" = run ]; then
+    _pr_rounds=3
+    _pr_gap=30
+  fi
+  _pr_round=0
+  while [ -s "$TMP/precommit-failed" ] && [ "$_pr_round" -lt "$_pr_rounds" ]; do
+    _pr_round=$((_pr_round + 1))
+    # .retry, then .retry2 and .retry3: one timing key per attempt.
+    STEP_SUFFIX=.retry
+    [ "$_pr_round" -eq 1 ] || STEP_SUFFIX=".retry$_pr_round"
+    if [ "$_pr_gap" -gt 0 ]; then
+      log "retry   : waiting ${_pr_gap}s before retry round $_pr_round"
+      sleep "$_pr_gap"
+      _pr_gap=$((_pr_gap * 2))
+    fi
+    mv "$TMP/precommit-failed" "$TMP/precommit-failed.prev"
+    while read -r _pr_name _pr_fn; do
+      log "retry   : precommit.$_pr_name, once more after the other capabilities"
+      pc_tool "$_pr_name" "$_pr_fn" </dev/null
+    done <"$TMP/precommit-failed.prev"
+  done
   STEP_SUFFIX=
   if [ -s "$TMP/step-timings" ]; then
     TIMINGS="$TIMINGS $(tr '\n' ' ' <"$TMP/step-timings" | sed 's/ $//')"
@@ -2309,7 +2460,7 @@ precommit_retry() {
     done <"$TMP/precommit-failed"
   fi
 }
-if [ "$WITH_PRECOMMIT" -eq 1 ]; then
+if [ "$WANT_PRECOMMIT" -eq 1 ]; then
   precommit_retry
 fi
 
@@ -2324,6 +2475,10 @@ fi
 terraform_outcome() {
   if [ "$WITH_TERRAFORM" -ne 1 ] || [ "$WITH_PRECOMMIT" -ne 1 ]; then
     echo 0
+  elif [ "${TOOLCHAIN:-eager}" = background ]; then
+    # Not installed by this run, and not missing: the deferred run reports it
+    # in the toolchain manifest.
+    echo deferred
   elif [ -f "$TMP/terraform-installed" ]; then
     echo 1
   else
@@ -2359,7 +2514,15 @@ fi
 # them.
 
 MANIFEST="$AGENTS_DIR/.bootstrap-manifest"
-mkdir -p "$AGENTS_DIR"
+RECORD_KIND=bootstrap
+# The deferred toolchain run writes the same fields into a manifest of its own,
+# and spools it under its own kind: the setup run's manifest is what a session
+# reads to judge the container's age, and a build must not be counted twice.
+if [ "$TOOLCHAIN" = run ]; then
+  MANIFEST="$AGENTS_DIR/toolchain/manifest"
+  RECORD_KIND=toolchain
+fi
+mkdir -p "$(dirname "$MANIFEST")"
 
 TOTAL_SECS=$(($(now_s) - BOOT_START))
 record_timing total "$TOTAL_SECS"
@@ -2414,6 +2577,8 @@ fi
   echo "bin_dir=$BIN_DIR"
   echo "bin_dir_on_path=$BIN_ON_PATH"
   echo "precommit=$WITH_PRECOMMIT"
+  # eager, background (deferred: see toolchain/manifest) or run
+  echo "toolchain=$TOOLCHAIN"
   # How many pre-commit hook environments the warm left in the cache. 0 on a
   # container that never warmed one, which is the difference between "the gate
   # is installed" and "the gate can run without a two-minute build" (#441).
@@ -2443,7 +2608,16 @@ log "manifst -> $MANIFEST ($kind $(echo "$resolved" | cut -c1-12))"
 # script requests never receive a network secret, so a ship from here would be
 # unauthenticated in a proxy-injected environment. The spool is shipped later, by
 # the SessionStart hook. Best effort: telemetry is never why a bootstrap fails.
-"$BIN_DIR/agent-telemetry" record bootstrap "$MANIFEST" >/dev/null 2>&1 || true
+"$BIN_DIR/agent-telemetry" record "$RECORD_KIND" "$MANIFEST" >/dev/null 2>&1 || true
+
+# The deferred run's outcome, for toolchain-start and the git hook that wait on
+# it. Written last, so `done` never precedes the manifest it summarises.
+if [ "$TOOLCHAIN" = run ]; then
+  case "$manifest_status" in
+    ok) echo "done" >"$AGENTS_DIR/toolchain/state" ;;
+    *) echo "$manifest_status" >"$AGENTS_DIR/toolchain/state" ;;
+  esac
+fi
 
 # --- report -------------------------------------------------------------------
 #

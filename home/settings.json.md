@@ -1131,6 +1131,26 @@ would catch work drifting there mid-session, but it would also block a write the
 user asked for, so it needs a session override to be livable. That decision
 belongs on #569. `SessionStart` alone is the minimum the issue sets.
 
+### SessionStart: `toolchain-start --hook`
+
+The fifth `SessionStart` hook (#631). It starts the deferred toolchain install
+in a container bootstrapped with `--toolchain=background`: the pre-commit
+toolchain and its hook-environment warm, which ADR-0021's 2026-11-10 amendment
+moves out of the setup phase, because a rebuild's setup is watched and the
+toolchain is first needed minutes later.
+
+It launches the bootstrap again at the same resolved sha, as `--toolchain=run`,
+with `setsid nohup`, and returns at once. The install writes its own manifest
+and state file under `~/.agents/toolchain/`. The global git hook and the shims
+wait on that state, and the same helper restarts a run whose process died, so a
+reaped install is restarted rather than waited on forever.
+
+**A no-op wherever nothing was deferred.** It does nothing unless
+`~/.agents/toolchain/args` exists, which only a background-mode bootstrap
+writes. So it ships in this one shared file and is silent on workstations and
+eager-mode containers. It prints nothing and exits 0 unconditionally, and the
+5 s timeout is generous for a launcher that forks and returns.
+
 ### SessionStart: `dockerd-start-claude-hook`
 
 The fourth `SessionStart` hook (#683). A Claude Code cloud sandbox ships

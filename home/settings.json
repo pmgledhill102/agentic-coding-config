@@ -362,6 +362,11 @@
             "type": "command",
             "command": "~/.claude/bin/dockerd-start-claude-hook",
             "timeout": 20
+          },
+          {
+            "type": "command",
+            "command": "~/.claude/bin/toolchain-start --hook",
+            "timeout": 5
           }
         ]
       }
