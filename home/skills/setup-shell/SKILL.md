@@ -43,18 +43,18 @@ Append these repos to the existing `.pre-commit-config.yaml`:
 
 ```yaml
   - repo: https://github.com/shellcheck-py/shellcheck-py
-    rev: <latest tag>
+    rev: v0.11.0.1
     hooks:
       - id: shellcheck
         args: ["--severity=warning"]
 
   - repo: https://github.com/scop/pre-commit-shfmt
-    rev: <latest tag>
+    rev: v3.14.1-1
     hooks:
       - id: shfmt
 ```
 
-Look up the latest release tag for each repo and use those for the `rev:` values.
+Use the `rev:` shown, not the latest tag. It is the estate pin from agentic-coding-config's `cloud/precommit-warm.yaml`, which the cloud bootstrap pre-builds, so a new repo's first commit in a sandbox needs no hook build. Bumps go through that file.
 
 ### 5. GitHub Actions workflow
 

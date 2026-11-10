@@ -49,12 +49,12 @@ Append these repos to the existing `.pre-commit-config.yaml`:
 
 ```yaml
   - repo: https://github.com/DavidAnson/markdownlint-cli2
-    rev: <latest tag>
+    rev: v0.23.2
     hooks:
       - id: markdownlint-cli2
 ```
 
-Look up the latest release tag and use it for the `rev:` value.
+Use the `rev:` shown, not the latest tag. It is the estate pin from agentic-coding-config's `cloud/precommit-warm.yaml`, which the cloud bootstrap pre-builds, so a new repo's first commit in a sandbox needs no hook build. Bumps go through that file.
 
 For the prettier hook, do **not** use `pre-commit/mirrors-prettier` — it is archived and no longer receives releases. Use a `repo: local` hook running the project's own binary. If the project has a `package.json`, add prettier as a devDependency (`npm install -D prettier`) and use:
 

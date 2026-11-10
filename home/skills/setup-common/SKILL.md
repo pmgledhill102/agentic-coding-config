@@ -44,7 +44,7 @@ Create `.pre-commit-config.yaml` in the project root (if it doesn't already exis
 ```yaml
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: <latest tag>
+    rev: v6.0.0
     hooks:
       - id: trailing-whitespace
       - id: end-of-file-fixer
@@ -53,7 +53,7 @@ repos:
       - id: check-merge-conflict
 
   - repo: https://github.com/gitleaks/gitleaks
-    rev: <latest tag>
+    rev: v8.30.1
     hooks:
       # The v8.30.1 manifest lacks pass_filenames: false, and `gitleaks git`
       # takes no file arguments, so pre-commit's appended filenames fail every run.
@@ -61,7 +61,7 @@ repos:
         pass_filenames: false
 ```
 
-Look up the latest release tag for each repo and use those for the `rev:` values.
+Use the `rev:` shown, not the latest tag. It is the estate pin from agentic-coding-config's `cloud/precommit-warm.yaml`, which the cloud bootstrap pre-builds, so a new repo's first commit in a sandbox needs no hook build. Bumps go through that file.
 
 Use `gitleaks-system`, not `gitleaks`. The plain id is `language: golang`, so pre-commit compiles gitleaks from source the first time it runs in a container, which takes about 30 seconds. The `-system` id runs the `gitleaks` binary on `PATH`; the workstation Brewfile and the cloud bootstrap both install it. It needs gitleaks 8.19 or later.
 
@@ -177,13 +177,13 @@ Add a cspell pre-commit hook to `.pre-commit-config.yaml`:
 
 ```yaml
   - repo: https://github.com/streetsidesoftware/cspell-cli
-    rev: <latest tag>
+    rev: v10.3.0
     hooks:
       - id: cspell
         types_or: [markdown, plain-text, yaml]
 ```
 
-Look up the latest release tag and use it for the `rev:` value.
+Use the `rev:` shown, not the latest tag. It is the estate pin from agentic-coding-config's `cloud/precommit-warm.yaml`, which the cloud bootstrap pre-builds, so a new repo's first commit in a sandbox needs no hook build. Bumps go through that file.
 
 The `words` array is the project-specific dictionary. As cspell flags legitimate words during the verify step, add them here.
 
@@ -193,12 +193,12 @@ Add an actionlint pre-commit hook to `.pre-commit-config.yaml`:
 
 ```yaml
   - repo: https://github.com/rhysd/actionlint
-    rev: <latest tag>
+    rev: v1.7.12
     hooks:
       - id: actionlint-system
 ```
 
-Look up the latest release tag and use it for the `rev:` value. Use `actionlint-system` rather than `actionlint`, for the same reason as `gitleaks-system`: the plain id compiles from source, and the binary is already installed in both environments.
+Use the `rev:` shown, not the latest tag. It is the estate pin from agentic-coding-config's `cloud/precommit-warm.yaml`, which the cloud bootstrap pre-builds, so a new repo's first commit in a sandbox needs no hook build. Bumps go through that file. Use `actionlint-system` rather than `actionlint`, for the same reason as `gitleaks-system`: the plain id compiles from source, and the binary is already installed in both environments.
 
 ### 5. semgrep (static analysis)
 
