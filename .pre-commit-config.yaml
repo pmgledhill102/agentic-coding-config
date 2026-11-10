@@ -37,11 +37,17 @@ repos:
       - id: cspell
         types_or: [markdown, plain-text, yaml]
 
-  - repo: https://github.com/semgrep/semgrep
-    rev: v1.182.0
+  # semgrep as a system hook, like shellcheck above. The upstream
+  # `language: python` hook clones the semgrep monorepo and builds a ~1.1 GB
+  # venv in it, which a cloud bootstrap then warms for every clone of this repo
+  # (~200 s). The binary is already on PATH: cloud/bootstrap.sh installs it,
+  # and dotfiles' Brewfile does on a workstation.
+  - repo: local
     hooks:
       - id: semgrep
-        args: ["--config", "auto", "--error"]
+        name: semgrep
+        language: system
+        entry: semgrep scan --config auto --error
         pass_filenames: false
 
   - repo: https://github.com/scop/pre-commit-shfmt
