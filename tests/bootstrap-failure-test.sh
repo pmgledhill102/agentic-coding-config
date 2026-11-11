@@ -585,6 +585,8 @@ check "  args start with a resolved sha and end in --toolchain=run" "1 --toolcha
   "$(head -1 "$TCD/args" | grep -c '^[0-9a-f]\{40\}$') $(tail -1 "$TCD/args")"
 check "  the git hook is installed, pointing at the toolchain dir" "1" \
   "$(count "$TCD" "$H/.config/git/hooks/pre-commit")"
+check "  and no install-time placeholder is left in it" "0" \
+  "$(count '@[A-Z_]*@' "$H/.config/git/hooks/pre-commit")"
 check "  and core.hooksPath points at it" "$H/.config/git/hooks" \
   "$(HOME="$H" git config --global core.hooksPath)"
 check "  the launcher reports pending" "pending" \
