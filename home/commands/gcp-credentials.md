@@ -278,6 +278,30 @@ destructive operation** (`terraform destroy`, deleting resources, rewriting
 state): they may be running the other session themselves and know what it is
 doing.
 
+### `gcloud beta`, and an error that may only mean an old SDK
+
+In a cloud sandbox, **`gcloud beta` and `gcloud alpha` work**, even though the
+image ships without those components. The sandbox's `gcloud` wrapper sets
+`CLOUDSDK_CORE_DISABLE_PROMPTS=1`, and with prompts disabled gcloud installs a
+missing component itself and carries on. It does not wait on a confirmation
+nobody can give. A missing component is not a reason to fall back to REST.
+
+The image's SDK can be old, though (570 at the time of writing), and some
+preview features need a newer one. The failure doesn't say "upgrade". Cloud Run
+custom URLs (`--domain=<name>.cloud.run`) fail on 570 with *"The provided domain
+does not appear to be verified for the current account"* and work on 590.0.1.
+So when an error contradicts what you know about the account or project, check
+`gcloud version` before you diagnose IAM or verification, then:
+
+```sh
+gcloud components update --quiet
+```
+
+This needs no approval and no grant. It updates the SDK in place for this
+container only, and a rebuilt sandbox is back on the image's version. That is
+deliberate: updating in every build would add time to most sessions to serve a
+few (#678).
+
 ## Things never to do
 
 - **Never print, `cat`, `grep`, `head` or otherwise read the token file.** The

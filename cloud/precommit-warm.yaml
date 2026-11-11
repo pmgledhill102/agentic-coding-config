@@ -26,11 +26,13 @@
 # shares the one environment. Naming a second id here would build nothing new
 # and give the pins a second place to drift.
 #
-# KEEPING THE PINS HONEST: these match the estate's live configs, which is what
-# makes the warm a hit rather than a second download. `setup-common` tells a new
-# repo to take the latest tag, so a repo set up after a bump here warms
-# partially until someone bumps this file — see #442. When you bump a rev in
-# this estate's configs, bump it here in the same change.
+# THIS FILE IS THE ESTATE'S REV SOURCE (#442). The setup-* skills stamp these
+# revs into a new repo instead of "the latest tag", so a new repo starts on
+# revs a container has already cached. tests/precommit-pins.py fails CI when a
+# skill snippet, or this repo's own .pre-commit-config.yaml, names one of these
+# hook repos at any other rev. To bump a hook: change it here, run the test,
+# and update every snippet it names, in the same change. An existing repo
+# moves to the new rev on its own schedule and warms partially until it does.
 repos:
   # language: python — cheap, but free to warm alongside the rest.
   - repo: https://github.com/pre-commit/pre-commit-hooks
@@ -52,7 +54,7 @@ repos:
 
   # language: python — downloads the prebuilt shfmt binary.
   - repo: https://github.com/scop/pre-commit-shfmt
-    rev: v3.13.1-1
+    rev: v3.14.1-1
     hooks:
       - id: shfmt
 
@@ -66,7 +68,7 @@ repos:
   # it also fixes which dictionaries the container has — the skew paul-context
   # records in its own config.
   - repo: https://github.com/streetsidesoftware/cspell-cli
-    rev: v10.0.0
+    rev: v10.3.0
     hooks:
       - id: cspell
 

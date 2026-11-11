@@ -802,7 +802,9 @@ fake_cap() {
     step_begin
     step_end fake.one
     PIP_ATTEMPT=2
+    STEP_ROUTE=uv
     step_end fake.two
+    step_end fake.three
 }
 capability 1 fake fake_cap
 capability 1 other true
@@ -810,7 +812,7 @@ echo "timings=$TIMINGS"
 RUN
 out=$(TMP="$H/t8e" FNS="$H/fn-steps.sh" sh "$H/t8e-run.sh" 2>&1)
 check "step timings are folded in after the capability's own entry" \
-  "timings=fake=0s fake.one=0s fake.two=0s fake.two.pip-attempt=2 other=0s" \
+  "timings=fake=0s fake.one=0s fake.two=0s fake.two.pip-attempt=2 fake.two.route=uv fake.three=0s other=0s" \
   "$(printf '%s\n' "$out" | sed 's/=[0-9]*s/=0s/g' | grep '^timings=')"
 
 # --- 8c''. one pre-commit tool failing costs that tool, not the gate (#631) -----

@@ -48,6 +48,7 @@ python3 tests/compose-context.py         # composed profiles and skills match th
 python3 tests/allowlist-covers-commands.py  # allow rules match documented invocations  <1s
 python3 tests/github-repo-standard.py       # the repo-settings spec holds its own invariants  ~1s
 python3 tests/tool-manifest.py              # tools.json is valid and bootstrap.sh installs its versions  <1s
+python3 tests/precommit-pins.py             # setup skills stamp precommit-warm.yaml's hook revs  <1s
 sh tests/estate-report-test.sh           # estate flag thresholds and bucketing  <1s
 sh tests/bootstrap-absent-hook-test.sh   # the hook that says a container never ran the bootstrap  <1s
 sh tests/credguard-test.sh               # credential-printing guard classification  <1s

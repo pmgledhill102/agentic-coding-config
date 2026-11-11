@@ -174,6 +174,12 @@ jobs:
       - name: The sandbox installs the manifest's versions
         run: python3 tests/tool-manifest.py
 
+      # cloud/precommit-warm.yaml is the estate's hook-rev source (#442): the
+      # bootstrap warms it, and the setup skills stamp its revs into new repos.
+      # A snippet on any other rev is a repo whose first commit misses the warm.
+      - name: Setup skills stamp the warm file's hook revs
+        run: python3 tests/precommit-pins.py
+
   estate-report:
     name: estate-report thresholds
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository

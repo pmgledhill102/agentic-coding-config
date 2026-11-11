@@ -150,6 +150,7 @@ record_timing() { # name seconds
 step_begin() {
   STEP_T0=$(now_s)
   PIP_ATTEMPT=
+  STEP_ROUTE=
 }
 step_end() { # step_end <name>
   _step_secs=$(($(now_s) - STEP_T0))
@@ -161,6 +162,11 @@ step_end() { # step_end <name>
   # spent on fallbacks rather than on the tool.
   if [ -n "${PIP_ATTEMPT:-}" ]; then
     echo "$1.pip-attempt=$PIP_ATTEMPT" >>"$TMP/step-timings"
+  fi
+  # Which install route a step took, where it has more than one (semgrep:
+  # uv, pip, prefix, or present when nothing was installed).
+  if [ -n "${STEP_ROUTE:-}" ]; then
+    echo "$1.route=$STEP_ROUTE" >>"$TMP/step-timings"
   fi
   log "time    : $1 ${_step_secs}s"
   step_begin
@@ -1637,22 +1643,30 @@ pc_semgrep() {
   # whatever is on PATH and fails hard with "Executable `semgrep` not found"
   # when nothing is -- which is why every commit in one paul-context sandbox
   # session had to be issued as SKIP=semgrep (#407). The hook was moved to
-  # system deliberately: pre-commit's own python route costs 1.2G and ~190s
-  # per container, against ~10s and 319M here on a cold uv cache (a tenth of
-  # a second once warm), most of it semgrep-core either way. pip is the
-  # fallback rather than the route: uv sits at /root/.local/bin in this
-  # image, but one image is not the contract.
+  # system deliberately: pre-commit's own python route costs 1.1G and ~200s
+  # per container. This route is cheaper but not cheap: about a minute on a
+  # cold uv cache, most of it the semgrep-core download (73s in one
+  # rebuild). STEP_ROUTE puts precommit.semgrep.route=<route> into the
+  # timings, so a slow install can be attributed to uv, pip or the prefix
+  # layout rather than guessed at. pip is the fallback rather than the
+  # route: uv sits at /root/.local/bin in this image, but one image is not
+  # the contract.
   if ! command -v semgrep >/dev/null 2>&1; then
     if [ "$INSTALL_MODE" != system ]; then
+      STEP_ROUTE=prefix
       py_tool_install semgrep \
         || die "could not install semgrep under $PREFIX"
     elif command -v uv >/dev/null 2>&1; then
+      STEP_ROUTE=uv
       uv tool install semgrep >/dev/null 2>&1 \
         || die "could not install semgrep with uv"
     else
+      STEP_ROUTE=pip
       pip_install semgrep \
         || die "could not install semgrep from PyPI"
     fi
+  else
+    STEP_ROUTE=present
   fi
   command -v semgrep >/dev/null 2>&1 \
     || die "semgrep reported installed but is not on PATH"
