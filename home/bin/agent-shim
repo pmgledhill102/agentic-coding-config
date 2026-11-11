@@ -9,8 +9,10 @@
 #   agent-telemetry event shim <tool> duration_ms= exit_code= via= blocked_ms=
 # `via` is git-hook when an ancestor process is git or pre-commit, else direct
 # (unknown where there is no /proc). `blocked_ms` is the time spent waiting on
-# an installer: always 0 until one exists (#631), present so data stays
-# comparable. Metadata only: no argument, path or output is recorded.
+# the deferred toolchain install (--toolchain=background, #631): a tool not on
+# PATH yet, in a container that deferred its toolchain, waits for that install
+# through toolchain-start rather than failing as absent. 0 everywhere else.
+# Metadata only: no argument, path or output is recorded.
 #
 # `git` is shimmed only to see the first commit of a session: every other git
 # command is exec'd straight through, untimed and unrecorded.
@@ -33,23 +35,44 @@ case "$0" in */*) shim_dir=${0%/*} ;; *) shim_dir=. ;; esac
 # The real tool: the first executable of this name on PATH that is not this
 # shim. Skipping by identity (-ef) as well as by directory is what stops a
 # second route to the shim dir (a symlinked copy of it on PATH) recursing.
-real=""
-_ifs=$IFS
-# nosemgrep: bash.lang.security.ifs-tampering.ifs-tampering -- deliberate colon IFS to walk PATH below, restored to _ifs right after.
-IFS=:
-set -f
-for _d in $PATH; do
-    [ -n "$_d" ] || _d=.
-    [ "$_d" = "$shim_dir" ] && continue
-    _c="$_d/$tool"
-    if [ -f "$_c" ] && [ -x "$_c" ] && ! [ "$_c" -ef "$0" ]; then
-        real=$_c
-        break
+resolve_real() {
+    real=""
+    _ifs=$IFS
+    # nosemgrep: bash.lang.security.ifs-tampering.ifs-tampering -- deliberate colon IFS to walk PATH below, restored to _ifs right after.
+    IFS=:
+    set -f
+    for _d in $PATH; do
+        [ -n "$_d" ] || _d=.
+        [ "$_d" = "$shim_dir" ] && continue
+        _c="$_d/$tool"
+        if [ -f "$_c" ] && [ -x "$_c" ] && ! [ "$_c" -ef "$0" ]; then
+            real=$_c
+            break
+        fi
+    done
+    set +f
+    # nosemgrep: bash.lang.security.ifs-tampering.ifs-tampering -- restores the IFS saved in _ifs before the PATH walk.
+    IFS=$_ifs
+}
+resolve_real
+
+blocked_ms=0
+if [ -z "$real" ]; then
+    # Not installed YET is different from not installed: a container that
+    # deferred its toolchain is still installing it. Wait for that, bounded
+    # under an agent's 120 s foreground timeout, then look again.
+    tc=${TOOLCHAIN_DIR:-$HOME/.agents/toolchain}
+    if [ "$tool" != git ] && [ -x "$tc/start" ] && [ -f "$tc/args" ]; then
+        echo "$tool: waiting for the background toolchain install ($tc/install.log)" >&2
+        blocked_ms=$(TOOLCHAIN_DIR=$tc "$tc/start" --wait "${TOOLCHAIN_WAIT_S:-75}" 2>/dev/null) || true
+        case "$blocked_ms" in '' | *[!0-9]*) blocked_ms=0 ;; esac
+        resolve_real
+        if [ -z "$real" ]; then
+            echo "$tool: not installed: the background toolchain install has not provided it (state: $(TOOLCHAIN_DIR=$tc "$tc/start" --status 2>/dev/null); manifest: $tc/manifest)" >&2
+            exit 127
+        fi
     fi
-done
-set +f
-# nosemgrep: bash.lang.security.ifs-tampering.ifs-tampering -- restores the IFS saved in _ifs before the PATH walk.
-IFS=$_ifs
+fi
 
 if [ -z "$real" ]; then
     # What a shell says for a missing command, and its status.
@@ -141,7 +164,7 @@ t1=$T
     [ -f "$state/first-use/$tool" ] || echo "$_s" > "$state/first-use/$tool"
     helper="$shim_dir/../agent-telemetry"
     [ -x "$helper" ] || exit 0
-    "$helper" event shim "$tool" duration_ms=$((t1 - t0)) exit_code="$rc" via="$via" blocked_ms=0
+    "$helper" event shim "$tool" duration_ms=$((t1 - t0)) exit_code="$rc" via="$via" blocked_ms="$blocked_ms"
 ) < /dev/null > /dev/null 2>&1 4>&- &
 
 # A tool killed by the signal makes the shim exit the same way, so a caller
