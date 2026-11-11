@@ -71,6 +71,14 @@ alive() {
     [ -n "$_pid" ] && kill -0 "$_pid" 2>/dev/null
 }
 
+# put <file> <value>: replace a file in one step. The state and pid files are
+# polled while they are rewritten, and a plain `>` hands a reader an empty file
+# between the truncate and the write. read_state takes empty as `pending`, so
+# that window started a second run.
+put() {
+    echo "$2" >"$1.tmp.$$" && mv -f "$1.tmp.$$" "$1"
+}
+
 now_ms() {
     if IFS=' .' read -r _up _cs _ </proc/uptime 2>/dev/null; then
         echo $((_up * 1000 + ${_cs#0} * 10))
@@ -100,7 +108,7 @@ start() {
     # `running` goes in before the spawn, so a run that finishes quickly writes
     # its outcome over this line rather than the other way round. Until the pid
     # lands, a caller reads `dead` and tries to start; the lock turns it away.
-    echo running >"$state_file"
+    put "$state_file" running
     # setsid so the run outlives the hook or the commit that started it, both
     # of which the harness reaps.
     if command -v setsid >/dev/null 2>&1; then
@@ -108,7 +116,7 @@ start() {
     else
         nohup sh "$dir/bootstrap.sh" "$@" >"$dir/install.log" 2>&1 </dev/null &
     fi
-    echo "$!" >"$pid_file"
+    put "$pid_file" "$!"
     rmdir "$lock" 2>/dev/null || true
 }
 

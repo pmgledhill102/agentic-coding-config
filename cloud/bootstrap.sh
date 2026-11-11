@@ -257,7 +257,10 @@ record_failure() {
       echo "ref=$REF"
       echo "log=$_agents/toolchain/install.log"
     } >"$_agents/toolchain/manifest" 2>/dev/null || true
-    echo failed >"$_agents/toolchain/state" 2>/dev/null || true
+    # tmp then mv: toolchain-start reads this file while the run is going, and
+    # a plain `>` gives a reader an empty file between truncate and write.
+    { echo failed >"$_agents/toolchain/state.tmp" \
+      && mv -f "$_agents/toolchain/state.tmp" "$_agents/toolchain/state"; } 2>/dev/null || true
     if [ -x "${BIN_DIR:-/nonexistent}/agent-telemetry" ]; then
       "$BIN_DIR/agent-telemetry" record toolchain "$_agents/toolchain/manifest" >/dev/null 2>&1 || true
     fi
@@ -827,7 +830,7 @@ npm_global_install() {
   fi
 }
 
-log "installing from ${REF}"
+log "installing from ${REF} at $(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
 # Print the resolved set, not the flags. With defaults in play the command line
 # no longer says what a run will do, and a container is read afterwards far more
@@ -2369,7 +2372,12 @@ cap_shims() {
   mkdir -p "$_sd" || die "could not create $_sd"
   _made=""
   for _t in $SHIM_TOOLS; do
-    command -v "$_t" >/dev/null 2>&1 || continue
+    # A tool not on PATH gets no shim, except in background mode: there the
+    # toolchain is deferred, so nothing is on PATH yet. A shim with nothing
+    # behind it waits for the deferred install, then runs the tool or says it
+    # was not provided (agent-shim), and the git hook ignores a bare shim when
+    # it looks for pre-commit.
+    [ "$TOOLCHAIN" = background ] || command -v "$_t" >/dev/null 2>&1 || continue
     ln -s ../agent-shim "$_sd/$_t" || die "could not create the $_t shim"
     _made="${_made:+$_made }$_t"
   done
@@ -2642,10 +2650,12 @@ log "manifst -> $MANIFEST ($kind $(echo "$resolved" | cut -c1-12))"
 # The deferred run's outcome, for toolchain-start and the git hook that wait on
 # it. Written last, so `done` never precedes the manifest it summarises.
 if [ "$TOOLCHAIN" = run ]; then
+  # tmp then mv, for the same reason as record_failure: a reader polls this.
   case "$manifest_status" in
-    ok) echo "done" >"$AGENTS_DIR/toolchain/state" ;;
-    *) echo "$manifest_status" >"$AGENTS_DIR/toolchain/state" ;;
+    ok) echo "done" >"$AGENTS_DIR/toolchain/state.tmp" ;;
+    *) echo "$manifest_status" >"$AGENTS_DIR/toolchain/state.tmp" ;;
   esac
+  mv -f "$AGENTS_DIR/toolchain/state.tmp" "$AGENTS_DIR/toolchain/state"
 fi
 
 # --- report -------------------------------------------------------------------
@@ -2657,11 +2667,11 @@ fi
 log "timing : $TIMINGS"
 
 if [ -n "$DEGRADED" ]; then
-  log "done, from ${REF} -- DEGRADED, missing: $DEGRADED"
+  log "done, from ${REF} at $(date -u +%Y-%m-%dT%H:%M:%SZ) -- DEGRADED, missing: $DEGRADED"
   log "note: the toolkit installed; the capabilities above did not. Re-running"
   log "      the bootstrap retries them."
 else
-  log "done, from ${REF}"
+  log "done, from ${REF} at $(date -u +%Y-%m-%dT%H:%M:%SZ)"
 fi
 # Repeated at the end, where a reader of the log actually looks.
 if [ "$BIN_ON_PATH" = no ]; then
