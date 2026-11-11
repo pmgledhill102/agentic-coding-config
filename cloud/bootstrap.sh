@@ -153,7 +153,9 @@ step_begin() {
 }
 step_end() { # step_end <name>
   _step_secs=$(($(now_s) - STEP_T0))
-  echo "$1=${_step_secs}s" >>"$TMP/step-timings"
+  # STEP_SUFFIX is `.retry` during precommit_retry, so a second attempt is
+  # timed under its own name and does not repeat the first one's key.
+  echo "$1${STEP_SUFFIX:-}=${_step_secs}s" >>"$TMP/step-timings"
   # Which pip attempt succeeded: 2 and 3 each re-resolve the whole
   # dependency set after the one before failed, so a high number is time
   # spent on fallbacks rather than on the tool.
@@ -1464,8 +1466,40 @@ WRAPPER
 # honoured. It covers Codex, Claude, and a human typing `git commit`, all the
 # same way.
 
-cap_precommit() {
+# --- pre-commit tools, one at a time ------------------------------------------
+#
+# Each tool cap_precommit installs is its own function, run by pc_tool in a
+# subshell of its own. A `die` in one tool then costs that tool, not the
+# capability. In one shared subshell, a single stalled download took every
+# tool after it out too, pre-commit itself included, so the gate was missing
+# for the whole session.
+#
+# A failed tool is listed in $TMP/precommit-failed as "<name> <function>".
+# precommit_retry, after the other capabilities, tries each one once more,
+# and anything that still fails is named in `degraded=` as precommit.<name>.
+# The retry comes late on purpose: the stalls seen so far cleared within a few
+# minutes of container start, and the other capabilities fill that gap.
+pc_tool() { # pc_tool <name> <function>
   step_begin
+  set +e
+  (
+    set -e
+    "$2"
+  )
+  _pc_rc=$?
+  set -e
+  [ "$_pc_rc" -eq 0 ] && return 0
+  _pc_why=$(cat "$FAIL_FILE" 2>/dev/null || echo "no reason recorded")
+  : >"$FAIL_FILE" 2>/dev/null || true
+  # The tool's own step_end never ran, so time it here. A tool that spent 90 s
+  # stalling and then failed is the case the timings exist to show.
+  step_end "precommit.$1"
+  echo "$1 $2" >>"$TMP/precommit-failed"
+  log "WARN    : precommit.$1 did not install -- $_pc_why"
+  return 0
+}
+
+pc_shellcheck() {
   # Both linters are `language: system` hooks in this estate's config -- they
   # run the binary on PATH rather than a pinned mirror, so the hook and CI
   # cannot drift to different versions.
@@ -1493,6 +1527,9 @@ cap_precommit() {
   fi
   log "shellck -> $(command -v shellcheck)"
   step_end precommit.shellcheck
+}
+
+pc_actionlint() {
 
   # actionlint is not packaged in Ubuntu, so it comes from a pinned release.
   # Note github.com answers 403 to this sandbox's curl while the release asset
@@ -1508,6 +1545,9 @@ cap_precommit() {
   fi
   log "actionl -> $(command -v actionlint)"
   step_end precommit.actionlint
+}
+
+pc_gitleaks() {
 
   # gitleaks for the `gitleaks-system` hook /setup-common stamps. The
   # `gitleaks` id is `language: golang` and compiles from source on a cold
@@ -1523,6 +1563,9 @@ cap_precommit() {
   fi
   log "gitleak -> $(command -v gitleaks)"
   step_end precommit.gitleaks
+}
+
+pc_hadolint() {
 
   # hadolint for the upstream `hadolint` hook /setup-docker stamps, which runs
   # the binary on PATH. Not packaged in Ubuntu. The `hadolint-docker` variant
@@ -1543,6 +1586,9 @@ cap_precommit() {
   fi
   log "hadolnt -> $(command -v hadolint)"
   step_end precommit.hadolint
+}
+
+pc_trivy() {
 
   # trivy for `trivy config` (/setup-docker's CI scan, run locally before a
   # push) and the `terraform_trivy` hook /setup-terraform stamps, which shells
@@ -1561,6 +1607,9 @@ cap_precommit() {
   fi
   log "trivy   -> $(command -v trivy)"
   step_end precommit.trivy
+}
+
+pc_markdownlint_cli2() {
 
   # Serves `markdownlint-cli2 "**/*.md"`, the gate CLAUDE.md documents, which
   # needs the binary on PATH. Unlike the three above this is not a
@@ -1580,6 +1629,9 @@ cap_precommit() {
     || die "markdownlint-cli2 installed but is not on PATH"
   log "mdlint  -> $(command -v markdownlint-cli2) ($(markdownlint-cli2 --version 2>&1 | head -1))"
   step_end precommit.markdownlint-cli2
+}
+
+pc_semgrep() {
 
   # semgrep is a `language: system` hook across this estate, so the hook runs
   # whatever is on PATH and fails hard with "Executable `semgrep` not found"
@@ -1606,6 +1658,9 @@ cap_precommit() {
     || die "semgrep reported installed but is not on PATH"
   log "semgrep -> $(command -v semgrep)"
   step_end precommit.semgrep
+}
+
+pc_cspell() {
 
   # cspell already runs inside pre-commit's own node environment, so the hook
   # passes without this. What does not work without it is the documented
@@ -1628,6 +1683,108 @@ cap_precommit() {
     || die "cspell installed but is not on PATH"
   log "cspell  -> $(command -v cspell) ($(cspell --version 2>&1 | head -1))"
   step_end precommit.cspell
+}
+
+pc_terraform() {
+  # Same pinned-release pattern, and the same github.com 403 note, as
+  # actionlint above.
+  # The pin is compared against what is installed, not merely against
+  # whether anything is. The image ships its own terraform at 1.9.8, and
+  # every root in gcp-org-management declares required_version >= 1.11,
+  # so terraform_validate fails init in all 16 layers (#369) -- with a
+  # bare `command -v` guard the install is skipped and that stays true
+  # however the pin is bumped. An installed version NEWER than the pin is
+  # left alone, so this never walks a container backwards.
+  #
+  # The version is the spec's terraform.pin, not this line's to choose:
+  # this runs before anything here can parse JSON, so it is a literal,
+  # and tests/github-repo-standard.py fails CI when the two differ. Move
+  # it in the same change as the spec and every repo's CI -- a sandbox
+  # ahead of CI can write state CI cannot read back (github-standards.md,
+  # Terraform versions).
+  TF_VER=1.16.3
+  tf_have=$(terraform version 2>/dev/null | sed -n '1s/^Terraform v//p')
+  if [ -z "$tf_have" ] \
+    || [ "$(printf '%s\n%s\n' "$TF_VER" "$tf_have" | sort -V | head -1)" != "$TF_VER" ]; then
+    fetch "https://releases.hashicorp.com/terraform/${TF_VER}/terraform_${TF_VER}_linux_amd64.zip" \
+      "$TMP/terraform.zip" \
+      || die "could not download terraform ${TF_VER}"
+    unzip -o -q "$TMP/terraform.zip" -d "$TMP" terraform \
+      || die "could not unpack terraform — is unzip present?"
+    install -m 0755 "$TMP/terraform" "$BIN_DIR/terraform" \
+      || die "could not install terraform"
+  fi
+  log "terrafm -> $(command -v terraform) ($(terraform version | head -1))"
+  step_end precommit.terraform
+  # The manifest's terraform= reads this, not WITH_TERRAFORM. This
+  # capability runs in a subshell, so a file is the only way the outcome
+  # gets out of it.
+  : >"$TMP/terraform-installed"
+}
+
+pc_tflint() {
+
+  if ! command -v tflint >/dev/null 2>&1; then
+    TFL_VER=0.53.0
+    fetch "https://github.com/terraform-linters/tflint/releases/download/v${TFL_VER}/tflint_linux_amd64.zip" \
+      "$TMP/tflint.zip" \
+      || die "could not download tflint ${TFL_VER}"
+    unzip -o -q "$TMP/tflint.zip" -d "$TMP" tflint \
+      || die "could not unpack tflint"
+    install -m 0755 "$TMP/tflint" "$BIN_DIR/tflint" \
+      || die "could not install tflint"
+  fi
+  log "tflint  -> $(command -v tflint)"
+  step_end precommit.tflint
+}
+
+pc_tflint_ruleset_google() {
+
+  # tflint --init resolves plugins through the GitHub releases API, which
+  # the sandbox proxy 403s, so the ruleset is seeded from its release
+  # asset instead -- that URL redirects to a host the proxy does allow,
+  # the same asymmetry the actionlint note above records. Without this,
+  # the tflint stage of the pre-push hook cannot pass in a container at
+  # all. Idempotent: the fetch is skipped once the plugin is in place.
+  TFL_GOOGLE_VER=0.31.0
+  tfl_plugins="$HOME/.tflint.d/plugins/github.com/terraform-linters/tflint-ruleset-google/${TFL_GOOGLE_VER}"
+  if [ ! -x "$tfl_plugins/tflint-ruleset-google" ]; then
+    mkdir -p "$tfl_plugins" \
+      || die "could not create $tfl_plugins"
+    fetch "https://github.com/terraform-linters/tflint-ruleset-google/releases/download/v${TFL_GOOGLE_VER}/tflint-ruleset-google_linux_amd64.zip" \
+      "$TMP/tflint-ruleset-google.zip" \
+      || die "could not download tflint-ruleset-google ${TFL_GOOGLE_VER}"
+    unzip -o -q "$TMP/tflint-ruleset-google.zip" -d "$tfl_plugins" \
+      || die "could not unpack tflint-ruleset-google"
+    chmod 0755 "$tfl_plugins/tflint-ruleset-google" \
+      || die "could not make tflint-ruleset-google executable"
+  fi
+  log "tflplug -> $tfl_plugins"
+  step_end precommit.tflint-ruleset-google
+}
+
+pc_checkov() {
+
+  # checkov is a Python tool, so it takes the same uv-or-pip route as
+  # pre-commit rather than a release tarball.
+  command -v checkov >/dev/null 2>&1 \
+    || python_cli_install checkov \
+    || die "could not install checkov from PyPI"
+  command -v checkov >/dev/null 2>&1 \
+    || die "checkov reported installed but is not on PATH"
+  log "checkov -> $(command -v checkov)"
+  step_end precommit.checkov
+}
+
+cap_precommit() {
+  pc_tool shellcheck pc_shellcheck
+  pc_tool actionlint pc_actionlint
+  pc_tool gitleaks pc_gitleaks
+  pc_tool hadolint pc_hadolint
+  pc_tool trivy pc_trivy
+  pc_tool markdownlint-cli2 pc_markdownlint_cli2
+  pc_tool semgrep pc_semgrep
+  pc_tool cspell pc_cspell
 
   # The Terraform toolchain, opt-in. A repo's .pre-commit-config.yaml can
   # call terraform_fmt, terraform_validate, terraform_tflint and checkov;
@@ -1641,86 +1798,13 @@ cap_precommit() {
   # developer setup to protect, so enforcement that is present beats a
   # download that is avoided. --no-terraform is the refund.
   if [ "$WITH_TERRAFORM" -eq 1 ]; then
-    # Same pinned-release pattern, and the same github.com 403 note, as
-    # actionlint above.
-    # The pin is compared against what is installed, not merely against
-    # whether anything is. The image ships its own terraform at 1.9.8, and
-    # every root in gcp-org-management declares required_version >= 1.11,
-    # so terraform_validate fails init in all 16 layers (#369) -- with a
-    # bare `command -v` guard the install is skipped and that stays true
-    # however the pin is bumped. An installed version NEWER than the pin is
-    # left alone, so this never walks a container backwards.
-    #
-    # The version is the spec's terraform.pin, not this line's to choose:
-    # this runs before anything here can parse JSON, so it is a literal,
-    # and tests/github-repo-standard.py fails CI when the two differ. Move
-    # it in the same change as the spec and every repo's CI -- a sandbox
-    # ahead of CI can write state CI cannot read back (github-standards.md,
-    # Terraform versions).
-    TF_VER=1.16.3
-    tf_have=$(terraform version 2>/dev/null | sed -n '1s/^Terraform v//p')
-    if [ -z "$tf_have" ] \
-      || [ "$(printf '%s\n%s\n' "$TF_VER" "$tf_have" | sort -V | head -1)" != "$TF_VER" ]; then
-      fetch "https://releases.hashicorp.com/terraform/${TF_VER}/terraform_${TF_VER}_linux_amd64.zip" \
-        "$TMP/terraform.zip" \
-        || die "could not download terraform ${TF_VER}"
-      unzip -o -q "$TMP/terraform.zip" -d "$TMP" terraform \
-        || die "could not unpack terraform — is unzip present?"
-      install -m 0755 "$TMP/terraform" "$BIN_DIR/terraform" \
-        || die "could not install terraform"
-    fi
-    log "terrafm -> $(command -v terraform) ($(terraform version | head -1))"
-    step_end precommit.terraform
-    # The manifest's terraform= reads this, not WITH_TERRAFORM. This
-    # capability runs in a subshell, so a file is the only way the outcome
-    # gets out of it.
-    : >"$TMP/terraform-installed"
-
-    if ! command -v tflint >/dev/null 2>&1; then
-      TFL_VER=0.53.0
-      fetch "https://github.com/terraform-linters/tflint/releases/download/v${TFL_VER}/tflint_linux_amd64.zip" \
-        "$TMP/tflint.zip" \
-        || die "could not download tflint ${TFL_VER}"
-      unzip -o -q "$TMP/tflint.zip" -d "$TMP" tflint \
-        || die "could not unpack tflint"
-      install -m 0755 "$TMP/tflint" "$BIN_DIR/tflint" \
-        || die "could not install tflint"
-    fi
-    log "tflint  -> $(command -v tflint)"
-    step_end precommit.tflint
-
-    # tflint --init resolves plugins through the GitHub releases API, which
-    # the sandbox proxy 403s, so the ruleset is seeded from its release
-    # asset instead -- that URL redirects to a host the proxy does allow,
-    # the same asymmetry the actionlint note above records. Without this,
-    # the tflint stage of the pre-push hook cannot pass in a container at
-    # all. Idempotent: the fetch is skipped once the plugin is in place.
-    TFL_GOOGLE_VER=0.31.0
-    tfl_plugins="$HOME/.tflint.d/plugins/github.com/terraform-linters/tflint-ruleset-google/${TFL_GOOGLE_VER}"
-    if [ ! -x "$tfl_plugins/tflint-ruleset-google" ]; then
-      mkdir -p "$tfl_plugins" \
-        || die "could not create $tfl_plugins"
-      fetch "https://github.com/terraform-linters/tflint-ruleset-google/releases/download/v${TFL_GOOGLE_VER}/tflint-ruleset-google_linux_amd64.zip" \
-        "$TMP/tflint-ruleset-google.zip" \
-        || die "could not download tflint-ruleset-google ${TFL_GOOGLE_VER}"
-      unzip -o -q "$TMP/tflint-ruleset-google.zip" -d "$tfl_plugins" \
-        || die "could not unpack tflint-ruleset-google"
-      chmod 0755 "$tfl_plugins/tflint-ruleset-google" \
-        || die "could not make tflint-ruleset-google executable"
-    fi
-    log "tflplug -> $tfl_plugins"
-    step_end precommit.tflint-ruleset-google
-
-    # checkov is a Python tool, so it takes the same uv-or-pip route as
-    # pre-commit rather than a release tarball.
-    command -v checkov >/dev/null 2>&1 \
-      || python_cli_install checkov \
-      || die "could not install checkov from PyPI"
-    command -v checkov >/dev/null 2>&1 \
-      || die "checkov reported installed but is not on PATH"
-    log "checkov -> $(command -v checkov)"
-    step_end precommit.checkov
+    pc_tool terraform pc_terraform
+    pc_tool tflint pc_tflint
+    pc_tool tflint-ruleset-google pc_tflint_ruleset_google
+    pc_tool checkov pc_checkov
   fi
+
+  step_begin
 
   command -v pre-commit >/dev/null 2>&1 \
     || python_cli_install pre-commit \
@@ -2187,6 +2271,34 @@ capability "$WITH_DEVKNOWLEDGE" devknowledge cap_devknowledge
 capability 1 golangci cap_golangci
 capability "$WITH_HOOKS" shims cap_shims
 
+# precommit_retry: one more attempt at each tool pc_tool recorded as failed,
+# now that every other capability has run (see pc_tool). It runs at the top
+# level, not in a capability subshell, so pc_tool's own subshell is what keeps
+# a second `die` from ending the run. Whatever still fails is named in
+# `degraded=` as precommit.<name>.
+precommit_retry() {
+  [ -s "$TMP/precommit-failed" ] || return 0
+  mv "$TMP/precommit-failed" "$TMP/precommit-failed.first"
+  STEP_SUFFIX=.retry
+  while read -r _pr_name _pr_fn; do
+    log "retry   : precommit.$_pr_name, once more after the other capabilities"
+    pc_tool "$_pr_name" "$_pr_fn" </dev/null
+  done <"$TMP/precommit-failed.first"
+  STEP_SUFFIX=
+  if [ -s "$TMP/step-timings" ]; then
+    TIMINGS="$TIMINGS $(tr '\n' ' ' <"$TMP/step-timings" | sed 's/ $//')"
+    : >"$TMP/step-timings"
+  fi
+  if [ -s "$TMP/precommit-failed" ]; then
+    while read -r _pr_name _pr_fn; do
+      DEGRADED="${DEGRADED:+$DEGRADED }precommit.$_pr_name"
+    done <"$TMP/precommit-failed"
+  fi
+}
+if [ "$WITH_PRECOMMIT" -eq 1 ]; then
+  precommit_retry
+fi
+
 # terraform_outcome: the manifest's terraform= value. It reports what happened,
 # not what was requested, because the manifest is read as an attestation.
 # Terraform installs partway through cap_precommit, so a precommit capability
@@ -2207,8 +2319,12 @@ terraform_outcome() {
 TERRAFORM_OUTCOME=$(terraform_outcome)
 if [ "$TERRAFORM_OUTCOME" = missing ]; then
   # Named separately from `precommit`, which may also be degraded. That says why
-  # the gate is short; this says which tool a session cannot run.
-  DEGRADED="${DEGRADED:+$DEGRADED }terraform"
+  # the gate is short; this says which tool a session cannot run. A failed
+  # pc_terraform has already said so as precommit.terraform.
+  case " $DEGRADED " in
+    *" precommit.terraform "*) ;;
+    *) DEGRADED="${DEGRADED:+$DEGRADED }terraform" ;;
+  esac
   TERRAFORM_OUTCOME=0
 fi
 
