@@ -818,7 +818,7 @@ npm_global_install() {
   fi
 }
 
-log "installing from ${REF}"
+log "installing from ${REF} at $(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
 # Print the resolved set, not the flags. With defaults in play the command line
 # no longer says what a run will do, and a container is read afterwards far more
@@ -2655,11 +2655,11 @@ fi
 log "timing : $TIMINGS"
 
 if [ -n "$DEGRADED" ]; then
-  log "done, from ${REF} -- DEGRADED, missing: $DEGRADED"
+  log "done, from ${REF} at $(date -u +%Y-%m-%dT%H:%M:%SZ) -- DEGRADED, missing: $DEGRADED"
   log "note: the toolkit installed; the capabilities above did not. Re-running"
   log "      the bootstrap retries them."
 else
-  log "done, from ${REF}"
+  log "done, from ${REF} at $(date -u +%Y-%m-%dT%H:%M:%SZ)"
 fi
 # Repeated at the end, where a reader of the log actually looks.
 if [ "$BIN_ON_PATH" = no ]; then
