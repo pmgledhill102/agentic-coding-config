@@ -591,6 +591,32 @@ check "  the launcher reports pending" "pending" \
   "$(TOOLCHAIN_DIR="$TCD" sh "$TCD/start" --status)"
 rm -rf "$H"
 
+# --- 7d. background mode shims tools that are not installed yet (#751) -----
+#
+# cap_shims skips a tool that is not on PATH, which in background mode is
+# every deferred tool. They must be shimmed anyway, so the shim can wait for
+# the install and record blocked_ms. Eager mode is unchanged. fetch and
+# install are stubbed, so this needs no network.
+H=$(mktemp -d)
+sed -n '/^cap_shims() {/,/^}$/p' "$BOOTSTRAP" >"$H/fn.sh"
+check "cap_shims was extractable" "1" "$(count '^cap_shims() {' "$H/fn.sh")"
+# shims_for <mode>: the tools cap_shims shimmed, with not-yet-installed absent from PATH.
+shims_for() {
+  rm -rf "$H/claude"
+  mkdir -p "$H/claude/bin"
+  TOOLCHAIN="$1" CLAUDE_DIR="$H/claude" TMP="$H" RAW=x REF=x \
+    SHIM_TOOLS="not-yet-installed sh" sh -c '
+      log() { :; }; die() { exit 1; }
+      fetch() { printf "#!/bin/sh\n" >"$2"; }
+      . "$1"; cap_shims' _ "$H/fn.sh"
+  find "$H/claude/bin/shims" -mindepth 1 -maxdepth 1 -exec basename {} \; 2>/dev/null \
+    | sort | tr '\n' ' ' | sed 's/ $//'
+}
+check "background mode shims a tool that is not installed yet" \
+  "not-yet-installed sh" "$(shims_for background)"
+check "eager mode still shims only installed tools" "sh" "$(shims_for eager)"
+rm -rf "$H"
+
 # --- 7b. sha256_is: a digest pin that can refuse ----------------------------
 #
 # hadolint and trivy are installed only when their download matches a pinned
