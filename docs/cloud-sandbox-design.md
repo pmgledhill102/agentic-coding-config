@@ -299,6 +299,26 @@ per tool whether the profile calls it eagerly or lazily — recorded as a
 user-tier ADR, because deferring reverses `cloud/README.md`'s current reasoning
 that a present gate beats an avoided download.
 
+**Superseded in part (2026-11-10, #631).** The verdict above rests on §2's
+reading that "front-loading is nearly free on the sessions that matter". That
+reading counted machine seconds on cache hits. The telemetry says otherwise
+for watched seconds:
+
+- About 72% of sessions are rebuilds, not cache hits.
+- A rebuild's setup lands on the most watched moment there is, before the
+  first prompt.
+- The toolchain is first needed p50 505 s into a session.
+
+So eager install costs about 91 watched seconds per session, and a background
+installer about 2. The installer shape above stands. The phase that calls it
+changes: the pre-commit toolchain and its hook-environment warm move to a
+background install started at `SessionStart`, and the global git hook waits on
+it. The per-tool classification and the installer's obligations are recorded
+in [ADR-0021](../adrs/0021-agent-sandbox-toolchain-principles.md)'s 2026-11-10
+amendment. The numbers are in
+[`toolchain-install-classification.md`](toolchain-install-classification.md).
+Codex keeps calling the installer eagerly, because its agent phase is offline.
+
 ## 6. Telemetry: what the layers cannot currently tell you
 
 Layer 2 is invisible. The setup script runs **before Claude Code launches**, so
