@@ -2357,7 +2357,12 @@ cap_shims() {
   mkdir -p "$_sd" || die "could not create $_sd"
   _made=""
   for _t in $SHIM_TOOLS; do
-    command -v "$_t" >/dev/null 2>&1 || continue
+    # A tool not on PATH gets no shim, except in background mode: there the
+    # toolchain is deferred, so nothing is on PATH yet. A shim with nothing
+    # behind it waits for the deferred install, then runs the tool or says it
+    # was not provided (agent-shim), and the git hook ignores a bare shim when
+    # it looks for pre-commit.
+    [ "$TOOLCHAIN" = background ] || command -v "$_t" >/dev/null 2>&1 || continue
     ln -s ../agent-shim "$_sd/$_t" || die "could not create the $_t shim"
     _made="${_made:+$_made }$_t"
   done
