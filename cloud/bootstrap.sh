@@ -257,7 +257,10 @@ record_failure() {
       echo "ref=$REF"
       echo "log=$_agents/toolchain/install.log"
     } >"$_agents/toolchain/manifest" 2>/dev/null || true
-    echo failed >"$_agents/toolchain/state" 2>/dev/null || true
+    # tmp then mv: toolchain-start reads this file while the run is going, and
+    # a plain `>` gives a reader an empty file between truncate and write.
+    { echo failed >"$_agents/toolchain/state.tmp" \
+      && mv -f "$_agents/toolchain/state.tmp" "$_agents/toolchain/state"; } 2>/dev/null || true
     if [ -x "${BIN_DIR:-/nonexistent}/agent-telemetry" ]; then
       "$BIN_DIR/agent-telemetry" record toolchain "$_agents/toolchain/manifest" >/dev/null 2>&1 || true
     fi
@@ -2635,10 +2638,12 @@ log "manifst -> $MANIFEST ($kind $(echo "$resolved" | cut -c1-12))"
 # The deferred run's outcome, for toolchain-start and the git hook that wait on
 # it. Written last, so `done` never precedes the manifest it summarises.
 if [ "$TOOLCHAIN" = run ]; then
+  # tmp then mv, for the same reason as record_failure: a reader polls this.
   case "$manifest_status" in
-    ok) echo "done" >"$AGENTS_DIR/toolchain/state" ;;
-    *) echo "$manifest_status" >"$AGENTS_DIR/toolchain/state" ;;
+    ok) echo "done" >"$AGENTS_DIR/toolchain/state.tmp" ;;
+    *) echo "$manifest_status" >"$AGENTS_DIR/toolchain/state.tmp" ;;
   esac
+  mv -f "$AGENTS_DIR/toolchain/state.tmp" "$AGENTS_DIR/toolchain/state"
 fi
 
 # --- report -------------------------------------------------------------------

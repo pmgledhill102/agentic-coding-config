@@ -42,7 +42,7 @@ fixture() {
   cat >"$_d/bootstrap.sh" <<EOF
 echo launched >>"$_d/launches"
 sleep $2
-echo $3 >"$_d/state"
+echo $3 >"$_d/state.tmp" && mv -f "$_d/state.tmp" "$_d/state"
 EOF
   echo pending >"$_d/state"
   cp "$START" "$_d/start"
@@ -130,7 +130,7 @@ mkdir -p "$REPO"
 # A PATH with no pre-commit on it, so the hook's own decisions are what is tested.
 NOPC="$W/nopc"
 mkdir -p "$NOPC"
-for t in sh cat date sleep mkdir rmdir stat kill grep sed nohup setsid dirname rm readlink; do
+for t in sh cat date sleep mkdir rmdir stat kill grep sed nohup setsid dirname rm readlink mv; do
   p=$(command -v "$t" 2>/dev/null) && ln -sf "$p" "$NOPC/$t"
 done
 
@@ -186,7 +186,7 @@ printf '#!/bin/sh\necho "latetool ran: $*"\n' >"$W/latetool.src"
   echo "sleep 1"
   echo "cp \"$W/latetool.src\" \"$LATE/latetool\""
   echo "chmod +x \"$LATE/latetool\""
-  echo "echo done >\"$D/state\""
+  echo "echo done >\"$D/state.tmp\" && mv -f \"$D/state.tmp\" \"$D/state\""
 } >"$D/bootstrap.sh"
 SB="$W/shimbin"
 mkdir -p "$SB/shims"
