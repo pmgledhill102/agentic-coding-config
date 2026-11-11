@@ -202,18 +202,19 @@ Look up the latest release tag and use it for the `rev:` value. Use `actionlint-
 
 ### 5. semgrep (static analysis)
 
-Add a semgrep pre-commit hook to `.pre-commit-config.yaml`:
+Add a semgrep pre-commit hook to `.pre-commit-config.yaml`, as a `repo: local` system hook:
 
 ```yaml
-  - repo: https://github.com/semgrep/semgrep
-    rev: <latest tag>
+  - repo: local
     hooks:
       - id: semgrep
-        args: ["--config", "auto", "--error"]
+        name: semgrep
+        language: system
+        entry: semgrep scan --config auto --error
         pass_filenames: false
 ```
 
-Look up the latest release tag and use it for the `rev:` value.
+Use the system binary, never the upstream `repo: https://github.com/semgrep/semgrep` hook. That hook is `language: python`, so pre-commit clones the whole semgrep monorepo and builds a venv in it, about 1.1 GB and 200 s per container. A cloud bootstrap warms every hook in every cloned repo's config, so each session on the repo pays that before its first prompt. The binary is already installed in both environments: the cloud bootstrap installs it, and on a workstation it comes from the Brewfile. With no `semgrep` on PATH the hook fails with "Executable `semgrep` not found", which is loud rather than a silent pass.
 
 The `--config auto` flag uses Semgrep's curated rulesets appropriate for the languages detected in the repo. The other two lines matter:
 
