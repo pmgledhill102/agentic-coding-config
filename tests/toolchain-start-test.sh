@@ -134,12 +134,45 @@ for t in sh cat date sleep mkdir rmdir stat kill grep sed nohup setsid dirname r
   p=$(command -v "$t" 2>/dev/null) && ln -sf "$p" "$NOPC/$t"
 done
 
+# A stub telemetry helper, so the hook's wait record can be read back. The
+# hook records detached, so give the line a moment to land.
+TEL="$W/tel"
+printf '#!/bin/sh\necho "$*" >>"%s"\n' "$W/hooktel.log" >"$TEL"
+chmod +x "$TEL"
+tel_line() { # tel_line: the newest toolchain-wait record, after up to 3 s
+  _i=0
+  while ! grep -q 'toolchain-wait' "$W/hooktel.log" 2>/dev/null && [ "$_i" -lt 30 ]; do
+    sleep 0.1
+    _i=$((_i + 1))
+  done
+  grep 'toolchain-wait' "$W/hooktel.log" 2>/dev/null | tail -1
+}
+
 D=$(fixture hookslow 30 "done")
-out=$(cd "$REPO" && TOOLCHAIN_DIR=$D TOOLCHAIN_WAIT_S=1 PATH=$NOPC sh "$HOOK" 2>&1)
+: >"$W/hooktel.log"
+out=$(cd "$REPO" && TOOLCHAIN_DIR=$D TOOLCHAIN_WAIT_S=2 AGENT_TELEMETRY=$TEL PATH=$NOPC sh "$HOOK" 2>&1)
 rc=$?
 check "a commit during the install is stopped, not passed" "1" "$rc"
 check "  and says it was NOT checked" "1" "$(printf '%s\n' "$out" | grep -c 'NOT checked')"
+check "  and its wait is recorded as still-running" "1" \
+  "$(tel_line | grep -c '^event hook toolchain-wait blocked_ms=[0-9]\{4,\} outcome=still-running$')"
 kill "$(cat "$D/pid")" 2>/dev/null || true
+
+# An early commit that waits, then runs: the wait the shims never see (#755).
+D=$(fixture hookwait 2 "done")
+: >"$W/hooktel.log"
+(cd "$REPO" && TOOLCHAIN_DIR=$D TOOLCHAIN_WAIT_S=10 AGENT_TELEMETRY=$TEL PATH=$NOPC sh "$HOOK" >/dev/null 2>&1)
+check "an early commit records how long it waited, and that the install finished" "1" \
+  "$(tel_line | grep -c '^event hook toolchain-wait blocked_ms=[0-9]\{4,\} outcome=done$')"
+
+# A commit after the install finished waited for nothing, and records nothing.
+D=$(fixture hookafter 0 "done")
+echo "done" >"$D/state"
+: >"$W/hooktel.log"
+(cd "$REPO" && TOOLCHAIN_DIR=$D TOOLCHAIN_WAIT_S=10 AGENT_TELEMETRY=$TEL PATH=$NOPC sh "$HOOK" >/dev/null 2>&1)
+sleep 0.5
+check "a commit after the install finished records no wait" "0" \
+  "$(grep -c 'toolchain-wait' "$W/hooktel.log")"
 
 D=$(fixture hookdone 0 "done")
 out=$(cd "$REPO" && TOOLCHAIN_DIR=$D TOOLCHAIN_WAIT_S=10 PATH=$NOPC sh "$HOOK" 2>&1)

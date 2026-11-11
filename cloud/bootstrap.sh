@@ -1899,7 +1899,8 @@ install_git_hook() {
   # cloud/README.md carries this for the repos that have to write against it.
   HOOK_DIR="$HOME/.config/git/hooks"
   mkdir -p "$HOOK_DIR"
-  sed "s#@TOOLCHAIN_DIR@#$AGENTS_DIR/toolchain#g" >"$HOOK_DIR/pre-commit" <<'HOOK'
+  sed -e "s#@TOOLCHAIN_DIR@#$AGENTS_DIR/toolchain#g" \
+    -e "s#@AGENT_TELEMETRY@#$BIN_DIR/agent-telemetry#g" >"$HOOK_DIR/pre-commit" <<'HOOK'
 #!/bin/sh
 # Installed by agentic-coding-config cloud/bootstrap.sh.
 #
@@ -1917,8 +1918,22 @@ install_git_hook() {
 # bound fails loudly. The launcher also restarts an install whose process died.
 tc_dir="${TOOLCHAIN_DIR:-@TOOLCHAIN_DIR@}"
 if [ -x "$tc_dir/start" ] && [ -f "$tc_dir/args" ]; then
-  TOOLCHAIN_DIR="$tc_dir" "$tc_dir/start" --wait "${TOOLCHAIN_WAIT_S:-75}" > /dev/null
-  case $? in
+  tc_ms=$(TOOLCHAIN_DIR="$tc_dir" "$tc_dir/start" --wait "${TOOLCHAIN_WAIT_S:-75}")
+  tc_rc=$?
+  case "$tc_ms" in '' | *[!0-9]*) tc_ms=0 ;; esac
+  # A commit that waited is the wait ADR-0021's classification predicts, and the
+  # shims never see it: by the time pre-commit runs, the install has finished.
+  # So record it here, detached and with stdio closed, so telemetry can never
+  # change the commit's result. A wait under a second is noise, not a block.
+  if [ "$tc_ms" -ge 1000 ]; then
+    case $tc_rc in 0) tc_out=done ;; 2) tc_out=still-running ;; *) tc_out=failed ;; esac
+    tc_tel="${AGENT_TELEMETRY:-@AGENT_TELEMETRY@}"
+    if [ -x "$tc_tel" ]; then
+      "$tc_tel" event hook toolchain-wait blocked_ms="$tc_ms" outcome="$tc_out" \
+        < /dev/null > /dev/null 2>&1 &
+    fi
+  fi
+  case $tc_rc in
     0) ;;
     2)
       echo "pre-commit: the background toolchain install is still running (log: $tc_dir/install.log)." >&2
