@@ -524,6 +524,36 @@ check "  and does NOT report state=failed" "0" \
   "$(printf '%s\n' "$cur" | grep -c 'state=failed')"
 rm -rf "$H"
 
+# --- 7a. terraform= is the outcome, not the request (#738) -------------------
+#
+# Terraform installs partway through cap_precommit. A precommit capability that
+# dies before that step must not leave the manifest claiming terraform=1. The
+# block is extracted from the script itself, so a rename shows up here as an
+# extraction failure, not as a test that quietly passes.
+H=$(mktemp -d)
+sed -n '/^terraform_outcome() {/,/^fi$/p' "$BOOTSTRAP" >"$H/fn.sh"
+# shellcheck disable=SC2016 # the $(...) is a literal the grep matches
+check "the terraform outcome block was extractable" "1" \
+  "$(count '^TERRAFORM_OUTCOME=\$(terraform_outcome)$' "$H/fn.sh")"
+# tf_case <with_terraform> <with_precommit> <marker:0|1> -> "<outcome>|<degraded>"
+tf_case() {
+  rm -f "$H/terraform-installed"
+  [ "$3" -eq 0 ] || : >"$H/terraform-installed"
+  TMP="$H" WITH_TERRAFORM="$1" WITH_PRECOMMIT="$2" DEGRADED="${4:-}" \
+    sh -c '. "$1"; echo "$TERRAFORM_OUTCOME|$DEGRADED"' _ "$H/fn.sh"
+}
+check "precommit aborted before terraform: terraform=0, degraded names it" \
+  "0|precommit terraform" "$(tf_case 1 1 0 precommit)"
+check "terraform installed: terraform=1, nothing added" "1|" "$(tf_case 1 1 1)"
+check "--no-terraform: terraform=0, not degraded" "0|" "$(tf_case 0 1 0)"
+check "--no-precommit installs nothing, by design: not degraded" "0|" "$(tf_case 1 0 0)"
+# The marker must be written by the step it attests to, after the install.
+# shellcheck disable=SC2016 # $TMP is a literal the grep matches
+check "cap_precommit writes the marker right after the terraform step" "1" \
+  "$(sed -n '/step_end precommit.terraform$/,/terraform-installed"$/p' "$BOOTSTRAP" \
+    | grep -c ': >"\$TMP/terraform-installed"$')"
+rm -rf "$H"
+
 # --- 7b. sha256_is: a digest pin that can refuse ----------------------------
 #
 # hadolint and trivy are installed only when their download matches a pinned

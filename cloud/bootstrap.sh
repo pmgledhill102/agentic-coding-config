@@ -1671,6 +1671,10 @@ cap_precommit() {
     fi
     log "terrafm -> $(command -v terraform) ($(terraform version | head -1))"
     step_end precommit.terraform
+    # The manifest's terraform= reads this, not WITH_TERRAFORM. This
+    # capability runs in a subshell, so a file is the only way the outcome
+    # gets out of it.
+    : >"$TMP/terraform-installed"
 
     if ! command -v tflint >/dev/null 2>&1; then
       TFL_VER=0.53.0
@@ -2183,6 +2187,31 @@ capability "$WITH_DEVKNOWLEDGE" devknowledge cap_devknowledge
 capability 1 golangci cap_golangci
 capability "$WITH_HOOKS" shims cap_shims
 
+# terraform_outcome: the manifest's terraform= value. It reports what happened,
+# not what was requested, because the manifest is read as an attestation.
+# Terraform installs partway through cap_precommit, so a precommit capability
+# that dies before that step (a stalled hadolint download, say) leaves no
+# terraform here, and the requested flag would still say 1. Prints 1
+# (installed), 0 (not attempted: --no-terraform or
+# --no-precommit, which installs nothing, per cloud/README.md) or `missing`
+# (attempted, not installed).
+terraform_outcome() {
+  if [ "$WITH_TERRAFORM" -ne 1 ] || [ "$WITH_PRECOMMIT" -ne 1 ]; then
+    echo 0
+  elif [ -f "$TMP/terraform-installed" ]; then
+    echo 1
+  else
+    echo missing
+  fi
+}
+TERRAFORM_OUTCOME=$(terraform_outcome)
+if [ "$TERRAFORM_OUTCOME" = missing ]; then
+  # Named separately from `precommit`, which may also be degraded. That says why
+  # the gate is short; this says which tool a session cannot run.
+  DEGRADED="${DEGRADED:+$DEGRADED }terraform"
+  TERRAFORM_OUTCOME=0
+fi
+
 # --- the manifest -------------------------------------------------------------
 #
 # Records what this run installed, so a later session can tell how old its
@@ -2261,7 +2290,7 @@ fi
   # The duration is in `timings` as precommit-warm.
   echo "precommit_envs=$(cat "$TMP/warm-envs" 2>/dev/null || echo 0)"
   echo "gcloud=$WITH_GCLOUD"
-  echo "terraform=$WITH_TERRAFORM"
+  echo "terraform=$TERRAFORM_OUTCOME"
   echo "hooks=$WITH_HOOKS"
   echo "gh=$WITH_GH"
   echo "devknowledge=$WITH_DEVKNOWLEDGE"
