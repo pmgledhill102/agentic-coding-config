@@ -89,6 +89,12 @@ than in the foreground. Waiting with `sleep N && cat <file>` does not work:
 the harness refuses that shape, and wants an `until` loop or a backgrounded
 task.
 
+**Do not switch branches while a backgrounded suite runs.**
+`bootstrap-failure-test.sh` reads `cloud/bootstrap.sh` from the working tree
+throughout its run, so a `git checkout` partway through tests the other
+branch's script and reports a failure that isn't real. To work on another
+branch meanwhile, use a separate worktree (`git worktree add`).
+
 **Run only what the change touches** when the change is narrow — markdown-only
 edits need `markdownlint-cli2`; a `context/` edit needs `compose-context.py`;
 `home/settings.json` needs the allowlist check and `settings-sync.sh`; a new
