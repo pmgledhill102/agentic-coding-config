@@ -44,6 +44,7 @@ The owner set is **`pmgledhill102`** alone. **`desertfoxclan` is not mine**:
 some of its repos are, and my token holds admin there, but the org is not, so
 no sweep, settings write, branch tidy or generated plan touches it. A read-only
 review when asked is fine; its output is a list of changes I make by hand.
+**Except `desertfoxclan/game-config`**, which I own: change it on a branch and PR (every game server pulls `main` at boot, so a merge is the deploy).
 
 **Not mine** — a work repo, or a third-party project cloned to read or
 contribute to. Here the repo's own conventions win on everything: its branch
@@ -137,6 +138,7 @@ stated rather than inferred from where it sits.
 
 - **3 strikes rule**: After 3 failed attempts debugging the same issue, stop and question the entire approach before trying again
 - **Preview an irreversible batch read-only, then stop.** Before deleting, overwriting or force-pushing over a *set* of resources, list exactly what the operation will affect and stop for explicit confirmation. **This does not contradict the non-interactive-flag rule below; the two govern different actors.** Suppress the *tool's* prompt — `--quiet` on a delete is right, because a command waiting on a tty an agent does not have is a hung session. Surface the *agent's* preview and wait. "Run it immediately, without prompting" is an instruction about the tool's interactivity, and reading it as permission to skip checking **what** is about to be destroyed is the specific failure this prevents. It is not a security boundary and not an attempt to be un-instructable: an operator who looks at the list and says "yes, delete them" gets the deletion. The same care applies to a single destructive command on an absolute path outside your own scratch directory — `rm -rf /dev/null` as the first clause of a compound line whose purpose was something else left a regular file where the device node had been, and every `2>/dev/null` in the repo went on "working" while silently accumulating bytes
+- **Mask by allowlist, never by denylist.** When showing a config file, a log or a process command line that may carry secrets, print key names, counts or a named known-safe field. Never print whole lines with a list of known-secret keys masked: the list misses the key nobody thought of. A secret passed as a launch argument is the same trap: any log line that echoes the command line carries it
 - **When a check reports nothing, prove it could have reported something.** Silence is only evidence once the check is known to be able to speak: run it against a case that must produce a hit, then trust the empty result. Ask what question the tool actually answered rather than the one you meant — an empty `grep` may mean the pattern is wrong, a 404 body parses as an empty field, GNU `date -d ""` returns *now* rather than failing, and a version regex can match a prefix inside a longer token so a filter never sees the `-beta1` it was written to exclude. Each of those returns a clean, confident, wrong answer with no error anywhere
 - **Check release notes before upgrading CLI tools**: check the changelog or releases before upgrading. Breaking changes (e.g. dropped backends, renamed flags) waste significant time when discovered mid-migration
 - **Lint before pushing**: Always run the relevant linter/test suite locally before `git push`. Only push if everything passes — avoids CI round-trips
@@ -145,14 +147,7 @@ stated rather than inferred from where it sits.
 - **PR-stacking discipline**: only claim "stacked on" when the second branch literally has the first as parent (`git log --oneline first..second` shows just the second's commits). Branching both off `main` and writing "stacked on PR #N" in the body is misleading — reviewers can merge in any order, and the second PR's diff includes the first's changes. If they're truly independent, branch each from `main` and don't say stacked
 - **Batch reads before edits**: When modifying multiple files, read all target files first, then make all edits — avoids "file not read yet" errors on parallel edit calls
 - **Always create a tracking issue**: Even for quick single-file fixes, create a GitHub Issue in the repo before starting work — maintains the audit trail and keeps the habit consistent. The one exception: a doc-sized correction a retro or end-session surfaces in the repo it is working in is fixed in that session and named in the retro instead, never filed as well
-- **Web fetch blocked by a 403? Fall back to curl + pandoc**: Some sites (UESP, other MediaWiki / Cloudflare-fronted wikis) reject an agent fetcher's User-Agent before serving content. On HTTP 403, don't burn time on alternative URLs — go straight to:
-
-  ```sh
-  curl -sS -L -A "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_4) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15" "$URL" -o /tmp/page.html
-  pandoc -f html -t gfm --wrap=none /tmp/page.html -o /tmp/page.md
-  ```
-
-  Then read the markdown (or `grep` it for structured extraction). If the same site will be hit repeatedly, save the fetcher as a per-project script
+- **Web fetch blocked by a 403?** Some sites (UESP, Cloudflare-fronted wikis) reject an agent's User-Agent. Skip alternative URLs and go straight to `curl -sSL -A "<a desktop Safari UA>" "$URL" | pandoc -f html -t gfm --wrap=none`, then read or `grep` the markdown; save it as a per-project script if the site recurs
 
 ### Shell Scripts
 
