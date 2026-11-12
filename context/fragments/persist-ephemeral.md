@@ -25,15 +25,18 @@ next session. What must survive belongs in the repo or the setup script.
 - **A blocked host is not a dead end.** Ask for it: the proxy takes the new
   domain within seconds, though `WebFetch` may keep refusing until the session
   resumes, so retry with `curl` first. Re-test recorded blocks; they age badly.
+- **`AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY` may be the literal `proxy-injected`**:
+  the proxy cannot SigV4-sign, so check the key's shape before diagnosing IAM.
 
 ## `gh` is a property of the setup line
 
-GitHub work prefers the MCP tools. Otherwise `gh api repos/{owner}/{repo}/...`
-(REST) works for reads and writes on repos attached with `add_repo`;
-GraphQL-backed subcommands (`gh issue list`, `gh pr list`, `gh pr view`,
-search) are blocked, as are `/user/*` and `/orgs/*`. Verify, never assume. Helpers
-that shell out to `gh` report `gh-unavailable` or `gh-unauthorized`: say what
-could not be gathered rather than reporting a clean result, and treat a `gh`
-command written into a skill as naming the *operation* — reach for the MCP
-call. `claude-code-remote` works here: `list_triggers`, `send_later` and `delete_trigger` all
-succeeded on 2026-09-20. Judge it by what a call returns, not by what kind of session you think you are — on an approval-binding failure (anthropics/claude-code#90127, reported for child sessions), fall back to event-driven wakes via `github`.
+GitHub work prefers the MCP tools. Otherwise `gh api repos/{owner}/{repo}/...` (REST) works for reads and most writes
+on repos attached with `add_repo`, but `actions/variables`, `actions/secrets` and `DELETE git/refs` are refused, and
+GraphQL-backed subcommands (`gh issue list`, `gh pr list`, `gh pr view`, search), `/user/*` and `/orgs/*` are blocked.
+Verify, never assume. Two answers here are confidently wrong: **every GitHub request carries credentials, even a bare
+`curl`**, so a 200 says nothing about visibility (read `.private`); and **`git push --delete` prints "Everything
+up-to-date" and deletes nothing** (check `git ls-remote --heads`). Helpers that shell out to `gh` report
+`gh-unavailable` or `gh-unauthorized`: say what could not be gathered rather than reporting a clean result, and treat
+a `gh` command written into a skill as naming the *operation*, then reach for the MCP call. `claude-code-remote` works
+here; judge it by what a call returns, not by what kind of session you think you are. On an approval-binding failure
+(anthropics/claude-code#90127, reported for child sessions), fall back to event-driven wakes via `github`.
