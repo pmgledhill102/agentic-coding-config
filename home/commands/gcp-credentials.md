@@ -575,9 +575,16 @@ raw log output wholesale** into the transcript, a PR body, or an issue. A public
 issue full of production log lines is an exfiltration path that needs no
 attacker.
 
-End it early, once the question is answered, with
-`~/.claude/bin/gcp-credentials revoke --tier readonly-estate`. Exit codes are
-the same as for the sandbox tier.
+End it early, once the question is answered **and no further read is
+planned**, with `~/.claude/bin/gcp-credentials revoke --tier readonly-estate`.
+Exit codes are the same as for the sandbox tier. If you have already told the
+user a follow-up read is coming within the grant's TTL (after a deploy, after a
+CI run), keep the grant and revoke after that read: a fresh card for each step
+spends the approval this skill rations. Size `--ttl` to cover the planned
+follow-up when you request it, with margin, because a grant that expires just
+before the read it was held for costs the same second approval. This covers
+only a follow-up the session has already committed to; the default stays short
+and revoked.
 
 ## Other subcommands
 
@@ -700,8 +707,10 @@ credential-broker-<hash>-nw.a.run.app
 Without it the request fails at the network layer, which reads as the broker
 being down rather than as an environment that was never allowed to call it.
 
-`gcloud` is not pre-installed in a cloud sandbox (`jq` and `git` are). If a task
-needs it, `dl.google.com` — the SDK download host — also has to be allowlisted;
+The cloud bootstrap installs `gcloud` by default on `*-cloud-sandbox` profiles
+(`--with-gcloud`). In an environment built with `--no-gcloud`, or one not built
+by the bootstrap, it is absent. Then, if a task needs it, `dl.google.com` — the
+SDK download host — also has to be allowlisted;
 neither `cloud.google.com` nor `gcloud.google.com`, both of which are on the
 default list, serve the tarball. Install it from the **environment's setup
 script** rather than mid-session, because `gcp-credentials request` only wires
