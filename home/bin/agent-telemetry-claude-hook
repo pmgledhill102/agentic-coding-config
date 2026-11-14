@@ -1,7 +1,7 @@
 #!/bin/sh
 # agent-telemetry-claude-hook — the Claude Code hooks that feed agent-telemetry.
 #
-#   session-start   record the session marker, then ship. Wired after
+#   session-start   record the session marker once per session, then ship. Wired after
 #                   session-cache-verdict. Also puts agent-shim's shim
 #                   directory ahead on the Bash tool's PATH, when the bootstrap
 #                   made one, and clears the previous session's shim state.
@@ -81,7 +81,15 @@ case "$event" in
             done
             # A marker that never appeared is a workstation, or a container with no
             # manifest: there is simply nothing to record.
-            [ -f "$MARKER" ] && "$HELPER" record session-marker "$MARKER"
+            # SessionStart also fires on resume, clear and compact, and the
+            # marker is written once per session, so record it only when its
+            # session_id/observed_at differ from the last one recorded.
+            stamp="$STATE/session-marker.recorded"
+            key=$(grep -E '^(session_id|observed_at)=' "$MARKER" 2> /dev/null | sort | tr '\n' ' ')
+            if [ -n "$key" ] && [ "$key" != "$(cat "$stamp" 2> /dev/null)" ]; then
+                "$HELPER" record session-marker "$MARKER" && printf '%s' "$key" > "$stamp"
+            fi
+            # Unconditional: a resume still flushes what earlier turns spooled.
             "$HELPER" ship
             # The one place a 401 is retried. In a proxy-injected environment
             # the proxy can start attaching the write key a little after the
