@@ -621,6 +621,41 @@ expect "session-start records the marker and ships it" /v1/records/session-marke
 sleep 0.5
 expect "a first ship that succeeds is not retried" 1 "$(requests)"
 
+# SessionStart fires on resume, clear and compact too, while the marker is
+# written once per session: the same marker is recorded once (#736).
+markers() { if [ -f "$SPOOL" ]; then jq -r .kind "$SPOOL" | grep -c '^session-marker$'; else echo 0; fi; }
+# hook_start <session_id> <source> — run session-start, then wait for its ship.
+hook_start() {
+  OUT=$(printf '{"session_id":"%s","source":"%s"}' "$1" "$2" | "$HOOK" session-start 2>&1) && RC=0 || RC=$?
+  printf '%s\n' "$OUT" >>"$ALL_OUTPUT"
+  i=0
+  while [ "$i" -lt 50 ] && [ "$(offset)" -lt "$(spool_size)" ]; do
+    sleep 0.2
+    i=$((i + 1))
+  done
+  sleep 0.5
+}
+expect "the first session-start spools one session-marker" 1 "$(markers)"
+run event skill step-done step=1 outcome=ok
+before=$(requests)
+if [ "$(offset)" -lt "$(spool_size)" ]; then ok "an event leaves unsent spool lines"; else bad "the event was not left unsent"; fi
+hook_start sess-abc-123 resume
+expect "a resume exits 0" 0 "$RC"
+expect "a resume prints nothing" "" "$OUT"
+expect "a resume with the same marker spools no second session-marker" 1 "$(markers)"
+expect "...but still ships the unsent lines" "$(spool_size)" "$(offset)"
+expect "...in one more request" $((before + 1)) "$(requests)"
+hook_start sess-abc-123 compact
+expect "a third session-start with the same marker still spools none" 1 "$(markers)"
+sed 's/^observed_at=.*/observed_at=2026-01-01T00:00:00Z/' "$MARKER" >"$MARKER.new" && mv "$MARKER.new" "$MARKER"
+hook_start sess-abc-123 startup
+expect "a new observed_at spools a second session-marker" 2 "$(markers)"
+sed 's/^session_id=.*/session_id=sess-def-456/' "$MARKER" >"$MARKER.new" && mv "$MARKER.new" "$MARKER"
+hook_start sess-def-456 startup
+expect "a new session_id spools a third" 3 "$(markers)"
+expect "...and exits 0" 0 "$RC"
+expect "...and prints nothing" "" "$OUT"
+
 # The proxy can start attaching the key after the session does, so the first
 # ship's 401 is retried, and only that one (#734).
 AGENT_TELEMETRY_AUTH_RETRY_DELAYS="0 0 0" && export AGENT_TELEMETRY_AUTH_RETRY_DELAYS
