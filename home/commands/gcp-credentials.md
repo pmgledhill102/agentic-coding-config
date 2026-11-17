@@ -126,12 +126,27 @@ The command prints a block like this:
 decision, and that is deliberate: relay the phrase in your own reply, then
 collect the answer separately.
 
-Relay it **verbatim, as the first thing you say** — not buried in tool output.
-Say what they are approving:
+Relay it **verbatim, as the first line of the turn's final message** — not in
+text written between tool calls, not buried in tool output, and not inside a
+sentence. Put it on a line of its own, in a code block,
+behind the capitalised label `VERIFICATION PHRASE:`. Then say what they are
+approving:
 
-> Requesting GCP credentials for `example-project-sbx` (sandbox tier, 24h).
-> **Verification phrase: `mint-copper-falcon`** — approve the Discord card only
-> if it shows exactly that.
+````markdown
+```text
+VERIFICATION PHRASE: mint-copper-falcon
+```
+
+Requesting GCP credentials for `example-project-sbx` (sandbox tier, 24h).
+Approve the Discord card only if it shows exactly that phrase.
+````
+
+**Where the phrase goes matters more than how it looks.** The Claude app
+rewrites text sent between tool calls into a short third-person summary, and
+that summary can drop the phrase entirely, code block and all. The turn's final
+message is shown as written. So no formatting rescues a phrase written before a
+tool call: it has to be in the last message. The code block and label then make
+it stand out wherever it is shown as written.
 
 ### Then collect the decision
 
@@ -141,20 +156,21 @@ Say what they are approving:
 
 This blocks until the human answers, then installs the token and starts refresh.
 
-**Run it in the background, in the same turn as the phrase message.** Write the
-message carrying the phrase first, then start `wait` with the Bash tool's
-`run_in_background: true`. The text reaches the human before the command starts,
-and the harness re-invokes you when `wait` exits, so you carry on the moment the
-card is answered with no second prompt from the user. End the turn after
-starting it; do not poll, and do not wait with `sleep`.
+**Run it in the background, then end the turn with the phrase message.** Right
+after `request`, start `wait` with the Bash tool's `run_in_background: true`,
+writing no text before either call. Then write the phrase message as the turn's
+final message, and end the turn. A backgrounded `wait` returns at once, so the
+message still reaches the human straight away, and the harness re-invokes you
+when `wait` exits, so you carry on the moment the card is answered with no
+second prompt from the user. Do not poll, and do not wait with `sleep`.
 
 **Never run `request --wait`, and never run `wait` in the foreground.**
 `request --wait` exists for a human at an interactive terminal. A blocked
 foreground command cannot produce a reply, so the phrase would sit unread in the
 output of something still running while the human is asked to match it against
 nothing. The phrase is only a session binding if it reaches the person *before*
-they answer the card, so the order is fixed: phrase text, then the backgrounded
-`wait`.
+they answer the card, so the order is fixed: `request`, then the backgrounded
+`wait`, then the phrase as the turn's final message.
 
 Read the result as in [Reading the outcome](#reading-the-outcome) when the
 background command reports back.
@@ -515,7 +531,14 @@ The grant, not the token, is what runs out. Symptoms:
 That is the designed end of the window, not a fault. Request again — a fresh
 approval, a fresh phrase — and tell the user that is what you are doing:
 
-> The 24h grant expired. Requesting a new one; new phrase: `willow-basalt-heron`.
+````markdown
+```text
+VERIFICATION PHRASE: willow-basalt-heron
+```
+
+The 24h grant expired, so I'm requesting a new one. Approve the Discord card
+only if it shows exactly that phrase.
+````
 
 Do not diagnose it as an auth bug, and do not go looking for another credential.
 
@@ -542,11 +565,18 @@ fails by construction, and the sandbox tier is where work happens.
 - **No `--project` or `--repo`.** The grant is not scoped to one, and the helper
   refuses both rather than let a request look narrower than it is.
 - **Short:** 4h by default, `--ttl` from 1h to 24h.
-- **Relay the scope with the phrase.** The card leads with it, and so should you:
+- **Relay the scope with the phrase.** The card leads with the scope. Your
+  reply keeps the phrase as its first line, as for any request, and makes the
+  scope the first thing the prose says:
 
-  > Requesting **read-only access to the entire organisation** (readonly-estate
-  > tier, 4h). **Verification phrase: `read-silver-heron`** — approve the
-  > Discord card only if it shows exactly that.
+  ````markdown
+  ```text
+  VERIFICATION PHRASE: read-silver-heron
+  ```
+
+  Requesting **read-only access to the entire organisation** (readonly-estate
+  tier, 4h). Approve the Discord card only if it shows exactly that phrase.
+  ````
 
 - **It sits alongside a sandbox grant.** Separate grant, token and refresh loop;
   a live sandbox grant does not block it and it does not replace one. `status`
