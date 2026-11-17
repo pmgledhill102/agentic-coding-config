@@ -471,7 +471,7 @@ permissions:
 jobs:
   automerge:
     if: github.event.pull_request.user.login == 'dependabot[bot]' && github.repository == '<owner>/<repo>'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-slim
     steps:
       # A grouped bump whose commit message exceeds 64 KiB loses its metadata
       # block to truncation, and fetch-metadata fails. continue-on-error makes
@@ -621,7 +621,7 @@ jobs:
     name: Update armed PRs behind main
     # A fork PR's run gets no secrets, and fork PRs are skipped anyway.
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-slim
     steps:
       - name: Update branches
         shell: sh
