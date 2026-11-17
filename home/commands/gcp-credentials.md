@@ -126,8 +126,9 @@ The command prints a block like this:
 decision, and that is deliberate: relay the phrase in your own reply, then
 collect the answer separately.
 
-Relay it **verbatim, as the first line of your reply** — not buried in tool
-output, and not inside a sentence. Put it on a line of its own, in a code block,
+Relay it **verbatim, as the first line of the turn's final message** — not in
+text written between tool calls, not buried in tool output, and not inside a
+sentence. Put it on a line of its own, in a code block,
 behind the capitalised label `VERIFICATION PHRASE:`. Then say what they are
 approving:
 
@@ -140,12 +141,12 @@ Requesting GCP credentials for `example-project-sbx` (sandbox tier, 24h).
 Approve the Discord card only if it shows exactly that phrase.
 ````
 
-Each part of that shape is there because the human may not see your reply as
-written. A surface that summarises or rewords it, such as a notification or a
-session-list preview, can drop markdown and paraphrase the prose. A phrase inside
-a sentence then reads as just another word. A first line in capitals with a
-distinct label still stands out after that rewording, and the code block makes
-it stand out wherever markdown is kept.
+**Where the phrase goes matters more than how it looks.** The Claude app
+rewrites text sent between tool calls into a short third-person summary, and
+that summary can drop the phrase entirely, code block and all. The turn's final
+message is shown as written. So no formatting rescues a phrase written before a
+tool call: it has to be in the last message. The code block and label then make
+it stand out wherever it is shown as written.
 
 ### Then collect the decision
 
@@ -155,20 +156,21 @@ it stand out wherever markdown is kept.
 
 This blocks until the human answers, then installs the token and starts refresh.
 
-**Run it in the background, in the same turn as the phrase message.** Write the
-message carrying the phrase first, then start `wait` with the Bash tool's
-`run_in_background: true`. The text reaches the human before the command starts,
-and the harness re-invokes you when `wait` exits, so you carry on the moment the
-card is answered with no second prompt from the user. End the turn after
-starting it; do not poll, and do not wait with `sleep`.
+**Run it in the background, then end the turn with the phrase message.** Right
+after `request`, start `wait` with the Bash tool's `run_in_background: true`,
+writing no text before either call. Then write the phrase message as the turn's
+final message, and end the turn. A backgrounded `wait` returns at once, so the
+message still reaches the human straight away, and the harness re-invokes you
+when `wait` exits, so you carry on the moment the card is answered with no
+second prompt from the user. Do not poll, and do not wait with `sleep`.
 
 **Never run `request --wait`, and never run `wait` in the foreground.**
 `request --wait` exists for a human at an interactive terminal. A blocked
 foreground command cannot produce a reply, so the phrase would sit unread in the
 output of something still running while the human is asked to match it against
 nothing. The phrase is only a session binding if it reaches the person *before*
-they answer the card, so the order is fixed: phrase text, then the backgrounded
-`wait`.
+they answer the card, so the order is fixed: `request`, then the backgrounded
+`wait`, then the phrase as the turn's final message.
 
 Read the result as in [Reading the outcome](#reading-the-outcome) when the
 background command reports back.
