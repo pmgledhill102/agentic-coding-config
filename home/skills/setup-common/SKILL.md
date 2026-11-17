@@ -636,17 +636,23 @@ jobs:
           fi
 
           prs="${RUNNER_TEMP}/prs.tsv"
-          # number, head SHA, head repo ("-" when the fork is gone), armed.
+          # number, head SHA, head repo ("-" when the fork is gone), armed, head branch.
           # No empty fields: tab is IFS whitespace, so read would collapse them.
           if ! gh api --paginate "repos/${R}/pulls?state=open&base=main&per_page=100" \
-            --jq '.[] | [.number, .head.sha, (.head.repo.full_name // "-"), (.auto_merge != null)] | @tsv' \
+            --jq '.[] | [.number, .head.sha, (.head.repo.full_name // "-"), (.auto_merge != null), .head.ref] | @tsv' \
             > "${prs}"; then
             echo "::error::Could not list pull requests with a non-empty AUTOMERGE_PAT. The most likely cause is that ${R} is not on the token's selected-repositories list -- a fine-grained PAT's scope cannot be read from outside the token, so this is where a missed repo surfaces. Add ${R} to the AUTOMERGE_PAT repository list."
             exit 1
           fi
 
+          # update N SHA: merge main into PR N's head, asserting it is at SHA.
+          # Prints the API's error output, and returns non-zero, on failure.
+          update() {
+            { gh api -X PUT "repos/${R}/pulls/$1/update-branch" -f "expected_head_sha=$2" >/dev/null; } 2>&1
+          }
+
           failed=0
-          while IFS="$(printf '\t')" read -r n sha head_repo armed; do
+          while IFS="$(printf '\t')" read -r n sha head_repo armed ref; do
             if [ "${head_repo}" != "${R}" ]; then
               echo "#${n}: skipped (head is not in ${R})"
               continue
@@ -665,12 +671,49 @@ jobs:
               echo "#${n}: up to date"
               continue
             fi
-            if gh api -X PUT "repos/${R}/pulls/${n}/update-branch" \
-                 -f "expected_head_sha=${sha}" > /dev/null; then
+            if err="$(update "${n}" "${sha}")"; then
               echo "#${n}: updated (was ${behind} behind main)"
+              continue
+            fi
+            # The PR's head record can lag its branch, even after an update
+            # this workflow made itself, and GitHub then refuses the recorded
+            # head with 422 "expected head sha didn't match". Re-read the
+            # branch and retry once from it, so one stale record cannot fail
+            # every push. Only that message is retried: a conflicted PR is
+            # also a 422 ("merge conflict between base and head") and must
+            # stay red. The match stops before "didn't", whose apostrophe
+            # GitHub sends as U+2019.
+            case "${err}" in
+              *"expected head sha"*) ;;
+              *)
+                echo "::error::#${n}: update-branch failed (was ${behind} behind main at ${sha}): ${err} (a 403/404 here can also mean ${R} is missing from the AUTOMERGE_PAT repository list, or the token lacks Workflows write when the PR touches .github/workflows/)"
+                failed=$((failed + 1))
+                continue
+                ;;
+            esac
+            cur="$(gh api "repos/${R}/git/ref/heads/${ref}" --jq '.object.sha' 2>/dev/null || true)"
+            if [ -z "${cur}" ] || [ "${cur}" = "${sha}" ]; then
+              echo "::warning::#${n}: update-branch refused the recorded head ${sha}, but the branch is at it (or could not be read); skipped"
+              continue
+            fi
+            if ! behind="$(gh api "repos/${R}/compare/main...${cur}" --jq '.behind_by')"; then
+              echo "::warning::#${n}: PR record is stale (records ${sha}, branch is at ${cur}) and the branch could not be compared with main; skipped"
+              continue
+            fi
+            if [ "${behind}" -eq 0 ]; then
+              echo "#${n}: up to date (PR record is stale: records ${sha}, branch is at ${cur})"
+            elif err="$(update "${n}" "${cur}")"; then
+              echo "#${n}: updated from the branch head ${cur} (was ${behind} behind main; PR record was stale at ${sha})"
             else
-              echo "::error::#${n}: update-branch failed (was ${behind} behind main at ${sha}) (a 403/404 here can also mean ${R} is missing from the AUTOMERGE_PAT repository list, or the token lacks Workflows write when the PR touches .github/workflows/)"
-              failed=$((failed + 1))
+              case "${err}" in
+                *"expected head sha"*)
+                  echo "::warning::#${n}: PR record is stale (records ${sha}, branch is at ${cur}), and update-branch from the branch head was refused too: ${err}; skipped"
+                  ;;
+                *)
+                  echo "::error::#${n}: update-branch from the branch head ${cur} failed: ${err}"
+                  failed=$((failed + 1))
+                  ;;
+              esac
             fi
           done < "${prs}"
 

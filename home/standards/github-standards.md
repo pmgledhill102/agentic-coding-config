@@ -148,8 +148,17 @@ then land one after another with nobody clicking **Update branch**.
   the update rather than being merged over. It touches only armed PRs whose
   head is in the same repository, and its runs are serialised rather than
   cancelled.
+- **It survives a stale PR head record.** GitHub's record of a PR's head can
+  lag its branch, even after this workflow's own update, and the update is
+  then refused with 422 `expected head sha didn't match current head ref`.
+  On that message alone it re-reads the branch and retries once from the
+  branch's real head; if the branch really is at the recorded head it warns
+  and skips. Without this, one stale record fails every run until the PR is
+  closed by hand (agentic-coding-config#719).
 - **It cannot resolve a conflict.** A conflicted PR fails its update and
-  turns the run red, which is the signal to fix it by hand. GitHub computes
+  turns the run red, which is the signal to fix it by hand. A conflict is
+  also a 422 (`merge conflict between base and head`), so the retry above
+  matches the head-mismatch message, never the status. GitHub computes
   no merge ref for a conflicted PR, so arming one starts no run either; the
   next push to the default branch still reports it.
 - **The CI cost is unchanged, only the clicking goes.** A PR with *k*
