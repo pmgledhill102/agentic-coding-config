@@ -195,6 +195,11 @@
               "why": "a push to the PR between the compare and the update must make the update fail, not merge the base over a head nobody compared."
             },
             {
+              "id": "retries-only-a-head-mismatch",
+              "pattern": "\\*\"expected head sha\"\\*\\)",
+              "why": "a stale PR head record makes update-branch refuse with 422 'expected head sha didn't match', and without a retry from the branch's real head one such PR fails every run (agentic-coding-config#719). The retry keys on that message, not on HTTP 422: a conflicted PR is also a 422, and must keep the run red."
+            },
+            {
               "id": "runs-are-serialised",
               "pattern": "cancel-in-progress:\\s*false",
               "why": "a cancelled run can stop between PRs; serialised runs each see every armed PR, and never race each other on the same head."
