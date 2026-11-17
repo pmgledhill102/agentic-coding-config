@@ -126,12 +126,26 @@ The command prints a block like this:
 decision, and that is deliberate: relay the phrase in your own reply, then
 collect the answer separately.
 
-Relay it **verbatim, as the first thing you say** — not buried in tool output.
-Say what they are approving:
+Relay it **verbatim, as the first line of your reply** — not buried in tool
+output, and not inside a sentence. Put it on a line of its own, in a code block,
+behind the capitalised label `VERIFICATION PHRASE:`. Then say what they are
+approving:
 
-> Requesting GCP credentials for `example-project-sbx` (sandbox tier, 24h).
-> **Verification phrase: `mint-copper-falcon`** — approve the Discord card only
-> if it shows exactly that.
+````markdown
+```text
+VERIFICATION PHRASE: mint-copper-falcon
+```
+
+Requesting GCP credentials for `example-project-sbx` (sandbox tier, 24h).
+Approve the Discord card only if it shows exactly that phrase.
+````
+
+Each part of that shape is there because the human may not see your reply as
+written. A surface that summarises or rewords it, such as a notification or a
+session-list preview, can drop markdown and paraphrase the prose. A phrase inside
+a sentence then reads as just another word. A first line in capitals with a
+distinct label still stands out after that rewording, and the code block makes
+it stand out wherever markdown is kept.
 
 ### Then collect the decision
 
@@ -515,7 +529,14 @@ The grant, not the token, is what runs out. Symptoms:
 That is the designed end of the window, not a fault. Request again — a fresh
 approval, a fresh phrase — and tell the user that is what you are doing:
 
-> The 24h grant expired. Requesting a new one; new phrase: `willow-basalt-heron`.
+````markdown
+```text
+VERIFICATION PHRASE: willow-basalt-heron
+```
+
+The 24h grant expired, so I'm requesting a new one. Approve the Discord card
+only if it shows exactly that phrase.
+````
 
 Do not diagnose it as an auth bug, and do not go looking for another credential.
 
@@ -542,11 +563,18 @@ fails by construction, and the sandbox tier is where work happens.
 - **No `--project` or `--repo`.** The grant is not scoped to one, and the helper
   refuses both rather than let a request look narrower than it is.
 - **Short:** 4h by default, `--ttl` from 1h to 24h.
-- **Relay the scope with the phrase.** The card leads with it, and so should you:
+- **Relay the scope with the phrase.** The card leads with the scope. Your
+  reply keeps the phrase as its first line, as for any request, and makes the
+  scope the first thing the prose says:
 
-  > Requesting **read-only access to the entire organisation** (readonly-estate
-  > tier, 4h). **Verification phrase: `read-silver-heron`** — approve the
-  > Discord card only if it shows exactly that.
+  ````markdown
+  ```text
+  VERIFICATION PHRASE: read-silver-heron
+  ```
+
+  Requesting **read-only access to the entire organisation** (readonly-estate
+  tier, 4h). Approve the Discord card only if it shows exactly that phrase.
+  ````
 
 - **It sits alongside a sandbox grant.** Separate grant, token and refresh loop;
   a live sandbox grant does not block it and it does not replace one. `status`
