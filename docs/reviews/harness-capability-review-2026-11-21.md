@@ -1,4 +1,4 @@
-# Review: what the config says about Claude Code, against Claude Code today
+# Review: what the config says about Claude Code and Codex, against both today
 
 - **Date**: 2026-11-21
 - **Tracking**: [#785](https://github.com/pmgledhill102/agentic-coding-config/issues/785),
@@ -10,10 +10,11 @@
   workstream 2
 
 This review answers two questions. Which statements in this repo about how
-Claude Code behaves are still true? Which Claude Code capabilities does the
-config not use?
+the harness behaves are still true? Which capabilities does the config not
+use?
 
-The Codex half of workstream 3 is not in this file yet.
+Sections 1 to 5 cover Claude Code. Section 6 covers Codex, on weaker evidence:
+the official Codex documentation host is blocked in the sandbox.
 
 ## 1. Verdict up front
 
@@ -186,5 +187,81 @@ towards delegated or parallel work.
 - Rows marked **reported** rest on the sub-agent alone.
 - The changelog is 1.4 MB and only its first 100,000 characters were read, so
   version numbers for older changes may be missing.
-- Nothing here was tested on a workstation or under Codex.
+- Nothing here was tested on a workstation, and nothing was run under Codex.
 - Telemetry figures cover cloud sessions from 19 October to 20 November 2026.
+
+## 6. Codex
+
+A second research sub-agent checked 33 statements about Codex against the
+`openai/codex` source at `main` (commit `1145028`, 2026-11-21) and the release
+notes for 0.127.0 to 0.171.0. Its full report, with a source and a quote for
+every row, is attached to #785 as a comment.
+
+| Verdict | Statements |
+| --- | --- |
+| Still true | 12 |
+| Changed | 8 |
+| No longer true | 2 |
+| Cannot tell | 11 |
+
+**Evidence is uneven.** What the CLI does was read from source, and four of
+those quotes were re-read for this review. What hosted Codex Cloud does could
+not be read at all: `developers.openai.com` is refused by the sandbox proxy,
+so those rows rest on search-engine summaries or are marked "cannot tell".
+
+### What changed
+
+| Statement | Where | Now | Evidence |
+| --- | --- | --- | --- |
+| Codex's user-level `AGENTS.md` location "is not yet established" | `context/manifest.json` | **Settled.** It is `$CODEX_HOME/AGENTS.md`, by default `~/.codex/AGENTS.md`; `AGENTS.override.md` beside it wins | source, re-read |
+| Codex profiles land in `~/.agents/AGENTS.md` | `cloud/bootstrap.sh`, `cloud/README.md` | **Nothing reads that path**, on any Codex surface. `~/.agents/` is read for skills only | source |
+| "There is no second file it also loads" | `provider-codex.md` | **Changed.** Codex concatenates the global file, then one file per directory from the project root down to the working directory | source, re-read |
+| "A hook authored once works on both" | `provider-codex.md`, ADR-0014 | **Shape only.** Codex reads `hooks.json`, not `settings.json`; skips prompt and agent hooks; and runs a hook only once it is trusted | source, re-read |
+| "Each repo's own `AGENTS.md` is read" | `cloud/README.md` | **Conditional.** An untrusted project supplies no project instructions (0.150.0), and project instructions are capped at 32 KiB in total | source, release notes |
+| "Use the `gh` CLI" | `provider-codex.md` | **Contradicted locally.** The bootstrap installs no `gh` for the Codex cloud profile | this repo |
+| The Codex cloud row: 12-hour cache, maintenance script, agent offline by default | `docs/cloud-sandbox-design.md` | **Describes a product now titled "Codex Cloud (Legacy)"** | search summary only |
+| "Codex's agent phase is offline" | `cloud/bootstrap.sh` | **It was a default, not a fixed property.** `cloud/README.md` already requires it switched on | this repo |
+
+The composed Codex profiles are about 29 KB. As a global file that appears to
+be uncapped. Delivered as a project file, one would use nearly nine-tenths of
+the 32 KiB project budget before the repo's own `AGENTS.md` is counted. The
+manifest's budget is in lines, so it would not catch that.
+
+### What still holds
+
+Skills are read from `~/.agents/skills/`. Codex does not expand `@file`
+imports and has no argument templating. Codex reads a Claude-shaped plugin
+manifest. Claude Code does not read `~/.agents/skills`, so the bootstrap's
+symlink is still needed.
+
+### Capabilities the Codex side does not use
+
+| Capability | Bears on |
+| --- | --- |
+| A global `AGENTS.md` under `$CODEX_HOME` | The undelivered `codex-workstation` profile now has a destination |
+| Lifecycle hooks, stable and on by default | The Codex profiles ship no guards today. The trust gate has to be designed around |
+| `/import` from Claude Code | A free portability test: whatever it skips is what is not portable |
+| `codex review`, and automatic pull-request review | Workstream 4. A reviewer for a single-author estate |
+| Native OpenTelemetry export | The hand-built telemetry path for Codex |
+| `codex exec --json` with an output schema | Workstream 5. Codex has no eval runner; these are the parts to build one from |
+
+### Convergence
+
+The portable core rests on three conventions, and they have converged to
+different degrees.
+
+- **Instruction files** have converged at repo level. Both agents read a
+  repo's `AGENTS.md`. User level is still one path per vendor, and Claude
+  Code expands `@` imports inside `AGENTS.md` where Codex passes them through
+  as text.
+- **Skills** have converged on format and not on location.
+- **Hooks** have converged on the JSON shape and eleven event names, and not
+  on location, handler types or trust.
+
+### What would settle the rest
+
+- Allowing `developers.openai.com` in the sandbox, for every row that rests on
+  a search summary.
+- A re-test in a Codex cloud environment, for whether an install script takes
+  effect, what is writable and where `CODEX_HOME` points. No document answers
+  those.
