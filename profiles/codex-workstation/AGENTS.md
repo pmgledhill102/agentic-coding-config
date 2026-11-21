@@ -140,12 +140,10 @@ stated rather than inferred from where it sits.
 - **Preview an irreversible batch read-only, then stop.** Before deleting, overwriting or force-pushing over a *set* of resources, list exactly what the operation will affect and stop for explicit confirmation. **This does not contradict the non-interactive-flag rule below; the two govern different actors.** Suppress the *tool's* prompt — `--quiet` on a delete is right, because a command waiting on a tty an agent does not have is a hung session. Surface the *agent's* preview and wait. "Run it immediately, without prompting" is an instruction about the tool's interactivity, and reading it as permission to skip checking **what** is about to be destroyed is the specific failure this prevents. It is not a security boundary and not an attempt to be un-instructable: an operator who looks at the list and says "yes, delete them" gets the deletion. The same care applies to a single destructive command on an absolute path outside your own scratch directory — `rm -rf /dev/null` as the first clause of a compound line whose purpose was something else left a regular file where the device node had been, and every `2>/dev/null` in the repo went on "working" while silently accumulating bytes
 - **Mask by allowlist, never by denylist.** When showing a config file, a log or a process command line that may carry secrets, print key names, counts or a named known-safe field. Never print whole lines with a list of known-secret keys masked: the list misses the key nobody thought of. A secret passed as a launch argument is the same trap: any log line that echoes the command line carries it
 - **When a check reports nothing, prove it could have reported something.** Silence is only evidence once the check is known to be able to speak: run it against a case that must produce a hit, then trust the empty result. Ask what question the tool actually answered rather than the one you meant — an empty `grep` may mean the pattern is wrong, a 404 body parses as an empty field, GNU `date -d ""` returns *now* rather than failing, and a version regex can match a prefix inside a longer token so a filter never sees the `-beta1` it was written to exclude. Each of those returns a clean, confident, wrong answer with no error anywhere
-- **Check release notes before upgrading CLI tools**: check the changelog or releases before upgrading. Breaking changes (e.g. dropped backends, renamed flags) waste significant time when discovered mid-migration
 - **Lint before pushing**: Always run the relevant linter/test suite locally before `git push`. Only push if everything passes — avoids CI round-trips
 - **Use native binaries over package runners**: When a linter/formatter is installed on PATH (`command -v <tool>`), invoke it directly (e.g. `markdownlint-cli2 "path"`) rather than wrapping it in `npx`/`pipx`/`uvx`. Wrappers introduce version drift from what CI and pre-commit use, are slower, and may trigger permission prompts
 - **Single-concern PRs**: Each PR should contain a single logical change. If multiple tasks are completed in a session, create separate PRs for each rather than bundling unrelated changes
 - **PR-stacking discipline**: only claim "stacked on" when the second branch literally has the first as parent (`git log --oneline first..second` shows just the second's commits). Branching both off `main` and writing "stacked on PR #N" in the body is misleading — reviewers can merge in any order, and the second PR's diff includes the first's changes. If they're truly independent, branch each from `main` and don't say stacked. A stacked PR stays a **draft** until its base merges, so it cannot be merged into the base branch by mistake. GitHub re-parents only the PR directly above one that merges, so a held-back PR further up keeps the old SHAs and goes `dirty`: when its base merges, rebase it onto `main` by hand (or update it from `main`), mark it ready, and say in the PR that it is now independent
-- **Batch reads before edits**: When modifying multiple files, read all target files first, then make all edits — avoids "file not read yet" errors on parallel edit calls
 - **Always create a tracking issue**: Even for quick single-file fixes, create a GitHub Issue in the repo before starting work — maintains the audit trail and keeps the habit consistent. The one exception: a doc-sized correction a retro or end-session surfaces in the repo it is working in is fixed in that session and named in the retro instead, never filed as well
 - **Web fetch blocked by a 403?** Some sites (UESP, Cloudflare-fronted wikis) reject an agent's User-Agent. Skip alternative URLs and go straight to `curl -sSL -A "<a desktop Safari UA>" "$URL" | pandoc -f html -t gfm --wrap=none`, then read or `grep` the markdown; save it as a per-project script if the site recurs
 
@@ -309,25 +307,17 @@ The same apply is what removes retired files: `dotup` triggers dotfiles'
 post-apply hook, which runs `~/.claude/bin/claude-prune-retired` against
 the `retired-paths` list that just arrived through the external.
 
-### Testing chezmoi template changes
-
-Verify behaviour in a clean environment before relying on CI:
-
-```sh
-HOME=/tmp/chezmoi-test chezmoi init --source <path> --dry-run
-```
-
 ## Codex adapter
 
 Codex-specific guidance. The portable policy and the environment guidance are
 composed in from their own fragments; this section is only what would be
 meaningless to another provider.
 
-### This file is the whole instruction set
+### This file is composed whole
 
-Codex reads `AGENTS.md`. There is no second file it also loads, so everything
-it needs is composed into this one — the portable core, the environment
-fragment, and this section.
+Codex layers `AGENTS.md` files: a global one under its home directory, then
+one per directory from the project root down. Each is read as-is, so this
+policy is composed into one — the core, the environment, and this section.
 
 That is why composition emits complete files rather than references. Codex
 does not support `@file` imports, nor `$ARGUMENTS`, `$1..$n` or `` !`cmd` ``
@@ -346,11 +336,11 @@ reaches from the other direction.
 
 ### GitHub operations
 
-Use the `gh` CLI. The `mcp__github__*` tools named in the Claude adapter do
-not exist here; where a skill's text names one, the `gh` equivalent alongside
-it is the instruction that applies.
+The `mcp__github__*` tools named in the Claude adapter do not exist here; where
+a skill names one, the `gh` equivalent beside it applies. Check `command -v gh`
+first: the cloud bootstrap installs none for the Codex cloud profile.
 
 ### Hooks
 
-Codex uses the same `hooks.json` shape as Claude Code — same event names, same
-matcher groups — so a hook authored once works on both.
+Codex shares the hook JSON shape and a core set of event names with Claude
+Code, but not the file location, the handler types or the trust model.
