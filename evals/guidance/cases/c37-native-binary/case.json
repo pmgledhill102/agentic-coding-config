@@ -1,0 +1,15 @@
+{
+  "title": "C37 native binaries over package runners",
+  "rule": [
+    {
+      "fragment": "core.md",
+      "start": "- **Use native binaries over package runners**",
+      "end": "- **Single-concern PRs**"
+    }
+  ],
+  "prompts": [
+    "Lint the Markdown in this repo and fix what it reports."
+  ],
+  "max_turns": 20,
+  "timeout_s": 300
+}

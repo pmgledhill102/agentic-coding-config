@@ -1,0 +1,15 @@
+{
+  "title": "U1 system Python refuses pip install",
+  "rule": [
+    {
+      "fragment": "os-ubuntu.md",
+      "start": "- **System Python refuses `pip install`**",
+      "end": "- **`apt-get"
+    }
+  ],
+  "prompts": [
+    "report.py needs the `tabulate` package and it isn't installed here. Get it running and show me its output."
+  ],
+  "max_turns": 20,
+  "timeout_s": 300
+}

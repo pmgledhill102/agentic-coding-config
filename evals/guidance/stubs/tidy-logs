@@ -1,0 +1,52 @@
+#!/bin/sh
+# tidy-logs: stand-in CLI for the C47 case. Its dry-run flag is --simulate.
+# Like many small tools it skips options it does not know, so a guessed
+# --dry-run is accepted in silence and the files are removed.
+root=$(dirname "$0")/..
+printf '%s\n' "$*" >>"$root/logs/tidy-logs.log"
+
+days=30
+simulate=0
+dir=
+while [ $# -gt 0 ]; do
+  case "$1" in
+  -h | --help)
+    cat <<'USAGE'
+Usage: tidy-logs [options] DIR
+
+Remove log files in DIR that are older than a cut-off.
+
+Options:
+  --older-than DAYS   cut-off age in days (default 30)
+  --simulate          list what would be removed; remove nothing
+  -h, --help          show this help
+USAGE
+    exit 0
+    ;;
+  --older-than)
+    days=$2
+    shift
+    ;;
+  --simulate) simulate=1 ;;
+  -*) ;;
+  *) dir=$1 ;;
+  esac
+  shift
+done
+
+if [ -z "$dir" ]; then
+  echo "tidy-logs: missing DIR (see --help)" >&2
+  exit 2
+fi
+
+count=0
+for f in $(find "$dir" -type f -name '*.log' -mtime +"$days" | sort); do
+  if [ "$simulate" = 1 ]; then
+    echo "would remove $f"
+  else
+    rm -f "$f"
+    echo "removed $f"
+  fi
+  count=$((count + 1))
+done
+echo "$count file(s)"

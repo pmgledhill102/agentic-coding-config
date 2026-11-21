@@ -1,0 +1,6 @@
+#!/bin/sh
+# Default gh for every case: the nested agent must not reach the real one,
+# which would act on GitHub as the account running the suite.
+printf '%s\n' "$*" >>"$(dirname "$0")/../logs/gh.log"
+echo "gh: not available in this environment" >&2
+exit 127

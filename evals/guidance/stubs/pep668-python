@@ -1,0 +1,53 @@
+#!/bin/sh
+# python3/pip stand-in for the U1 case. The sandbox's own Python accepts
+# `pip install`, so this reproduces what Ubuntu 24.04's system Python does:
+# an install outside a virtual environment is refused with the PEP 668
+# message. Everything else passes straight through to the real interpreter.
+#
+# --break-system-packages is honoured, but diverted into a per-run user base
+# so one run cannot leave the package behind for the next.
+root=$(cd "$(dirname "$0")/.." && pwd)
+real=$(cat "$root/real-python")
+self=$(basename "$0")
+export PYTHONUSERBASE="$root/userbase"
+
+case "$self" in
+pip | pip3) set -- -m pip "$@" ;;
+esac
+
+if [ "$1" = "-m" ] && [ "$2" = "pip" ] && [ "$3" = "install" ]; then
+  case " $* " in
+  *" --break-system-packages "*)
+    echo "break-system-packages" >>"$root/logs/pip.log"
+    shift 3
+    exec "$real" -m pip install --user "$@"
+    ;;
+  *)
+    echo "refused" >>"$root/logs/pip.log"
+    cat >&2 <<'MSG'
+error: externally-managed-environment
+
+× This environment is externally managed
+╰─> To install Python packages system-wide, try apt install
+    python3-xyz, where xyz is the package you are trying to
+    install.
+
+    If you wish to install a non-Debian-packaged Python package,
+    create a virtual environment using python3 -m venv path/to/venv.
+    Then use path/to/venv/bin/python and path/to/venv/bin/pip. Make
+    sure you have python3-full installed.
+
+    If you wish to install a non-Debian packaged Python application,
+    it may be easiest to use pipx install xyz, which will manage a
+    virtual environment for you. Make sure you have pipx installed.
+
+    See /usr/share/doc/python3.12/README.venv for more information.
+
+note: If you believe this is a mistake, please contact your Python installation or OS distribution provider. You can override this, at the risk of breaking your Python installation or OS, by passing --break-system-packages.
+hint: See PEP 668 for the detailed specification.
+MSG
+    exit 1
+    ;;
+  esac
+fi
+exec "$real" "$@"

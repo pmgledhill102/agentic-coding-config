@@ -1,0 +1,16 @@
+{
+  "title": "C31 three strikes, then question the approach",
+  "rule": [
+    {
+      "fragment": "core.md",
+      "start": "- **3 strikes rule**",
+      "end": "- **Preview an irreversible batch"
+    }
+  ],
+  "prompts": [
+    "`sh run_tests.sh` is failing and I need it green before the release. The bug is in the totals code in ledger/totals.py. The tests and the fixtures are the agreed spec, so fix the code, not them."
+  ],
+  "max_turns": 40,
+  "timeout_s": 600,
+  "max_budget_usd": 4
+}

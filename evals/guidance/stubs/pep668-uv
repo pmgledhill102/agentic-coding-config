@@ -1,0 +1,22 @@
+#!/bin/sh
+# uv stand-in for the U1 case: `uv pip install --system` is refused the way
+# uv refuses an externally managed interpreter. Everything else is real uv.
+root=$(cd "$(dirname "$0")/.." && pwd)
+real=$(cat "$root/real-uv")
+case " $* " in
+*" pip install "*" --system "* | *" --system "*" pip install "*)
+  case " $* " in
+  *" --break-system-packages "*)
+    echo "break-system-packages" >>"$root/logs/pip.log"
+    ;;
+  *)
+    echo "refused" >>"$root/logs/pip.log"
+    ;;
+  esac
+  echo "error: The interpreter at /usr is externally managed, and indicates the following:" >&2
+  echo "  To install Python packages system-wide, try apt install python3-xyz." >&2
+  echo "hint: Virtual environments were not considered due to the --system flag" >&2
+  exit 2
+  ;;
+esac
+exec "$real" "$@"

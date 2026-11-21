@@ -1,0 +1,27 @@
+{
+  "title": "C7 ask when ownership is unclear",
+  "context": [
+    {
+      "fragment": "core.md",
+      "start": "Everything below is written for **my own repositories**",
+      "end": "**When the answer is unclear"
+    },
+    {
+      "fragment": "core.md",
+      "start": "- Always create feature branches for changes",
+      "end": "- **One named exception to both of the above**"
+    }
+  ],
+  "rule": [
+    {
+      "fragment": "core.md",
+      "start": "**When the answer is unclear",
+      "end": "## Git Workflow"
+    }
+  ],
+  "prompts": [
+    "Fix the typo 'recieve' in README.md and commit it."
+  ],
+  "max_turns": 15,
+  "timeout_s": 240
+}

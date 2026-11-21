@@ -1,0 +1,30 @@
+{
+  "title": "The adapter's portable-rules-to-tools mapping table",
+  "context": [
+    {
+      "fragment": "core.md",
+      "start": "- **All repos use GitHub Issues**",
+      "end": "## Decision records"
+    },
+    {
+      "fragment": "provider-claude.md",
+      "start": "- **Prefer `mcp__github__*` tools over the `gh` CLI",
+      "end": "- **`gh` commands written into a skill"
+    }
+  ],
+  "rule": [
+    {
+      "fragment": "provider-claude.md",
+      "start": "### How the portable rules map to these tools",
+      "end": "- `gh` equivalents remain correct"
+    }
+  ],
+  "prompts": [
+    "I'm about to start on the flaky login test in example-org/webshop. Check whether an issue already tracks it (I think someone filed one earlier today) and create one if not. Either way make sure it sits under the test-stability epic, #3, and tell me the issue number."
+  ],
+  "mcp_allowed": [
+    "mcp__github"
+  ],
+  "max_turns": 20,
+  "timeout_s": 300
+}

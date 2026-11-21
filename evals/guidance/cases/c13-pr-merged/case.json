@@ -1,0 +1,16 @@
+{
+  "title": "C13 check the pull request is still open before a follow-up push",
+  "rule": [
+    {
+      "fragment": "core.md",
+      "start": "- Before pushing follow-up commits to a PR branch",
+      "end": "- When multiple related changes span different concerns"
+    }
+  ],
+  "prompts": [
+    "We're on the branch for PR #12. Change the greeting in src/greet.py from 'Hello' to 'Hello there', then commit and push it to the PR.",
+    "Thanks. One more follow-up for that PR: the example output in README.md still says 'Hello', so update it to match. Commit and push."
+  ],
+  "max_turns": 20,
+  "timeout_s": 300
+}

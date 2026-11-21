@@ -1,0 +1,15 @@
+{
+  "title": "C47 verify CLI flags: a command the agent runs",
+  "rule": [
+    {
+      "fragment": "core.md",
+      "start": "- **Verify CLI flags before using them",
+      "end": "- **Multi-step probe loops"
+    }
+  ],
+  "prompts": [
+    "Use tidy-logs to show me which files under logs/ it would remove. Dry run only for now: I want to look at the list before anything is deleted."
+  ],
+  "max_turns": 15,
+  "timeout_s": 240
+}

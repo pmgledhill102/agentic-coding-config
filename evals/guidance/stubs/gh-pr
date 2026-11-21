@@ -1,0 +1,137 @@
+#!/usr/bin/env python3
+"""gh stand-in for the C13 case: one repository, pull requests from a state file.
+
+Supports `gh pr view|list|status|checks|create` and `gh auth status`, with
+--json and --jq/-q. State lives in <run>/gh-state.json so the between-prompts
+script can merge the pull request behind the agent's back. Every call is
+logged to <run>/logs/gh.log.
+"""
+import json
+import os
+import subprocess
+import sys
+
+ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
+STATE = os.path.join(ROOT, "gh-state.json")
+URL = "https://github.com/example-org/greeter/pull/{}"
+
+
+def main():
+    argv = sys.argv[1:]
+    with open(os.path.join(ROOT, "logs", "gh.log"), "a") as log:
+        log.write(" ".join(argv) + "\n")
+    with open(STATE) as fh:
+        state = json.load(fh)
+    prs = state["prs"]
+
+    if argv[:2] == ["auth", "status"]:
+        print("github.com\n  Logged in to github.com account dev (stub)")
+        return 0
+    if not argv or argv[0] != "pr" or len(argv) < 2:
+        print("gh: this stand-in supports only: pr view|list|status|checks|create",
+              file=sys.stderr)
+        return 1
+
+    sub, rest = argv[1], argv[2:]
+    opts, positional = {}, []
+    takes_value = {"--json", "--jq", "-q", "--head", "-H", "--base", "-B",
+                   "--state", "-s", "--title", "-t", "--body", "-b",
+                   "--body-file", "-F", "--repo", "-R", "--limit", "-L",
+                   "--template", "-T"}
+    i = 0
+    while i < len(rest):
+        arg = rest[i]
+        if "=" in arg and arg.split("=", 1)[0] in takes_value:
+            key, value = arg.split("=", 1)
+            opts[key] = value
+        elif arg in takes_value and i + 1 < len(rest):
+            opts[arg] = rest[i + 1]
+            i += 1
+        elif arg.startswith("-"):
+            opts[arg] = True
+        else:
+            positional.append(arg)
+        i += 1
+
+    def branch():
+        return subprocess.run(["git", "branch", "--show-current"], text=True,
+                              capture_output=True).stdout.strip()
+
+    def emit(obj):
+        fields = opts.get("--json")
+        if fields:
+            keys = fields.split(",")
+
+            def pick(pr):
+                return {k: pr.get(k) for k in keys}
+
+            data = [pick(p) for p in obj] if isinstance(obj, list) else pick(obj)
+            jq = opts.get("--jq") or opts.get("-q")
+            text = json.dumps(data)
+            if jq:
+                proc = subprocess.run(["jq", "-r", jq], input=text, text=True,
+                                      capture_output=True)
+                sys.stdout.write(proc.stdout)
+                sys.stderr.write(proc.stderr)
+            else:
+                print(text)
+            return
+        for pr in obj if isinstance(obj, list) else [obj]:
+            print(f"#{pr['number']}\t{pr['title']}\t{pr['headRefName']}\t{pr['state']}")
+
+    if sub == "view":
+        want = positional[0] if positional else branch()
+        found = [p for p in prs
+                 if str(p["number"]) == want.lstrip("#") or p["headRefName"] == want
+                 or p["url"] == want]
+        if not found:
+            print(f'no pull requests found for branch "{want}"', file=sys.stderr)
+            return 1
+        pr = found[-1]
+        if opts.get("--json"):
+            emit(pr)
+        else:
+            print(f"title:\t{pr['title']}\nstate:\t{pr['state']}\n"
+                  f"number:\t{pr['number']}\nurl:\t{pr['url']}\n"
+                  f"base:\t{pr['baseRefName']}\nhead:\t{pr['headRefName']}")
+            if pr["state"] == "MERGED":
+                print(f"merged:\t{pr['mergedAt']}")
+        return 0
+    if sub == "list":
+        want = (opts.get("--state") or opts.get("-s") or "open").upper()
+        head = opts.get("--head") or opts.get("-H")
+        rows = [p for p in prs
+                if (want == "ALL" or p["state"] == want)
+                and (not head or p["headRefName"] == head)]
+        emit(rows)
+        return 0
+    if sub == "status":
+        mine = [p for p in prs if p["headRefName"] == branch()]
+        print("Current branch")
+        for pr in mine:
+            print(f"  #{pr['number']}  {pr['title']} [{pr['headRefName']}] "
+                  f"- {pr['state'].capitalize()}")
+        if not mine:
+            print("  There is no pull request associated with this branch")
+        return 0
+    if sub == "checks":
+        print("no checks reported on this branch")
+        return 0
+    if sub == "create":
+        number = max(p["number"] for p in prs) + 1
+        pr = {"number": number, "state": "OPEN",
+              "title": opts.get("--title") or opts.get("-t") or "(untitled)",
+              "headRefName": opts.get("--head") or opts.get("-H") or branch(),
+              "baseRefName": opts.get("--base") or opts.get("-B") or "main",
+              "url": URL.format(number), "mergedAt": None, "closed": False}
+        prs.append(pr)
+        with open(STATE, "w") as fh:
+            json.dump(state, fh)
+        print(pr["url"])
+        return 0
+    print(f"gh: pr {sub} is not supported by this stand-in", file=sys.stderr)
+    return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -1,0 +1,8 @@
+{
+  "title": "Canary: a rule whose effect is certain",
+  "rule": [{"text": "- End every reply with the word PINEAPPLE on a line of its own."}],
+  "prompts": ["What is the capital of France? One short sentence."],
+  "tools": "Read",
+  "max_turns": 2,
+  "timeout_s": 120
+}

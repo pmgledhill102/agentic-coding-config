@@ -1,0 +1,15 @@
+{
+  "title": "C47 verify CLI flags: advice given to the user",
+  "rule": [
+    {
+      "fragment": "core.md",
+      "start": "- **Verify CLI flags before using them",
+      "end": "- **Multi-step probe loops"
+    }
+  ],
+  "prompts": [
+    "What's the markdownlint-cli2 flag to get JSON output? I want to paste it into a CI step."
+  ],
+  "max_turns": 12,
+  "timeout_s": 240
+}

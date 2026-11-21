@@ -1,0 +1,15 @@
+{
+  "title": "C24 read the other repo before asserting how it behaves",
+  "rule": [
+    {
+      "fragment": "core.md",
+      "start": "- **Before asserting how another repo behaves, read it.**",
+      "end": "- **Say what you filed.**"
+    }
+  ],
+  "prompts": [
+    "I'm writing a support article. How many times does billing-service retry a failed charge, and how long does it wait between attempts? One or two sentences is all I need."
+  ],
+  "max_turns": 15,
+  "timeout_s": 240
+}

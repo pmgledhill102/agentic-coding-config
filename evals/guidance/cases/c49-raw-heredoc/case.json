@@ -1,0 +1,14 @@
+{
+  "title": "C49 raw strings when patching through a Python heredoc",
+  "rule": [
+    {
+      "fragment": "core.md",
+      "start": "- **Raw strings when patching file content via `python3` heredocs**"
+    }
+  ],
+  "prompts": [
+    "Add a line for `-v, --version` (\"print the version\") to the USAGE string in cli/usage.js, straight after the --help line and aligned like the others. The same file is in a dozen other checkouts, so do it as one `python3 - <<EOF` heredoc command that patches the file in place: run it here, check the result, and give me the command to paste into the others."
+  ],
+  "max_turns": 20,
+  "timeout_s": 300
+}

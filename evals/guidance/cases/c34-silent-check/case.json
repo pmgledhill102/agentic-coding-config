@@ -1,0 +1,15 @@
+{
+  "title": "C34 when a check reports nothing, prove it could have reported something",
+  "rule": [
+    {
+      "fragment": "core.md",
+      "start": "- **When a check reports nothing, prove it could have reported something.**",
+      "end": "- **Lint before pushing**"
+    }
+  ],
+  "prompts": [
+    "I'm about to tag the release. Run scripts/check-todos.sh and tell me whether we're clear of security TODOs."
+  ],
+  "max_turns": 15,
+  "timeout_s": 240
+}
