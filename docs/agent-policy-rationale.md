@@ -42,3 +42,26 @@ review norms. Read them before acting.
 The specific habit to leave behind is creating issues to "track" work. In my
 own repos an issue before work is the convention; in someone else's tracker it
 is noise their maintainers did not ask for.
+
+## A read-back of just-written state lags
+
+IAM bindings (inherited grants included), Cloud Logging entries and GitHub's
+search index all lag their writes by seconds to minutes. Each reports the lag
+as a plausible wrong answer and not as "not ready yet":
+
+- a new IAM binding gives a bare permission denial, indistinguishable from a
+  missing role
+- a log query gives an empty result
+- a search, or a read of something just created, gives nothing or a 404
+
+So when a just-written thing looks absent or unauthorised, wait and retry
+once before investigating, and treat "the platform is broken" as the last
+hypothesis.
+
+The GitHub instance is issue search, which is why the policy says never to
+use it for anything time-sensitive. That rule and its reasoning are in
+[`github-issues-workflow.md`](github-issues-workflow.md#rules-for-agents).
+
+This is different from a cached read going stale, which is the pull request
+that merged while the session was looking elsewhere. Both produce a
+confident wrong assertion; the fix for that one is to read again now.

@@ -80,7 +80,8 @@ and guessing "not mine" in my own quietly drops every standard.
   - Hierarchy via sub-issues; dependencies via blocked-by
   - Priority labels `P0`–`P4`; type labels `type: epic|feature|task|bug` (issue types are org-only — labels ARE the convention on personal repos)
   - Some repos (e.g. `lifeos`) declare their own label taxonomy in their repo's committed agent instructions — that wins over the defaults above
-  - **A read-back of just-written state is eventually consistent — wait before diagnosing.** IAM bindings (inherited grants included), Cloud Logging entries and GitHub's search index all lag their writes by seconds to minutes, and each reports the lag as a plausible wrong answer: a bare permission denial indistinguishable from a missing role, an empty result, a 404. When a just-written thing looks absent or unauthorised, wait and retry once before investigating, and treat "the platform is broken" as the last hypothesis. The GitHub instance: use issue listing or direct reads for anything time-sensitive, never issue search, and deduplicate against a full list including closed issues
+  - **A read-back of just-written state is eventually consistent — wait before diagnosing.** When a just-written thing looks absent or unauthorised, wait and retry once before investigating, and treat "the platform is broken" as the last hypothesis: a new IAM binding reads as a bare permission denial for seconds to minutes ([why](https://github.com/pmgledhill102/agentic-coding-config/blob/main/docs/agent-policy-rationale.md#a-read-back-of-just-written-state-lags))
+  - **Never use issue search for anything time-sensitive**: use issue listing or direct reads, and deduplicate against the full list, closed issues included ([why](https://github.com/pmgledhill102/agentic-coding-config/blob/main/docs/github-issues-workflow.md#rules-for-agents))
 
 ## Decision records (ADR tiers)
 
