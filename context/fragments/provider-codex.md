@@ -4,11 +4,11 @@ Codex-specific guidance. The portable policy and the environment guidance are
 composed in from their own fragments; this section is only what would be
 meaningless to another provider.
 
-## This file is the whole instruction set
+## This file is composed whole
 
-Codex reads `AGENTS.md`. There is no second file it also loads, so everything
-it needs is composed into this one — the portable core, the environment
-fragment, and this section.
+Codex layers `AGENTS.md` files: a global one under its home directory, then
+one per directory from the project root down. Each is read as-is, so this
+policy is composed into one — the core, the environment, and this section.
 
 That is why composition emits complete files rather than references. Codex
 does not support `@file` imports, nor `$ARGUMENTS`, `$1..$n` or `` !`cmd` ``
@@ -27,11 +27,11 @@ reaches from the other direction.
 
 ## GitHub operations
 
-Use the `gh` CLI. The `mcp__github__*` tools named in the Claude adapter do
-not exist here; where a skill's text names one, the `gh` equivalent alongside
-it is the instruction that applies.
+The `mcp__github__*` tools named in the Claude adapter do not exist here; where
+a skill names one, the `gh` equivalent beside it applies. Check `command -v gh`
+first: the cloud bootstrap installs none for the Codex cloud profile.
 
 ## Hooks
 
-Codex uses the same `hooks.json` shape as Claude Code — same event names, same
-matcher groups — so a hook authored once works on both.
+Codex shares the hook JSON shape and a core set of event names with Claude
+Code, but not the file location, the handler types or the trust model.
