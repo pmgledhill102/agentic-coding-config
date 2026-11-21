@@ -97,8 +97,11 @@ merging of dependency updates is unchanged.
 ### 5. A tracking issue is needed for description and diff depth only
 
 A title-depth change needs no issue. Its pull request is the record. This
-amends the rule in [ADR-0013](0013-github-issues-for-work-tracking.md) that an
-issue comes before every change.
+amends the rule that an issue comes before every change. That rule is stated
+in [`docs/github-issues-workflow.md`](../docs/github-issues-workflow.md) and
+in the agent policy, under
+[ADR-0013](0013-github-issues-for-work-tracking.md)'s adoption of GitHub
+Issues.
 
 The existing exception stands: a doc-sized correction found during a retro or
 at the end of a session is fixed in that session.
@@ -139,8 +142,8 @@ A diff-depth change always has a pull request to itself.
 
 ## Follow-up work
 
-1. Update the workflow rules in `context/fragments/core.md` to match sections
-   2 to 6.
+1. Update the workflow rules in `context/fragments/core.md` and
+   `docs/github-issues-workflow.md` to match sections 2 to 6.
 2. Add the three `review:` labels to the repository standard, so every repo
    has them.
 3. After 30 days of labelled pull requests, count how often the owner changed
@@ -157,8 +160,9 @@ A diff-depth change always has a pull request to itself.
 
 - [#785](https://github.com/pmgledhill102/agentic-coding-config/issues/785):
   the review this decision came out of
-- [ADR-0013](0013-github-issues-for-work-tracking.md): the issue-first rule
-  this amends
+- [ADR-0013](0013-github-issues-for-work-tracking.md): adopts GitHub Issues
+  for work tracking; the issue-first rule this amends is in the conventions
+  doc it delegates to
 - [ADR-0015](0015-tiered-adrs.md): why this is a user-tier decision
 - [`docs/github-issues-workflow.md`](../docs/github-issues-workflow.md): the
   conventions for issues, which still apply where an issue is needed
