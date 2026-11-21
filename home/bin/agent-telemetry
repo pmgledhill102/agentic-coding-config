@@ -21,8 +21,8 @@
 #       read from the session marker and the bootstrap manifest), preceded by
 #       a `session-shape` snapshot, then a final `ship`.
 #   session-shape
-#       One `session shape` event: cache verdict, session source, bootstrap
-#       sha and duration (from the session marker), and seconds from session
+#       One `session shape` event: cache verdict, session source, entrypoint,
+#       bootstrap sha and duration (from the session marker), and seconds from session
 #       start to the first commit and to each shimmed tool's first use (from
 #       agent-shim's state). A snapshot: it is emitted again at each throttled
 #       Stop and at session-end, and the latest one per session is the answer.
@@ -109,6 +109,9 @@ ALLOWED_KEYS="$ALLOWED_KEYS issues_filed issues_filed_refs fixed_in_place journa
 # Watched wait time (#625): toolchain shim calls and the session shape. Times,
 # exit codes and tool names only; never an argument.
 ALLOWED_KEYS="$ALLOWED_KEYS via blocked_ms session_source bootstrap_duration_seconds first_commit_s first_use_s"
+# Which client started the session (#788): one of the fixed tokens
+# session-cache-verdict writes to the marker.
+ALLOWED_KEYS="$ALLOWED_KEYS entrypoint"
 
 umask 077
 
@@ -668,7 +671,7 @@ marker_field() { sed -n "s/^$1=//p" "$MARKER" 2> /dev/null | head -1; }
 
 cmd_session_shape() {
     _pairs=""
-    for _f in cache session_source sha bootstrap_duration_seconds; do
+    for _f in cache session_source entrypoint sha bootstrap_duration_seconds; do
         _v=$(marker_field "$_f")
         case "$_v" in "" | unknown) ;; *) _pairs="$_pairs $_f=$_v" ;; esac
     done

@@ -145,6 +145,22 @@ eq "carries the bootstrap duration through" \
 eq "carries the ref" "$(marker_field "$H" ref)" main
 eq "records the session source" "$(marker_field "$H" session_source)" startup
 
+echo "--- the entrypoint is a fixed token, never the variable's text ---"
+
+CLAUDE_CODE_ENTRYPOINT=remote_mobile
+export CLAUDE_CODE_ENTRYPOINT
+H=$(fixture entry-known "$(iso_ago 60)" "session_AAA")
+run "$H" '{"session_id":"session_AAA","source":"startup"}' >/dev/null
+eq "a known entrypoint is recorded" "$(marker_field "$H" entrypoint)" remote_mobile
+CLAUDE_CODE_ENTRYPOINT='some new client; with text'
+H=$(fixture entry-other "$(iso_ago 60)" "session_AAA")
+run "$H" '{"session_id":"session_AAA","source":"startup"}' >/dev/null
+eq "an entrypoint outside the fixed set is other" "$(marker_field "$H" entrypoint)" other
+unset CLAUDE_CODE_ENTRYPOINT
+H=$(fixture entry-unset "$(iso_ago 60)" "session_AAA")
+run "$H" '{"session_id":"session_AAA","source":"startup"}' >/dev/null
+eq "no entrypoint variable is unknown" "$(marker_field "$H" entrypoint)" unknown
+
 echo "--- never the reason a session fails to start ---"
 
 # A workstation: no manifest. Must leave without writing anything, and without

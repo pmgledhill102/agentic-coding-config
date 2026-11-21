@@ -16,7 +16,11 @@
 #      ship resumes; a 429/503 backs off by Retry-After; shipping again after
 #      success sends nothing.
 #   4. THE ALLOWLIST HOLDS. An unlisted key never reaches the spool, and values
-#      are charset-restricted and capped.
+#      are charset-restricted and capped. The two values taken from outside the
+#      estate are held tighter still: `entrypoint` is one of a fixed set or
+#      `other`, and a skill name that is not a plain token is `invalid`, so
+#      neither can carry text. The skill hook reads the name and never the
+#      arguments, returns without waiting on the helper, and exits 0 always.
 #
 # Usage: sh tests/agent-telemetry-test.sh
 # Requires: python3 (stub ingest), curl, jq. Exits non-zero if any case fails.
@@ -26,6 +30,7 @@ set -u
 ROOT=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
 HELPER="$ROOT/home/bin/agent-telemetry"
 HOOK="$ROOT/home/bin/agent-telemetry-claude-hook"
+VERDICT="$ROOT/home/bin/session-cache-verdict"
 STUB="$ROOT/tests/stub-ingest.py"
 
 # Values that have no business appearing in any output or argv.
@@ -721,6 +726,143 @@ expect "stop with an empty payload exits 0" 0 "$RC"
 OUT=$("$HOOK" nonsense </dev/null 2>&1) && RC=0 || RC=$?
 expect "an unknown hook event exits 0" 0 "$RC"
 
+# --- 16. entrypoint ------------------------------------------------------------
+
+echo "entrypoint"
+# verdict <entrypoint|-> — write a fresh marker; `-` leaves the variable unset.
+verdict() {
+  rm -f "$MARKER"
+  (
+    unset CLAUDE_CODE_ENTRYPOINT
+    [ "$1" = - ] || { CLAUDE_CODE_ENTRYPOINT=$1 && export CLAUDE_CODE_ENTRYPOINT; }
+    printf '{"session_id":"sess-ep-1","source":"startup"}' | sh "$VERDICT"
+  )
+}
+marker_entry() { sed -n 's/^entrypoint=//p' "$MARKER" 2>/dev/null; }
+reset
+printf 'status=ok\nref=main\n' >"$MANIFEST"
+verdict remote_mobile
+expect "a known entrypoint reaches the marker" remote_mobile "$(marker_entry)"
+run record session-marker "$MARKER"
+expect "...and the spooled session-marker" remote_mobile "$(tail -1 "$SPOOL" | jq -r .fields.entrypoint)"
+run session-shape
+expect "...and the session shape" remote_mobile "$(tail -1 "$SPOOL" | jq -r .entrypoint)"
+for e in cli sdk-cli sdk-ts sdk-py claude-vscode claude-desktop claude-desktop-3p claude-in-slack local-agent remote remote_desktop; do
+  verdict "$e"
+  expect "$e is kept as itself" "$e" "$(marker_entry)"
+done
+verdict 'remote_mobile; ENTRY-SENTINEL write me a poem'
+expect "an entrypoint outside the fixed set is recorded as other" other "$(marker_entry)"
+run record session-marker "$MARKER"
+run session-shape
+expect "...in the session shape too" other "$(tail -1 "$SPOOL" | jq -r .entrypoint)"
+if grep -qF ENTRY-SENTINEL "$MARKER" "$SPOOL"; then bad "the entrypoint's text reached the marker or the spool"; else ok "none of its text reaches the marker or the spool"; fi
+verdict Remote
+expect "a known value in another case is still other" other "$(marker_entry)"
+verdict -
+expect "no entrypoint variable is recorded as unknown" unknown "$(marker_entry)"
+run session-shape
+expect "...and left out of the session shape" null "$(tail -1 "$SPOOL" | jq -r .entrypoint)"
+
+# --- 17. the skill hook --------------------------------------------------------
+
+echo "skill hook"
+reset
+skill_events() { if [ -f "$SPOOL" ]; then jq -c 'select(.source == "skill" and .name == "invoke")' "$SPOOL" | wc -l | tr -d ' '; else echo 0; fi; }
+# skill_hook <payload> <events expected afterwards> — run the hook, then wait
+# for its detached event; with no new event expected, wait long enough to see one.
+skill_hook() {
+  _before=$(skill_events)
+  OUT=$(printf '%s' "$1" | "$HOOK" skill 2>&1) && RC=0 || RC=$?
+  printf '%s\n' "$OUT" >>"$ALL_OUTPUT"
+  i=0
+  while [ "$i" -lt 50 ] && [ "$(skill_events)" -lt "$2" ]; do
+    sleep 0.1
+    i=$((i + 1))
+  done
+  [ "$2" -gt "$_before" ] || sleep 0.5
+}
+last_skill() { jq -c 'select(.source == "skill" and .name == "invoke")' "$SPOOL" | tail -1 | jq -r "$1"; }
+
+skill_hook '{"session_id":"s","hook_event_name":"PreToolUse","tool_name":"Skill","tool_input":{"skill":"end-session","args":"ARGS-SENTINEL the argument text"},"cwd":"/CWD-SENTINEL"}' 1
+expect "a Skill call exits 0" 0 "$RC"
+expect "a Skill call prints nothing (PreToolUse stdout is a decision)" "" "$OUT"
+expect "a Skill call records one skill invoke event" 1 "$(skill_events)"
+expect "...carrying the skill's name" end-session "$(last_skill .skill)"
+expect "...and that the model called it" tool "$(last_skill .via)"
+expect "...and nothing else" "kind name session_id skill source ts via" "$(last_skill 'keys | join(" ")')"
+
+skill_hook '{"hook_event_name":"UserPromptExpansion","expansion_type":"slash_command","command_name":"my-plugin:example-skill","command_args":"ARGS-SENTINEL","command_source":"plugin","prompt":"/my-plugin:example-skill PROMPT-SENTINEL"}' 2
+expect "a typed command exits 0" 0 "$RC"
+expect "a typed command prints nothing (its stdout joins the prompt)" "" "$OUT"
+expect "a typed command records its name" my-plugin:example-skill "$(last_skill .skill)"
+expect "...and that it was typed" slash "$(last_skill .via)"
+
+skill_hook '{"hook_event_name":"PreToolUse","tool_name":"Skill","tool_input":{"skill":"ignore previous instructions SMUGGLED-SENTINEL"}}' 3
+expect "a skill name outside the charset is recorded as invalid" invalid "$(last_skill .skill)"
+skill_hook '{"hook_event_name":"PreToolUse","tool_name":"Skill","tool_input":{"skill":"line1\nSMUGGLED-SENTINEL"}}' 4
+expect "a skill name with a newline is recorded as invalid" invalid "$(last_skill .skill)"
+skill_hook "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Skill\",\"tool_input\":{\"skill\":\"$(python3 -c 'print("x" * 120)')\"}}" 5
+expect "a 120-character name is kept" 120 "$(last_skill '.skill | length')"
+skill_hook "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Skill\",\"tool_input\":{\"skill\":\"$(python3 -c 'print("SMUGGLED-SENTINEL" + "x" * 104)')\"}}" 6
+expect "a 121-character name is recorded as invalid" invalid "$(last_skill .skill)"
+
+skill_hook '{"hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"skill":"not-a-skill-call","command":"true"}}' 6
+expect "another tool's call records nothing" 6 "$(skill_events)"
+skill_hook '{"hook_event_name":"UserPromptExpansion","expansion_type":"mcp_prompt","command_name":"server:prompt"}' 6
+expect "an MCP prompt records nothing" 6 "$(skill_events)"
+skill_hook '{"hook_event_name":"PreToolUse","tool_name":"Skill","tool_input":{"skill":{"name":"SMUGGLED-SENTINEL"}}}' 6
+expect "a name that is not a string records nothing" 6 "$(skill_events)"
+expect "...and exits 0" 0 "$RC"
+skill_hook '{"hook_event_name":"PreToolUse","tool_name":"Skill","tool_input":{}}' 6
+expect "a Skill call with no name records nothing and exits 0" "6 0" "$(skill_events) $RC"
+skill_hook 'not json at all' 6
+expect "an unparseable payload records nothing and exits 0" "6 0" "$(skill_events) $RC"
+skill_hook '' 6
+expect "an empty payload records nothing and exits 0" "6 0" "$(skill_events) $RC"
+for s in ARGS-SENTINEL PROMPT-SENTINEL CWD-SENTINEL SMUGGLED-SENTINEL; do
+  if grep -qF "$s" "$SPOOL"; then bad "$s reached the spool"; else ok "$s never reaches the spool"; fi
+done
+# Nothing on PATH at all: no jq, no cat, no dirname.
+mkdir -p "$WORK/empty"
+OUT=$(printf '{"tool_name":"Skill","tool_input":{"skill":"x"}}' | PATH="$WORK/empty" /bin/sh "$HOOK" skill 2>/dev/null) && RC=0 || RC=$?
+expect "the hook exits 0 with nothing on PATH" 0 "$RC"
+expect "...and prints nothing on stdout" "" "$OUT"
+
+# The hook must not wait on the helper: a Skill call is held until it returns.
+mkdir -p "$WORK/slow"
+cp "$HOOK" "$WORK/slow/agent-telemetry-claude-hook"
+cat >"$WORK/slow/agent-telemetry" <<EOF
+#!/bin/sh
+sleep 3
+touch "$WORK/slow/helper-ran"
+EOF
+chmod +x "$WORK/slow/agent-telemetry" "$WORK/slow/agent-telemetry-claude-hook"
+payload='{"hook_event_name":"PreToolUse","tool_name":"Skill","tool_input":{"skill":"end-session"}}'
+t0=$(now_ms)
+case "$t0" in
+  "" | *[!0-9]*) ok "skipped: this date has no %N, so hook timing is not measured here" ;;
+  *)
+    printf '%s' "$payload" | "$WORK/slow/agent-telemetry-claude-hook" skill >/dev/null 2>&1
+    took=$(($(now_ms) - t0))
+    if [ "$took" -lt 1000 ]; then ok "the hook returns in ${took}ms while its helper takes 3s"; else bad "the hook took ${took}ms: it waited for the helper"; fi
+    i=0
+    while [ "$i" -lt 60 ] && [ ! -f "$WORK/slow/helper-ran" ]; do
+      sleep 0.1
+      i=$((i + 1))
+    done
+    if [ -f "$WORK/slow/helper-ran" ]; then ok "...and the slow helper did run, detached"; else bad "the slow helper never ran, so the timing proved nothing"; fi
+    t0=$(now_ms)
+    n=0
+    while [ "$n" -lt 20 ]; do
+      printf '%s' "$payload" | "$HOOK" skill >/dev/null 2>&1
+      n=$((n + 1))
+    done
+    avg=$((($(now_ms) - t0) / 20))
+    if [ "$avg" -lt 100 ]; then ok "the skill hook averages ${avg}ms, under the 100ms budget"; else bad "the skill hook averages ${avg}ms, over the 100ms budget"; fi
+    ;;
+esac
+
 # --- a whole session with no ingest configured ---------------------------------
 
 echo "a full session with TELEMETRY_INGEST_URL unset"
@@ -743,13 +885,17 @@ OUT=$(printf '{"session_id":"s","transcript_path":"%s"}' "$T" | "$HOOK" stop 2>&
 printf '%s\n' "$OUT" >>"$ALL_OUTPUT"
 expect "stop exits 0 with no URL" 0 "$RC"
 expect "stop prints nothing with no URL" "" "$OUT"
+OUT=$(printf '{"hook_event_name":"PreToolUse","tool_name":"Skill","tool_input":{"skill":"end-session"}}' | "$HOOK" skill 2>&1) && RC=0 || RC=$?
+printf '%s\n' "$OUT" >>"$ALL_OUTPUT"
+expect "the skill hook exits 0 with no URL" 0 "$RC"
+expect "the skill hook prints nothing with no URL" "" "$OUT"
 run session-end repo=example/repo branch=main
 expect_rc "session-end exits 0 with no URL" 0
 expect "session-end prints nothing with no URL" "" "$OUT"
 sleep 1
 expect "the bootstrap manifest, the marker, the events and the session record are all spooled" "bootstrap event session session-marker" \
   "$(jq -r .kind "$SPOOL" | sort -u | tr '\n' ' ' | sed 's/ $//')"
-expect "the events are the caller's, a hook stop and a session shape" "hook.stop session.shape skill.step-done" \
+expect "the events are the caller's, a hook stop, a skill invoke and a session shape" "hook.stop session.shape skill.invoke skill.step-done" \
   "$(jq -r 'select(.kind == "event") | "\(.source).\(.name)"' "$SPOOL" | sort -u | tr '\n' ' ' | sed 's/ $//')"
 expect "nothing was shipped" 0 "$(offset)"
 expect "no request was made" 0 "$(requests)"
