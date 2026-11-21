@@ -125,8 +125,7 @@ stated rather than inferred from where it sits.
 
 ### Changing agent config
 
-- **To request a change to agent configuration, open a GitHub issue against `pmgledhill102/agentic-coding-config`.** Describe what should change and why; add acceptance criteria if useful. The user works the GH-issue inbox directly in a-c-c sessions, where the source actually lives
-- This is the route from **any** surface. Whatever config is on disk here is *generated* — composed from fragments and delivered by chezmoi or the bootstrap — so editing it in place is lost on the next apply. The issue is the change
+- **To request a change to agent configuration, open a GitHub issue against `pmgledhill102/agentic-coding-config`**, from any surface, saying what should change and why. The config on disk is generated from fragments, so an edit in place is lost on the next apply ([why](https://github.com/pmgledhill102/agentic-coding-config/blob/main/docs/agent-policy-rationale.md#config-changes-go-through-an-issue))
 
 ### Commit & PR Style
 

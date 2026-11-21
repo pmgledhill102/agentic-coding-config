@@ -76,3 +76,15 @@ which a cross-repo edit bypasses.
 "Detailed" is defined in the rule. The aim behind the definition is that the
 fix is a mechanical edit for whoever picks it up, with nothing left to
 rediscover.
+
+## Config changes go through an issue
+
+To change agent configuration, open an issue against
+`pmgledhill102/agentic-coding-config`. Describe what should change and why,
+and add acceptance criteria if they help. The owner works that issue inbox
+directly in sessions on this repo, where the source lives.
+
+This is the route from any surface, because whatever config is on disk is
+generated: composed from fragments and delivered by chezmoi on a workstation
+or by the bootstrap in a sandbox. An edit in place is lost on the next apply.
+The issue is the change.
