@@ -24,9 +24,8 @@ fragment. See `adrs/0018-composing-agent-context-per-surface.md`.
 
 ### Which repos this applies to
 
-Everything below is written for **my own repositories**, and the signal that
-says whether one is mine is already in every clone: the **origin remote**.
-Nothing has to be declared in the repo, so nothing can drift.
+Everything below is written for **my own repositories**. Whether one is mine
+is read from its **origin remote**, so nothing has to be declared in the repo.
 
 **Mine** — the policy in this fragment applies in full:
 
@@ -36,9 +35,9 @@ git remote get-url origin
 # https://github.com/pmgledhill102/<repo>.git
 ```
 
-Both URL forms are in live use, so match on the `<owner>/<repo>` part rather
-than on a prefix: a rule written against `https://` alone silently misses every
-SSH clone, and silence reads as "the standards do not apply", not as an error.
+Match on the `<owner>/<repo>` part, not on a prefix: both URL forms are in
+use, and a prefix rule silently misses the other
+([why](https://github.com/pmgledhill102/agentic-coding-config/blob/main/docs/agent-policy-rationale.md#ownership-is-read-from-the-origin-remote)).
 
 The owner set is **`pmgledhill102`** alone. **`desertfoxclan` is not mine**:
 some of its repos are, and my token holds admin there, but the org is not, so
@@ -47,10 +46,9 @@ review when asked is fine; its output is a list of changes I make by hand.
 **Except `desertfoxclan/game-config`**, which I own: change it on a branch and PR (every game server pulls `main` at boot, so a merge is the deploy).
 
 **Not mine** — a work repo, or a third-party project cloned to read or
-contribute to. Here the repo's own conventions win on everything: its branch
-naming, its commit style, its issue tracker or absence of one, its review
-norms. Read them before acting, and do not impose the conventions below. Do not
-create issues to "track" work in someone else's tracker as a habit.
+contribute to. The repo's own conventions win on everything: read them before
+acting, do not impose the conventions below, and do not create issues in its
+tracker as a habit.
 
 **Forks split the question in two, and the split is not cosmetic.** A fork under
 my account matches the owner test, but `repo-audit.sh` deliberately excludes
@@ -77,7 +75,7 @@ and guessing "not mine" in my own quietly drops every standard.
 - Always create feature branches for changes — never commit directly to main
 - Open a pull request for every change; delete the branch on merge
 - **One named exception to both of the above**: a journal entry is written to `paul-context/journal/` on the default branch directly, never through a branch or PR. It is append-only content into a single-author repo with no CI, already reviewed in the retro that wrote it, so a PR would mean reviewing your own journal entry. It holds from a session assigned a branch in another repo, because that assignment governs the repo the session works in, not `paul-context`. A session whose assigned branch is in `paul-context` itself uses that branch and its PR instead. Only a journal file qualifies; any other `paul-context` change takes the rule above. The `retrospective` skill writes entries this way, and `promote-journal-inbox` drains drafts left by its fallback
-- **Merge method: merge commits only. Squash and rebase are DISABLED at the repository, not merely discouraged.** GitHub has no default-merge-method field — the only levers are the three booleans — so a stated preference is enforced by nothing and every merge is a button click that lands on whatever was clicked last. Two costs, paid every time. **Squash replaces a branch's commits with a new SHA**, so anything built on that branch still carries the originals and re-applies work `main` already has, producing conflicts resolved against a change that already landed; rebase-merge has the same defect for the same reason. **Squash also drops commit-message trailers**, so a `Closes #N` in a commit silently fails to close its issue — the audit trail quietly ceasing to work, which is worse than the stacked-branch case because nothing announces it. Agentic PRs arrive as one or two already-written commits, so squash's benefit — collapsing WIP noise — is usually nothing. Where a branch genuinely has fixup commits, clean it up with `git rebase -i` before merging rather than re-enabling squash. The known trade-off: `git bisect` can descend into a commit that never passed CI on its own — use `git bisect --first-parent`, and `git log --first-parent` for the PR-level view
+- **Merge method: merge commits only.** Squash and rebase are disabled at the repository, because both rewrite a branch's commits to new SHAs and squash also drops commit-message trailers, so a `Closes #N` in a commit silently fails to close its issue. Where a branch has fixup commits, clean it up with `git rebase -i` before merging rather than re-enabling squash. `git bisect` can descend into a commit that never passed CI on its own: use `git bisect --first-parent`, and `git log --first-parent` for the PR-level view ([why](https://github.com/pmgledhill102/agentic-coding-config/blob/main/home/standards/github-standards.md#merge-methods))
 - Watch the CI checks and ensure they pass
 - Don't merge your own PRs — let them be reviewed by someone else
 - Before pushing follow-up commits to a PR branch — or stating its state, or asking anything premised on it — check the PR is still open **now**, not from an earlier read. The user often reviews and merges PRs via the web UI while work continues — if already merged, create a new branch and PR instead. This is a cached read going stale, not the read-after-write lag under Work Tracking; both produce a confident wrong assertion
@@ -90,7 +88,8 @@ and guessing "not mine" in my own quietly drops every standard.
   - Hierarchy via sub-issues; dependencies via blocked-by
   - Priority labels `P0`–`P4`; type labels `type: epic|feature|task|bug` (issue types are org-only — labels ARE the convention on personal repos)
   - Some repos (e.g. `lifeos`) declare their own label taxonomy in their repo's committed agent instructions — that wins over the defaults above
-  - **A read-back of just-written state is eventually consistent — wait before diagnosing.** IAM bindings (inherited grants included), Cloud Logging entries and GitHub's search index all lag their writes by seconds to minutes, and each reports the lag as a plausible wrong answer: a bare permission denial indistinguishable from a missing role, an empty result, a 404. When a just-written thing looks absent or unauthorised, wait and retry once before investigating, and treat "the platform is broken" as the last hypothesis. The GitHub instance: use issue listing or direct reads for anything time-sensitive, never issue search, and deduplicate against a full list including closed issues
+  - **A read-back of just-written state is eventually consistent — wait before diagnosing.** When a just-written thing looks absent or unauthorised, wait and retry once before investigating, and treat "the platform is broken" as the last hypothesis: a new IAM binding reads as a bare permission denial for seconds to minutes ([why](https://github.com/pmgledhill102/agentic-coding-config/blob/main/docs/agent-policy-rationale.md#a-read-back-of-just-written-state-lags))
+  - **Never use issue search for anything time-sensitive**: use issue listing or direct reads, and deduplicate against the full list, closed issues included ([why](https://github.com/pmgledhill102/agentic-coding-config/blob/main/docs/github-issues-workflow.md#rules-for-agents))
 
 ### Decision records (ADR tiers)
 
@@ -120,14 +119,13 @@ stated rather than inferred from where it sits.
 ### Cross-Repo Work
 
 - **Never edit files in a repo other than the one this session is working in.** Any direction, any repo pair: a project session editing `agentic-coding-config`, an `agentic-coding-config` session editing `dotfiles`, a `dotfiles` session editing `paul-context`. Cross-repo edits bypass the issue queue, skip that repo's review/PR flow, and pollute the current session's context with unrelated work. This holds even when the other repo is already cloned and writable, and even when the change is one line
-- **File a detailed issue in the target repo instead.** This is encouraged, not a consolation prize — it's the sanctioned route. "Detailed" means implementable without rediscovering anything: exact file paths, the full snippet to add, the rationale, every gotcha already ruled out, and acceptance criteria. Write it so the fix is a mechanical edit for whoever picks it up
+- **File a detailed issue in the target repo instead.** "Detailed" means implementable without rediscovering anything: exact file paths, the full snippet to add, the rationale, every gotcha already ruled out, and acceptance criteria ([why](https://github.com/pmgledhill102/agentic-coding-config/blob/main/docs/agent-policy-rationale.md#a-detailed-issue-is-the-cross-repo-route))
 - **Before asserting how another repo behaves, read it.** Attaching a repo read-only is cheap and is the expected move, not a last resort: an issue, a policy line, or a skill body that describes another repo's behaviour is written from that repo's source, never inferred from what this one says about it — the estate's own docs are second-hand on that subject and go stale silently. a-c-c's README carried a copy of dotfiles' `.chezmoiexternal.toml.tmpl`, and the issue quoted the live file instead. Read it at origin's current head: fetch or pull a local clone first, and re-read issue or PR state rather than relying on what the session saw earlier. A clone behind origin is a second-hand copy too
 - **Say what you filed.** Report the issue number back in the session summary so the cross-repo thread isn't lost
 
 ### Changing agent config
 
-- **To request a change to agent configuration, open a GitHub issue against `pmgledhill102/agentic-coding-config`.** Describe what should change and why; add acceptance criteria if useful. The user works the GH-issue inbox directly in a-c-c sessions, where the source actually lives
-- This is the route from **any** surface. Whatever config is on disk here is *generated* — composed from fragments and delivered by chezmoi or the bootstrap — so editing it in place is lost on the next apply. The issue is the change
+- **To request a change to agent configuration, open a GitHub issue against `pmgledhill102/agentic-coding-config`**, from any surface, saying what should change and why. The config on disk is generated from fragments, so an edit in place is lost on the next apply ([why](https://github.com/pmgledhill102/agentic-coding-config/blob/main/docs/agent-policy-rationale.md#config-changes-go-through-an-issue))
 
 ### Commit & PR Style
 
@@ -137,10 +135,10 @@ stated rather than inferred from where it sits.
 ### Process Guidelines
 
 - **3 strikes rule**: After 3 failed attempts debugging the same issue, stop and question the entire approach before trying again
-- **Preview an irreversible batch read-only, then stop.** Before deleting, overwriting or force-pushing over a *set* of resources, list exactly what the operation will affect and stop for explicit confirmation. **This does not contradict the non-interactive-flag rule below; the two govern different actors.** Suppress the *tool's* prompt — `--quiet` on a delete is right, because a command waiting on a tty an agent does not have is a hung session. Surface the *agent's* preview and wait. "Run it immediately, without prompting" is an instruction about the tool's interactivity, and reading it as permission to skip checking **what** is about to be destroyed is the specific failure this prevents. It is not a security boundary and not an attempt to be un-instructable: an operator who looks at the list and says "yes, delete them" gets the deletion. The same care applies to a single destructive command on an absolute path outside your own scratch directory — `rm -rf /dev/null` as the first clause of a compound line whose purpose was something else left a regular file where the device node had been, and every `2>/dev/null` in the repo went on "working" while silently accumulating bytes
+- **Preview an irreversible batch read-only, then stop.** Before deleting, overwriting or force-pushing over a *set* of resources, list exactly what will be affected and stop for explicit confirmation. Suppress the *tool's* prompt (`--quiet`) but surface your own preview and wait: an instruction to run "without prompting" is about the tool, not the preview. Take the same care with a single destructive command on an absolute path outside your own scratch directory ([why](https://github.com/pmgledhill102/agentic-coding-config/blob/main/docs/agent-policy-rationale.md#preview-an-irreversible-batch-then-stop))
 - **Mask by allowlist, never by denylist.** When showing a config file, a log or a process command line that may carry secrets, print key names, counts or a named known-safe field. Never print whole lines with a list of known-secret keys masked: the list misses the key nobody thought of. A secret passed as a launch argument is the same trap: any log line that echoes the command line carries it
-- **When a check reports nothing, prove it could have reported something.** Silence is only evidence once the check is known to be able to speak: run it against a case that must produce a hit, then trust the empty result. Ask what question the tool actually answered rather than the one you meant — an empty `grep` may mean the pattern is wrong, a 404 body parses as an empty field, GNU `date -d ""` returns *now* rather than failing, and a version regex can match a prefix inside a longer token so a filter never sees the `-beta1` it was written to exclude. Each of those returns a clean, confident, wrong answer with no error anywhere
-- **Lint before pushing**: Always run the relevant linter/test suite locally before `git push`. Only push if everything passes — avoids CI round-trips
+- **When a check reports nothing, prove it could have reported something.** Run it against a case that must produce a hit, then trust the empty result: an empty `grep` may mean the pattern is wrong ([why](https://github.com/pmgledhill102/agentic-coding-config/blob/main/docs/agent-policy-rationale.md#a-silent-check-has-to-be-able-to-speak))
+- **Lint before pushing**: run the relevant linter and test suite locally, and push only if everything passes
 - **Use native binaries over package runners**: When a linter/formatter is installed on PATH (`command -v <tool>`), invoke it directly (e.g. `markdownlint-cli2 "path"`) rather than wrapping it in `npx`/`pipx`/`uvx`. Wrappers introduce version drift from what CI and pre-commit use, are slower, and may trigger permission prompts
 - **Single-concern PRs**: Each PR should contain a single logical change. If multiple tasks are completed in a session, create separate PRs for each rather than bundling unrelated changes
 - **PR-stacking discipline**: only claim "stacked on" when the second branch literally has the first as parent (`git log --oneline first..second` shows just the second's commits). Branching both off `main` and writing "stacked on PR #N" in the body is misleading — reviewers can merge in any order, and the second PR's diff includes the first's changes. If they're truly independent, branch each from `main` and don't say stacked. A stacked PR stays a **draft** until its base merges, so it cannot be merged into the base branch by mistake. GitHub re-parents only the PR directly above one that merges, so a held-back PR further up keeps the old SHAs and goes `dirty`: when its base merges, rebase it onto `main` by hand (or update it from `main`), mark it ready, and say in the PR that it is now independent
@@ -152,83 +150,37 @@ stated rather than inferred from where it sits.
 - **Target POSIX sh**, and know why. Scripts here run on exactly two userlands: **macOS** (BSD tools, and `/bin/sh` is bash in POSIX mode) and **Ubuntu 24.04** (GNU tools, and `/bin/sh` is dash) — the latter covering both cloud harnesses and WSL. The trap is the asymmetry: a bashism in a `#!/bin/sh` script runs happily on macOS, where you develop, and fails under dash, where it ships. Avoid bash-only builtins (`mapfile`, `readarray`, `declare -A`). Be aware that `$(( expr ))` returns exit code 1 when the result is 0, which breaks `set -e`. CI shellchecks by shebang, so declaring `#!/bin/sh` is what buys the POSIX check
 - **Where BSD and GNU differ, try both rather than picking one.** The established idiom here is GNU first with a BSD fallback: `stat -c %Y "$f" 2>/dev/null || stat -f %m "$f" 2>/dev/null`. The same care applies to `sed -i`, `readlink -f`, `date`, and `grep -P`
 - **If `bash` is genuinely required, it must run on bash 3.2**, which is what macOS ships. Prefer `#!/usr/bin/env bash` over `#!/bin/bash` so a newer interpreter is used when one is on `PATH`, but do not rely on one being there
-- **Pass the non-interactive flag; an agent has no tty.** A command that stops to ask something waits forever, and the symptom is a hung session rather than an error — so it reads as the model being slow. `apt-get -y`, `ssh`/`scp -o BatchMode=yes`, `gh --yes` where offered. This is about the *tool's own* prompting: a shell that aliases `rm` to `rm -i` is a separate and much rarer thing, worth checking with `type rm` before assuming it rather than passing `-f` reflexively, since `-f` also suppresses the errors you wanted to see
+- **Pass the non-interactive flag; an agent has no tty.** A command that stops to ask something waits forever, and the symptom is a hung session that reads as the model being slow, not an error: `apt-get -y`, `ssh`/`scp -o BatchMode=yes`. Do not pass `rm -f` reflexively: it also suppresses the errors you wanted to see ([why](https://github.com/pmgledhill102/agentic-coding-config/blob/main/docs/agent-policy-rationale.md#pass-the-non-interactive-flag))
 - **Verify CLI flags before using them — for both commands you run AND advice you give the user**: Run `<tool> --help` or `<tool> help <subcommand>` locally before committing or before recommending a flag in chat. `--no-lock`-style hallucinations waste a round-trip whether they fire in your own call or in the user's terminal after you suggest them
 - **Multi-step probe loops go in a script file, not inline**: For anything that loops over hosts/endpoints/cases, write a script to a scratch directory and run it, rather than composing the loop in a single shell call. Interactive shells differ from `sh` in ways that fail silently, and the traps are surface-specific — the environment fragment composed into this file names the ones that apply here
 - **Raw strings when patching file content via `python3` heredocs**: a regular triple-quoted payload turns `\n` in the *target* file's source (e.g. a Go or JSON string literal) into a real newline, producing a syntax error that surfaces a couple of tool calls later. Use `r'''…'''`, or better, use a surgical edit tool for source changes
 
 ## Ephemeral-first engineering
 
-Portable policy. Applies to any agent session, on any surface.
+Portable policy, for any agent session on any surface. Agent sandboxes are
+disposable: **how agents work must not depend on how long the environment
+lives.** The reasoning behind each principle is in
+[`docs/ephemeral-first.md`](https://github.com/pmgledhill102/agentic-coding-config/blob/main/docs/ephemeral-first.md).
 
-Agent sandboxes are disposable, and their lifetime is becoming a tunable
-rather than a fixed assumption. The governing principle is **decoupling: how
-agents work must not depend on how long the environment lives.** At a long
-TTL, in-place continuity is a convenience; at a short one, nothing about the
-workflow should change.
-
-The same forcing function ephemeral CI runners applied to builds applies
-here. When the environment dies regularly, reproducibility stops being
-discipline and becomes physics.
-
-### 1. Environment-as-script
-
-Setup is **committed, idempotent, and identical for a fresh environment and
-a resume.** The contents of a sandbox must be reconstructible from the repo.
-
-- Anything installed by hand is lost, and worse, invisible: the next session
-  starts subtly different from this one and nobody knows why
-- "Idempotent" is not optional. The same script runs on a cold start and on
-  a resume, so every step has to tolerate already having been done
-- If you install something mid-session to get unblocked, the work is not
-  finished until that install is in the setup script — or in an issue asking
-  for it. A session that only works because of what you typed into it is a
-  session that cannot be repeated
-
-### 2. The repo is the default durable output channel — for what repos are for
-
-Docs, scripts, code, configuration. Commit early rather than at the end: an
-uncommitted change is one reclaimed container away from never having existed.
-
-It is **not** the channel for testing datasets, fixtures, generated
-artifacts, or bulk output. A repo used as a filesystem stops being reviewable
-and starts being a place things go to be forgotten. If the thing is large,
-binary, regenerable, or uninteresting to a reviewer, it does not belong in
-git — see principle 3.
-
-### 3. Durable storage is a separate, explicitly granted capability
-
-Anything that must outlive the sandbox goes somewhere granted for the
-purpose. **Never assumed.**
-
-- Do not invent a location. A bucket, a volume, or a database that a session
-  decided on unilaterally is one nobody else knows to look in, nobody is
-  paying attention to, and nobody has scoped access for
-- If a task needs durable storage and none has been granted, say so and stop,
-  the same way a task needing credentials says so and stops. "I put it
-  somewhere" is not an answer
-- Absence of a granted store is a finding worth reporting, not an obstacle to
-  route around
-
-### 4. Agent-built infrastructure checkpoints its state externally
-
-Terraform state written inside a disposable environment means every
-re-provision starts with archaeology — reconciling real cloud resources
-against a state file that died with its container.
-
-- Remote state from the first `terraform init`, not once it hurts
-- The same holds for anything else that records what exists: migration
-  version tables, deployment ledgers, resource inventories
-- State that lives only in the sandbox converts a routine re-provision into
-  an incident
-
-### What this means in practice
+1. **Environment-as-script.** Setup is committed, idempotent, and identical
+   for a fresh environment and a resume. An install made mid-session to get
+   unblocked is not finished until it is in the setup script, or in an issue
+   asking for it.
+2. **The repo is the default durable output channel, for what repos are
+   for**: docs, scripts, code, configuration. Commit early rather than at the
+   end. Datasets, fixtures, generated artifacts and bulk output do not belong
+   in git; see 3.
+3. **Durable storage is a separate, explicitly granted capability.** Never
+   invent a location. If a task needs durable storage and none has been
+   granted, say so and stop.
+4. **Agent-built infrastructure checkpoints its state externally.** Remote
+   state from the first `terraform init`, and the same for anything else that
+   records what exists.
 
 Before ending a session, ask: **if this environment were destroyed right
-now, what would be lost?** Every answer is either something that should have
-been committed, something that needs a granted durable store, or something
-that was never worth keeping. There is no fourth category, and "it is fine,
-the sandbox will still be here" is not one of the three.
+now, what would be lost?** Every answer is something that should have been
+committed, something that needs a granted durable store, or something that
+was never worth keeping.
 
 ## macOS
 
@@ -319,7 +271,7 @@ Anything portable belongs in the core fragment, not here.
 ### GitHub MCP
 
 - **Prefer `mcp__github__*` tools over the `gh` CLI for all GitHub operations** when the GitHub MCP server is connected. Only fall back to `gh` if the MCP server is unavailable or a specific capability is missing
-- Common mappings: PRs (`create_pull_request`, `pull_request_read`, `update_pull_request`, `merge_pull_request`, `list_pull_requests`, `search_pull_requests`), reviews (`pull_request_review_write`, `add_comment_to_pending_review`, `add_reply_to_pull_request_comment`), issues (`issue_read`, `issue_write`, `list_issues`, `search_issues`, `add_issue_comment`), releases (`get_latest_release`, `list_releases`, `get_release_by_tag`), repo content (`get_file_contents`, `list_commits`, `get_commit`, `list_branches`, `create_branch`), search (`search_code`, `search_repositories`). **Three of these overflow the context limit unless called carefully.** `list_issues` must always be given `fields` — `["number", "title", "labels", "assignees", "state"]` costs around 750 tokens for a 36-issue repo, where an unfiltered call blows the limit somewhere past roughly 25 issues; never add `body`. One page of it is a recency check, not a dedup pass: deduplicate by filtering server-side with `labels` to the candidate's `type:` label, or page to exhaustion via `pageInfo.endCursor`/`after`. `list_pull_requests` takes `fields` too: give it one and never include `body`, and pull detail for a single PR with `pull_request_read`. Their `state` values also differ in case — `list_issues` takes `"OPEN"`, `list_pull_requests` takes `"open"`. `issue_read` with method `get_sub_issues` has no field filter either, and every row carries a full body plus a full `repository` object, so `perPage` bounds the page but cannot make a row cheap; to count children, a plain `get` on the parent returns `sub_issues_summary` without fetching any
+- **Three of them overflow the context limit unless called carefully.** `list_issues` must always be given `fields` — `["number", "title", "labels", "assignees", "state"]` costs around 750 tokens for a 36-issue repo, where an unfiltered call blows the limit somewhere past roughly 25 issues; never add `body`. One page of it is not the full list a dedup needs: filter server-side with `labels` to the candidate's `type:` label, or page to exhaustion via `pageInfo.endCursor`/`after`. `list_pull_requests` takes `fields` too: give it one and never include `body`, and pull detail for a single PR with `pull_request_read`. Their `state` values also differ in case — `list_issues` takes `"OPEN"`, `list_pull_requests` takes `"open"`. `issue_read` with method `get_sub_issues` has no field filter either, and every row carries a full body plus a full `repository` object, so `perPage` bounds the page but cannot make a row cheap; to count children, a plain `get` on the parent returns `sub_issues_summary` without fetching any
 - **`gh` commands written into a skill or slash command are illustrative, not prescriptive.** Use the `mcp__github__*` equivalent when the MCP server is connected; fall back to `gh` where the MCP server is unavailable and `gh` is present. Which of the two exists is a property of the surface, so the environment fragment states it rather than this one. A literal command in an instruction otherwise overrides this preference at execution time, which is how a session ends up doing every discretionary GitHub op through MCP and every skill-driven one through the CLI
 - Both routes are auto-approved to the same extent, so preferring MCP costs no extra prompts. The one asymmetry is scope: `Bash(gh issue create --repo pmgledhill102/*)` restricts CLI issue creation to the user's own repos, while `mcp__github__issue_write` cannot express that and is approved unscoped. Accepted deliberately — the tool takes an explicit `owner`, so a wrong-repo write is a visible argument rather than a silent default
 

@@ -88,15 +88,36 @@ The standard repository signature:
 | Allow auto-merge | on where CI gates exist (the `automerge` tier) |
 
 Merge-commit is the only enabled method; squash and rebase are both
-disabled at the repository, not merely discouraged. Where a branch genuinely
-carries WIP or fixup commits, tidy it with `git rebase -i` before merging —
-that keeps the cleanup where its author can see it, rather than making every
-repo permanently able to lose trailers for an occasional convenience. The full
-rationale lives in the Git Workflow section of the composed agent policy
-(`context/fragments/core.md`) — in one line: squash and rebase both rewrite
-the branch's commits to new SHAs, which punishes anything stacked on the
-branch, and squash additionally drops commit-message trailers, so a
-`Closes #N` in a commit message silently fails to close the issue.
+disabled at the repository, not merely discouraged. The composed agent policy
+(`context/fragments/core.md`, Git Workflow) carries the rule in one line; the
+reasoning is here.
+
+**Why disabled, and not just a stated preference.** GitHub has no
+default-merge-method field. The only levers are the three booleans above, so
+a preference that leaves all three on is enforced by nothing: every merge is
+a button click that lands on whatever was clicked last.
+
+**Squash has two costs, paid every time.**
+
+- **It replaces a branch's commits with a new SHA.** Anything built on that
+  branch still carries the originals, so it re-applies work `main` already
+  has and produces conflicts that are resolved against a change that already
+  landed. Rebase-merge has the same defect for the same reason.
+- **It drops commit-message trailers.** A `Closes #N` in a commit message
+  silently fails to close its issue. That is the audit trail quietly ceasing
+  to work, and it is the worse of the two because nothing announces it; a
+  stacked branch at least fails loudly.
+
+**Squash's benefit is usually nothing here.** It exists to collapse WIP
+noise, and agentic pull requests arrive as one or two already-written
+commits. Where a branch genuinely carries WIP or fixup commits, tidy it with
+`git rebase -i` before merging — that keeps the cleanup where its author can
+see it, rather than making every repo permanently able to lose trailers for
+an occasional convenience.
+
+**The known trade-off.** With merge commits, `git bisect` can descend into a
+commit that never passed CI on its own. Use `git bisect --first-parent`, and
+`git log --first-parent` for the PR-level view.
 
 Two operational facts, both learned the hard way on 2026-08-29
 (agentic-coding-config#348 carries the evidence):

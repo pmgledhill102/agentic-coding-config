@@ -101,7 +101,9 @@ commands above are the fallback and the cloud-sandbox option.
   just-created issue can be invisible for seconds to minutes. Use
   `gh issue list` or direct reads (`gh issue view <n>`), which are
   strongly consistent. Deduplicate against `gh issue list --state all`,
-  not search.
+  not search: the full list, closed issues included, because the duplicate
+  of an issue that was fixed and closed last week is still a duplicate. One
+  page of a listing is a recency check, not a dedup pass.
 - **Create an issue before starting work**, and close it when the work
   merges: `gh issue close <n> --comment
   "Shipped in #<pr>"`. Reference the issue from the PR body (`Closes
