@@ -2,6 +2,9 @@
 
 - **Status**: Accepted (2026-11-21)
 - **Date**: 2026-11-21
+- **Amended**: 2026-11-21, adding section 7: a checkbox on diff-depth pull
+  requests records whether the diff was read
+  ([#798](https://github.com/pmgledhill102/agentic-coding-config/issues/798))
 - **Tags**: workflow, github, review
 - **Scope**: user (applies to all personal repos and agent surfaces)
 
@@ -52,11 +55,13 @@ while the work they describe was already done.
 ### 2. The agent proposes the depth, on every pull request
 
 A pull request carries one label: `review: title`, `review: description` or
-`review: diff`. Where the labels do not exist yet, the second line of the body
-is `Review depth: <depth>`.
+`review: diff`. Where the labels do not exist yet, the body carries the line
+`Review depth: <depth>` at its top, below the checkbox of section 7 and the
+`Closes` line where it has them.
 
 Merging without changing the label records that the owner accepted that depth.
-He raises or lowers it by changing the label. No other step is asked of him.
+He raises or lowers it by changing the label. No other step is asked of him at
+title or description depth. Diff depth adds one optional tick (section 7).
 
 The agent proposes by what the change is:
 
@@ -114,6 +119,28 @@ deepest depth among them.
 
 A diff-depth change always has a pull request to itself.
 
+### 7. A diff-depth pull request records whether it was read
+
+The label records the depth a change deserved. It does not record the depth it
+got: a pull request accepted at diff depth and merged unread looks the same in
+the history as one that was read. Lowering the label to match would lose the
+other fact, that the change warranted a full read.
+
+So the first line of a diff-depth pull request body is an unticked checkbox:
+
+```markdown
+- [ ] I read the diff
+```
+
+The owner ticks it when he has read the diff, or most of it. The tick is
+optional and is never required to merge: a required tick becomes a reflex and
+stops meaning anything.
+
+An agent never ticks it and never writes it ticked.
+
+Title-depth and description-depth pull requests carry no checkbox. There the
+label already says everything.
+
 ## Consequences
 
 ### Positive
@@ -121,6 +148,8 @@ A diff-depth change always has a pull request to itself.
 - The owner is told how much to read, and the pull request is written for that
   reading.
 - Review depth is recorded with no extra step at merge.
+- Whether a diff-depth change was read is recorded separately from the depth
+  it deserved, for one tick.
 - Small changes stop generating an issue and a pull request each.
 - The rule about merging can now be checked: an agent that merges has broken
   it, whoever's account it used.
@@ -133,6 +162,10 @@ A diff-depth change always has a pull request to itself.
 - A title-depth change has no issue, so its reason lives only in the pull
   request and its commits.
 - A bundled pull request is harder to revert in part.
+- An unticked checkbox means either "not read" or "read and not ticked", so
+  the ticks are a lower bound on what was read.
+- A tick is not proof. Every edit to a pull request is recorded under one
+  account, the same limit section 4 names for merging.
 
 ### What this does not decide
 
@@ -143,11 +176,12 @@ A diff-depth change always has a pull request to itself.
 ## Follow-up work
 
 1. Update the workflow rules in `context/fragments/core.md` and
-   `docs/github-issues-workflow.md` to match sections 2 to 6.
+   `docs/github-issues-workflow.md` to match sections 2 to 7.
 2. Add the three `review:` labels to the repository standard, so every repo
    has them.
 3. After 30 days of labelled pull requests, count how often the owner changed
-   a label, and in which direction. Decide automatic merging on that.
+   a label, and in which direction, and how many diff-depth pull requests
+   were ticked as read. Decide automatic merging on that.
 
 ## Revisit triggers
 
