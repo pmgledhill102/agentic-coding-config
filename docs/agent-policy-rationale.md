@@ -65,3 +65,14 @@ use it for anything time-sensitive. That rule and its reasoning are in
 This is different from a cached read going stale, which is the pull request
 that merged while the session was looking elsewhere. Both produce a
 confident wrong assertion; the fix for that one is to read again now.
+
+## A detailed issue is the cross-repo route
+
+Filing an issue in the target repo is encouraged, not a consolation prize for
+being unable to edit it. It is the sanctioned route: the change then enters
+that repo's issue queue and goes through its review and pull-request flow,
+which a cross-repo edit bypasses.
+
+"Detailed" is defined in the rule. The aim behind the definition is that the
+fix is a mechanical edit for whoever picks it up, with nothing left to
+rediscover.
