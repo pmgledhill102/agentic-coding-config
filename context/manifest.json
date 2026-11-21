@@ -16,7 +16,7 @@
       "title": "Agent context — Claude Code on a workstation",
       "os": "os-macos", "persistence": "persist-durable",
       "outputs": {
-        "home/CLAUDE.md": { "budget": 361, "fragments": ["core", "ephemeral-first", "os-macos", "persist-durable", "provider-claude"] }
+        "home/CLAUDE.md": { "budget": 348, "fragments": ["core", "ephemeral-first", "os-macos", "persist-durable", "provider-claude"] }
       }
     },
     "claude-wsl": {
@@ -24,22 +24,22 @@
       "title": "Agent context — Claude Code on WSL",
       "os": "os-ubuntu", "persistence": "persist-durable", "host": "env-wsl",
       "outputs": {
-        "profiles/claude-wsl/CLAUDE.md": { "budget": 381, "fragments": ["core", "ephemeral-first", "os-ubuntu", "persist-durable", "env-wsl", "provider-claude"] }
+        "profiles/claude-wsl/CLAUDE.md": { "budget": 368, "fragments": ["core", "ephemeral-first", "os-ubuntu", "persist-durable", "env-wsl", "provider-claude"] }
       }
     },
     "codex-workstation": {
-      "//": "Output path is provisional. Codex's user-level AGENTS.md location is not yet established (#176), so nothing delivers these yet — the profiles exist so CI composes them and the provider axis stays honest.",
+      "//": "Output path is provisional. Codex's user-level AGENTS.md location is established ($CODEX_HOME/AGENTS.md, by default ~/.codex/AGENTS.md; #176), but nothing delivers these there yet — the profiles exist so CI composes them and the provider axis stays honest.",
       "title": "Agent context — Codex on a workstation",
       "os": "os-macos", "persistence": "persist-durable",
       "outputs": {
-        "profiles/codex-workstation/AGENTS.md": { "budget": 361, "fragments": ["core", "ephemeral-first", "os-macos", "persist-durable", "provider-codex"] }
+        "profiles/codex-workstation/AGENTS.md": { "budget": 346, "fragments": ["core", "ephemeral-first", "os-macos", "persist-durable", "provider-codex"] }
       }
     },
     "codex-cloud-sandbox": {
       "title": "Agent context — Codex in a cloud sandbox",
       "os": "os-ubuntu", "persistence": "persist-ephemeral",
       "outputs": {
-        "profiles/codex-cloud-sandbox/AGENTS.md": { "budget": 328, "fragments": ["core", "ephemeral-first", "os-ubuntu", "persist-ephemeral", "provider-codex"] }
+        "profiles/codex-cloud-sandbox/AGENTS.md": { "budget": 326, "fragments": ["core", "ephemeral-first", "os-ubuntu", "persist-ephemeral", "provider-codex"] }
       }
     },
     "claude-cloud-sandbox": {

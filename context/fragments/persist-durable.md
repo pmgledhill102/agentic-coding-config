@@ -35,11 +35,3 @@ the rest of what `dotup` does (Oh My Zsh, plugins, Starship).
 The same apply is what removes retired files: `dotup` triggers dotfiles'
 post-apply hook, which runs `~/.claude/bin/claude-prune-retired` against
 the `retired-paths` list that just arrived through the external.
-
-## Testing chezmoi template changes
-
-Verify behaviour in a clean environment before relying on CI:
-
-```sh
-HOME=/tmp/chezmoi-test chezmoi init --source <path> --dry-run
-```
