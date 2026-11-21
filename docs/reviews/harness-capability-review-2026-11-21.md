@@ -260,8 +260,11 @@ different degrees.
 
 ### What would settle the rest
 
-- Allowing `developers.openai.com` in the sandbox, for every row that rests on
-  a search summary.
+- Reading the Codex documentation, for every row that rests on a search
+  summary. `developers.openai.com` was allowed during this review and turned
+  out to redirect every Codex page to `learn.chatgpt.com`, which the sandbox
+  proxy also refuses. A second pass with the first host open changed no
+  verdict.
 - A re-test in a Codex cloud environment, for whether an install script takes
   effect, what is writable and where `CODEX_HOME` points. No document answers
   those.
