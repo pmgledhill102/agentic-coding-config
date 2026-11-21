@@ -393,7 +393,28 @@
         ]
       }
     ],
+    "UserPromptExpansion": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/bin/agent-telemetry-claude-hook skill",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
     "PreToolUse": [
+      {
+        "matcher": "Skill",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/bin/agent-telemetry-claude-hook skill",
+            "timeout": 5
+          }
+        ]
+      },
       {
         "matcher": "Bash",
         "hooks": [

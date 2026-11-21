@@ -56,6 +56,20 @@ REF=$(manifest_field ref)
 SHA=$(manifest_field sha)
 DURATION=$(manifest_field duration_seconds)
 
+# Which client started the session. The value is a fixed token or `other`,
+# never the variable's text: the marker is spooled whole by `agent-telemetry
+# record`, which filters nothing, so this is the only place it is restricted.
+# It is where the session STARTED: one opened on a phone and continued on a
+# desktop reads as mobile throughout.
+case "${CLAUDE_CODE_ENTRYPOINT:-}" in
+    "") ENTRYPOINT=unknown ;;
+    cli | sdk-cli | sdk-ts | sdk-py | claude-vscode | claude-desktop | claude-desktop-3p | \
+        claude-in-slack | local-agent | remote | remote_desktop | remote_mobile)
+        ENTRYPOINT=$CLAUDE_CODE_ENTRYPOINT
+        ;;
+    *) ENTRYPOINT=other ;;
+esac
+
 NOW_S=$(date +%s 2> /dev/null || echo 0)
 NOW_ISO=$(date -u +%Y-%m-%dT%H:%M:%SZ 2> /dev/null || echo unknown)
 
@@ -124,6 +138,7 @@ fi
     echo "method=$METHOD"
     echo "session_id=${SESSION_ID:-unknown}"
     echo "session_source=${SOURCE:-unknown}"
+    echo "entrypoint=$ENTRYPOINT"
     echo "observed_at=$NOW_ISO"
     echo "bootstrap_installed_at=${INSTALLED_AT:-unknown}"
     echo "bootstrap_built_in_session=${BUILT_IN:-unknown}"

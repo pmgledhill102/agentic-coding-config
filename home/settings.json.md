@@ -1069,10 +1069,10 @@ point at went away with the plugin in #312.
    installed. Only governs commands Claude runs via its Bash tool — manual
    terminal commits/pushes are CI-backed.
 
-### SessionStart, Stop and UserPromptSubmit: `agent-telemetry-claude-hook`
+### SessionStart, Stop, UserPromptSubmit, UserPromptExpansion and PreToolUse (Skill): `agent-telemetry-claude-hook`
 
-Three entries that drive the telemetry helper (agentic-coding-config#431
-and #625).
+Five entries that drive the telemetry helper (agentic-coding-config#431, #625
+and #788).
 
 1. **SessionStart** (`agent-telemetry-claude-hook session-start`), beside
    `session-cache-verdict`. Records the session marker into the spool, then
@@ -1095,6 +1095,35 @@ and #625).
    stretch as watched. That verdict is computed offline from the timestamps,
    never in the session. Prints nothing, because this hook's stdout is added
    to the prompt's context.
+4. **PreToolUse, matcher `Skill`** and
+5. **UserPromptExpansion**, both `agent-telemetry-claude-hook skill`. Each
+   records one `skill invoke` event carrying two fields: `skill`, the skill's
+   name, and `via`, which is `tool` when the model called the Skill tool and
+   `slash` when someone typed `/name`. They are two entries because they are two
+   paths: a typed command expands into the prompt and never reaches
+   `PreToolUse`, so the Skill matcher alone would miss every skill a person
+   starts by hand.
+
+   **Why a hook at all.** Claude Code's own `skill_activated` event names
+   built-in skills but reports every user-defined one as `custom_skill` unless
+   `OTEL_LOG_TOOL_DETAILS=1`, and that switch also logs every tool's parameters
+   and input. This estate's skills are user-defined, so the hook is how their
+   names are recorded with that switch left off.
+
+   **What it does not record.** It reads `tool_input.skill` (or `command_name`)
+   and nothing else: not the skill's arguments, not the prompt, not the working
+   directory. A name with a character outside the helper's value charset
+   (`A-Za-z0-9._:/@+,#=-`), or longer than 120 characters, is recorded as the
+   literal `invalid` rather than cleaned up, so text passed off as a skill name
+   leaves nothing of itself behind. `UserPromptExpansion` also fires for custom
+   slash commands, so a command's name is recorded the same way; an MCP prompt
+   is not.
+
+   **It cannot hold up a skill.** Inline it reads stdin and runs one `jq`; the
+   helper call is detached, so a slow or hung helper costs the Skill call
+   nothing. It prints nothing, because a `PreToolUse` hook's stdout is read as
+   a decision about the tool call, and it exits 0 on every path, including no
+   `jq`, an empty payload and a payload it cannot parse.
 
 The SessionStart entry also puts the toolchain shims (`~/.claude/bin/shims/`,
 made by the cloud bootstrap) ahead on the Bash tool's `PATH`, by appending to
@@ -1102,8 +1131,8 @@ made by the cloud bootstrap) ahead on the Bash tool's `PATH`, by appending to
 a second SessionStart entry or a `PATH` in `env`, which cannot reference the
 inherited value. No shims directory, no line: laptops are unaffected.
 
-Both exit 0 unconditionally: instrumentation must never be why a session fails
-to start or a turn fails to end. With no `TELEMETRY_INGEST_URL` they spool and
+All exit 0 unconditionally: instrumentation must never be why a session fails
+to start, a turn fails to end or a skill fails to run. With no `TELEMETRY_INGEST_URL` they spool and
 do nothing else, so wiring them before the ingest exists is safe. 5 s timeouts,
 because nothing they do inline is slow.
 

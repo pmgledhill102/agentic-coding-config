@@ -486,6 +486,33 @@ The helper then sends no key of its own. The ingest also accepts the bare key in
 `X-Telemetry-Key`, for a credential form that cannot set `Authorization`; that
 fallback exists, and nothing here needs it.
 
+**What the session records about itself**, beyond the bootstrap manifest and
+the step records skills emit. All of it is spooled by `agent-telemetry` and
+none of it needs an exporter variable:
+
+| Record | Field | Value |
+| --- | --- | --- |
+| `session-marker`, and the `session shape` event | `entrypoint` | which client started the session, from `CLAUDE_CODE_ENTRYPOINT` |
+| `skill invoke` event | `skill` | the skill's name |
+| `skill invoke` event | `via` | `tool` when the model called the Skill tool, `slash` when someone typed `/name` |
+
+`entrypoint` is one of `cli`, `sdk-cli`, `sdk-ts`, `sdk-py`, `claude-vscode`,
+`claude-desktop`, `claude-desktop-3p`, `claude-in-slack`, `local-agent`,
+`remote`, `remote_desktop` and `remote_mobile`; `unknown` when the variable is
+unset; and `other` for anything else, so the variable's text is never recorded.
+A session started from the mobile app reads `remote_mobile`. **It is where the
+session started, not where each prompt came from:** one opened on a phone and
+continued on a desktop reads as mobile throughout. It is written by the
+`SessionStart` hook that writes the session marker, so it exists only where the
+bootstrap ran.
+
+`skill invoke` comes from a hook on the Skill tool and on typed commands
+(`home/settings.json.md` has the detail). It carries the name and nothing else:
+never the skill's arguments or the prompt, and a name that is not a plain token
+is recorded as `invalid`. This is the reason `OTEL_LOG_TOOL_DETAILS` can stay
+unset below: the exporter's own `skill_activated` event reports every
+user-defined skill as `custom_skill` without it.
+
 **Which requests get the key.** The proxy attaches it to commands the session
 runs, which is everything `agent-telemetry` does from the `SessionStart` and
 `Stop` hooks and from end-session. It does **not** reach:

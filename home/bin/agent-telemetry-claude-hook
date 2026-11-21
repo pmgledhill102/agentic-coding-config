@@ -9,6 +9,12 @@
 #   stop            one `hook stop` event per turn; at most once every 5
 #                   minutes, also a `session shape` snapshot, a ship and a
 #                   transcript-tail upload. Wired to the Stop hook.
+#   skill           one `skill invoke` event carrying the skill's name and how
+#                   it was invoked: via=tool from PreToolUse on the Skill tool,
+#                   via=slash from UserPromptExpansion, the path a typed
+#                   /name takes, which never reaches PreToolUse. The name is
+#                   the only thing read from the payload: never the skill's
+#                   arguments, never the prompt.
 #
 # prompt-submit and stop are raw timestamps for an offline judgement: a prompt
 # soon after a Stop means someone was watching that stretch (#625). Nothing
@@ -19,8 +25,9 @@
 # vendor-neutral, which is why this is a separate script.
 #
 # Exits 0 always and prints nothing: a SessionStart hook's stdout reaches the
-# agent's context, and instrumentation must never be why a session fails to
-# start or a turn fails to end. Every slow step is detached.
+# agent's context, a PreToolUse hook's is parsed as a decision about the tool
+# call, and instrumentation must never be why a session fails to start, a turn
+# fails to end or a skill fails to run. Every slow step is detached.
 
 set -u
 
@@ -111,6 +118,33 @@ case "$event" in
         ;;
     prompt-submit)
         detach event hook prompt-submit
+        ;;
+    skill)
+        [ -n "$PAYLOAD" ] || exit 0
+        command -v jq > /dev/null 2>&1 || exit 0
+        # One jq: how it was invoked on the first line, the name after it.
+        # Anything that is not a Skill call or a typed command yields nothing.
+        got=$(printf '%s' "$PAYLOAD" | jq -r '
+            if .hook_event_name == "UserPromptExpansion" then
+                select(.expansion_type == "slash_command") | "slash", (.command_name | strings)
+            else
+                select(.tool_name == "Skill") | "tool", (.tool_input.skill | strings)
+            end' 2> /dev/null) || exit 0
+        nl='
+'
+        case "$got" in *"$nl"*) ;; *) exit 0 ;; esac
+        via=${got%%"$nl"*}
+        skill=${got#*"$nl"}
+        # The helper would turn each unsafe character into _ and cut at 120,
+        # which still lets through a sentence with its spaces replaced. A name
+        # outside the helper's value charset or length is not a skill name, so
+        # none of it is recorded.
+        case "$skill" in
+            "") exit 0 ;;
+            *[!A-Za-z0-9._:/@+,#=-]*) skill=invalid ;;
+        esac
+        [ "${#skill}" -le 120 ] || skill=invalid
+        detach event skill invoke "skill=$skill" "via=$via"
         ;;
     stop)
         detach event hook stop
