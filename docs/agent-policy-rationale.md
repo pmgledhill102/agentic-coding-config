@@ -1,0 +1,44 @@
+# Agent policy: the reasoning behind the short rules
+
+The always-loaded agent policy in `context/fragments/` states each rule as a
+short instruction. This document holds what was cut to get there: why the rule
+exists, what it guards against, and the examples beyond the one the rule
+keeps. Nothing here is needed to follow a rule. Read it when a rule looks
+arbitrary, or before changing one.
+
+It was split out under
+[#785](https://github.com/pmgledhill102/agentic-coding-config/issues/785),
+which found that about half the always-loaded text was reasoning. Two rules
+keep their reasoning elsewhere:
+
+- Merge commits only:
+  [`home/standards/github-standards.md`](../home/standards/github-standards.md#merge-methods)
+- The ephemeral-first principles: [`ephemeral-first.md`](ephemeral-first.md)
+
+## Ownership is read from the origin remote
+
+The signal that says whether a repo is mine is already in every clone, so
+nothing has to be declared in the repo and nothing can drift.
+
+Both URL forms are in live use:
+
+```sh
+git remote get-url origin
+# git@github.com:pmgledhill102/<repo>.git
+# https://github.com/pmgledhill102/<repo>.git
+```
+
+So a test matches on the `<owner>/<repo>` part and not on a prefix. A rule
+written against `https://` alone silently misses every SSH clone, and that
+silence reads as "the standards do not apply", not as an error.
+
+## In someone else's repo, their conventions win
+
+A repo that is not mine is a work repo, or a third-party project cloned to
+read or contribute to. Its own conventions win on everything: its branch
+naming, its commit style, its issue tracker or the absence of one, and its
+review norms. Read them before acting.
+
+The specific habit to leave behind is creating issues to "track" work. In my
+own repos an issue before work is the convention; in someone else's tracker it
+is noise their maintainers did not ask for.

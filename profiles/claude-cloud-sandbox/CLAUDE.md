@@ -24,9 +24,8 @@ fragment. See `adrs/0018-composing-agent-context-per-surface.md`.
 
 ### Which repos this applies to
 
-Everything below is written for **my own repositories**, and the signal that
-says whether one is mine is already in every clone: the **origin remote**.
-Nothing has to be declared in the repo, so nothing can drift.
+Everything below is written for **my own repositories**. Whether one is mine
+is read from its **origin remote**, so nothing has to be declared in the repo.
 
 **Mine** — the policy in this fragment applies in full:
 
@@ -36,9 +35,9 @@ git remote get-url origin
 # https://github.com/pmgledhill102/<repo>.git
 ```
 
-Both URL forms are in live use, so match on the `<owner>/<repo>` part rather
-than on a prefix: a rule written against `https://` alone silently misses every
-SSH clone, and silence reads as "the standards do not apply", not as an error.
+Match on the `<owner>/<repo>` part, not on a prefix: both URL forms are in
+use, and a prefix rule silently misses the other
+([why](https://github.com/pmgledhill102/agentic-coding-config/blob/main/docs/agent-policy-rationale.md#ownership-is-read-from-the-origin-remote)).
 
 The owner set is **`pmgledhill102`** alone. **`desertfoxclan` is not mine**:
 some of its repos are, and my token holds admin there, but the org is not, so
@@ -47,10 +46,9 @@ review when asked is fine; its output is a list of changes I make by hand.
 **Except `desertfoxclan/game-config`**, which I own: change it on a branch and PR (every game server pulls `main` at boot, so a merge is the deploy).
 
 **Not mine** — a work repo, or a third-party project cloned to read or
-contribute to. Here the repo's own conventions win on everything: its branch
-naming, its commit style, its issue tracker or absence of one, its review
-norms. Read them before acting, and do not impose the conventions below. Do not
-create issues to "track" work in someone else's tracker as a habit.
+contribute to. The repo's own conventions win on everything: read them before
+acting, do not impose the conventions below, and do not create issues in its
+tracker as a habit.
 
 **Forks split the question in two, and the split is not cosmetic.** A fork under
 my account matches the owner test, but `repo-audit.sh` deliberately excludes
