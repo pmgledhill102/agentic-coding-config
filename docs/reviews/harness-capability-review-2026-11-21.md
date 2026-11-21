@@ -13,8 +13,7 @@ This review answers two questions. Which statements in this repo about how
 the harness behaves are still true? Which capabilities does the config not
 use?
 
-Sections 1 to 5 cover Claude Code. Section 6 covers Codex, on weaker evidence:
-the official Codex documentation host is blocked in the sandbox.
+Sections 1 to 5 cover Claude Code. Section 6 covers Codex.
 
 ## 1. Verdict up front
 
@@ -199,15 +198,16 @@ every row, is attached to #785 as a comment.
 
 | Verdict | Statements |
 | --- | --- |
-| Still true | 12 |
+| Still true | 17 |
 | Changed | 8 |
 | No longer true | 2 |
-| Cannot tell | 11 |
+| Cannot tell | 6 |
 
-**Evidence is uneven.** What the CLI does was read from source, and four of
-those quotes were re-read for this review. What hosted Codex Cloud does could
-not be read at all: `developers.openai.com` is refused by the sandbox proxy,
-so those rows rest on search-engine summaries or are marked "cannot tell".
+**Two kinds of evidence.** What the CLI does was read from source, and four of
+those quotes were re-read for this review. What hosted Codex Cloud does was
+read from the documentation, in a third pass once the owner had allowed
+`learn.chatgpt.com`, where the Codex docs now live. The first pass, with the
+docs blocked, had eleven rows it could not tell.
 
 ### What changed
 
@@ -219,13 +219,31 @@ so those rows rest on search-engine summaries or are marked "cannot tell".
 | "A hook authored once works on both" | `provider-codex.md`, ADR-0014 | **Shape only.** Codex reads `hooks.json`, not `settings.json`; skips prompt and agent hooks; and runs a hook only once it is trusted | source, re-read |
 | "Each repo's own `AGENTS.md` is read" | `cloud/README.md` | **Conditional.** An untrusted project supplies no project instructions (0.150.0), and project instructions are capped at 32 KiB in total | source, release notes |
 | "Use the `gh` CLI" | `provider-codex.md` | **Contradicted locally.** The bootstrap installs no `gh` for the Codex cloud profile | this repo |
-| The Codex cloud row: 12-hour cache, maintenance script, agent offline by default | `docs/cloud-sandbox-design.md` | **Describes a product now titled "Codex Cloud (Legacy)"** | search summary only |
+| The Codex cloud row: 12-hour cache, maintenance script, agent offline by default | `docs/cloud-sandbox-design.md` | **Describes "Codex Cloud (Legacy)".** A newer environment model has replaced it; the docs say "We plan to deprecate this experience" and give no date | docs |
+| The telemetry key is held as an "environment secret" | `cloud/README.md` | **No such type now.** There are environment variables, which programs can see, and network secrets, which the proxy substitutes | docs |
 | "Codex's agent phase is offline" | `cloud/bootstrap.sh` | **It was a default, not a fixed property.** `cloud/README.md` already requires it switched on | this repo |
 
 The composed Codex profiles are about 29 KB. As a global file that appears to
 be uncapped. Delivered as a project file, one would use nearly nine-tenths of
 the 32 KiB project budget before the repo's own `AGENTS.md` is counted. The
 manifest's budget is in lines, so it would not catch that.
+
+### The current Codex Cloud model
+
+The documentation describes an environment that Codex sets up through a
+conversation and records in two fields: an **install script** and a **start
+skill**, the second being instructions and not a script. A change reaches new
+tasks only once the environment is **published**. Network access is "all
+public internet", a package-managers preset, or named domains. There is no
+method restriction, no maintenance script and no 12-hour cache.
+
+Two consequences for this repo:
+
+- `cloud/README.md` records that the install script "doesn't take effect".
+  An unpublished change would look exactly like that. This is a lead for the
+  re-test, not a finding.
+- The package-managers preset does not list `raw.githubusercontent.com`,
+  which the bootstrap fetches from, so it has to be added as a named domain.
 
 ### What still holds
 
@@ -258,13 +276,13 @@ different degrees.
 - **Hooks** have converged on the JSON shape and eleven event names, and not
   on location, handler types or trust.
 
-### What would settle the rest
+### What is still unknown
 
-- Reading the Codex documentation, for every row that rests on a search
-  summary. `developers.openai.com` was allowed during this review and turned
-  out to redirect every Codex page to `learn.chatgpt.com`, which the sandbox
-  proxy also refuses. A second pass with the first host open changed no
-  verdict.
-- A re-test in a Codex cloud environment, for whether an install script takes
-  effect, what is writable and where `CODEX_HOME` points. No document answers
-  those.
+- **Whether `gh` or a GitHub token exists inside a Codex cloud task.** The
+  docs describe checkout and opening a pull request through the account
+  connection, and say nothing about `gh`.
+- **Whether a command in a cloud task starts without network.**
+- **Four things only a live test can answer:** whether the install script
+  takes effect, what is writable, where `CODEX_HOME` points, and whether a
+  `~/.codex` written during setup is honoured. Check first that the
+  environment was published.
