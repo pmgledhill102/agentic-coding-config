@@ -136,3 +136,21 @@ only if everything passes. The reason is cost: a failure found by CI is a
 round-trip, and one found locally is a few seconds. Where a repo has the
 pre-commit hook installed the hook enforces most of this at commit time; the
 rule is what covers a repo, or a clone, without it.
+
+## Pass the non-interactive flag
+
+An agent has no tty. A command that stops to ask something waits forever,
+and the symptom is a hung session and not an error, so it reads as the model
+being slow.
+
+Examples: `apt-get -y`, `ssh` and `scp` with `-o BatchMode=yes`, and
+`gh --yes` where a subcommand offers it.
+
+The rule is about the tool's own prompting. A shell that aliases `rm` to
+`rm -i` is a separate and much rarer thing. Check for it with `type rm`
+before assuming it, and do not pass `-f` reflexively, because `-f` also
+suppresses the errors you wanted to see.
+
+The agent's own preview before a destructive batch is a different matter and
+is not suppressed: see
+[Preview an irreversible batch, then stop](#preview-an-irreversible-batch-then-stop).
