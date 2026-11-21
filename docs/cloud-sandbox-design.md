@@ -342,7 +342,7 @@ property is that **the identity that writes cannot read** —
 `roles/storage.objectCreator` alone, which also makes the bucket append-only,
 since replacing an object needs delete.
 
-Per the ephemeral-first principles, durable storage is a separate, explicitly
+Per the [ephemeral-first principles](ephemeral-first.md), durable storage is a separate, explicitly
 granted capability. This is that grant, in its narrowest form.
 
 ## 7. What this document does not decide
