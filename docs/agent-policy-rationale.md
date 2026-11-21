@@ -88,3 +88,51 @@ This is the route from any surface, because whatever config is on disk is
 generated: composed from fragments and delivered by chezmoi on a workstation
 or by the bootstrap in a sandbox. An edit in place is lost on the next apply.
 The issue is the change.
+
+## Preview an irreversible batch, then stop
+
+Before deleting, overwriting or force-pushing over a set of resources, list
+exactly what the operation will affect and stop for explicit confirmation.
+
+**This does not contradict the non-interactive-flag rule. The two govern
+different actors.** Suppress the tool's prompt: `--quiet` on a delete is
+right, because a command waiting on a tty an agent does not have is a hung
+session. Surface the agent's preview and wait. "Run it immediately, without
+prompting" is an instruction about the tool's interactivity. Reading it as
+permission to skip checking what is about to be destroyed is the specific
+failure the rule prevents.
+
+**It is not a security boundary, and not an attempt to be un-instructable.**
+An operator who looks at the list and says "yes, delete them" gets the
+deletion.
+
+**Why a single command on an absolute path gets the same care.** `rm -rf
+/dev/null`, as the first clause of a compound line whose purpose was
+something else, left a regular file where the device node had been. Every
+`2>/dev/null` in the repo went on "working" while silently accumulating
+bytes.
+
+## A silent check has to be able to speak
+
+Silence is only evidence once the check is known to be able to report
+something. Run it against a case that must produce a hit, then trust the
+empty result.
+
+Ask what question the tool actually answered, and not the one you meant:
+
+- an empty `grep` may mean the pattern is wrong
+- a 404 body parses as an empty field
+- GNU `date -d ""` returns *now* and does not fail
+- a version regex can match a prefix inside a longer token, so a filter never
+  sees the `-beta1` it was written to exclude
+
+Each of those returns a clean, confident, wrong answer with no error
+anywhere.
+
+## Lint before pushing
+
+Run the relevant linter and test suite locally before `git push`, and push
+only if everything passes. The reason is cost: a failure found by CI is a
+round-trip, and one found locally is a few seconds. Where a repo has the
+pre-commit hook installed the hook enforces most of this at commit time; the
+rule is what covers a repo, or a clone, without it.
